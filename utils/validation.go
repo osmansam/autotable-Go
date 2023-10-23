@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -97,7 +96,6 @@ func validateFieldBase(item map[string]interface{}, fieldName string, fieldType 
     case float64:
         val = int(v)  // Convert float64 to int
     default:
-        log.Println("Field value:", fieldValue)
         return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
     }
 		if strings.Contains(tag, "min=") {
