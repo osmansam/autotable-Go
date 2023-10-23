@@ -218,3 +218,46 @@ func UpdateContainer(c *fiber.Ctx) error {
 		Data:    &fiber.Map{"data": updateResult},
 	})
 }
+
+// GetContainer retrieves a single container from the database based on its ID
+func GetContainer(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Retrieve container ID from URL parameters
+	containerIdStr := c.Params("id")
+	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Provided ID is not in the valid format.",
+			Data:    &fiber.Map{"data": err.Error()},
+		})
+	}
+
+	// Fetch the container with the provided ID from the database
+	var container models.ContainerModel
+	err = containerCollection.FindOne(ctx, bson.M{"_id": containerId}).Decode(&container)
+	if err != nil {
+		// If the item is not found, return a 404 status
+		if err == mongo.ErrNoDocuments {
+			return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+				Status:  http.StatusNotFound,
+				Message: "No container found with the specified ID.",
+				Data:    nil,
+			})
+		}
+		// For other errors, return a 500 status
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to retrieve the container from the database. Please try again later.",
+			Data:    &fiber.Map{"data": err.Error()},
+		})
+	}
+
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Container successfully retrieved.",
+		Data:    &fiber.Map{"data": container},
+	})
+}
