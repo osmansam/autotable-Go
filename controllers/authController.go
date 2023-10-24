@@ -203,7 +203,8 @@ func Refresh(c *fiber.Ctx) error {
 }
 
 func Logout(c *fiber.Ctx) error {
-	refreshToken := c.Get("Authorization")
+	refreshTokenStr := c.Get("Authorization")
+	refreshToken := strings.TrimPrefix(refreshTokenStr, "Bearer ")
 	update := bson.M{"$set": bson.M{"isValid": false}}
 	_, err := refreshTokenCollection.UpdateOne(context.TODO(), bson.M{"refreshToken": refreshToken}, update)
 	if err != nil {
