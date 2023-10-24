@@ -29,6 +29,7 @@ func main() {
 	//routes
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)
+	routes.AuthRoutes("api/v1/auth", app)
 	log.Println("Server is running on port: ", portNumber)
 	app.Listen(portNumber)
 }
