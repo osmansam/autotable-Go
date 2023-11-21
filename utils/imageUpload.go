@@ -68,7 +68,7 @@ func ProcessFormFields(fields map[string][]string) map[string]interface{} {
         for i, key := range keys {
             keys[i] = strings.TrimSuffix(key, "]")
         }
-        SetNestedField(result, keys, v[0]) // Assuming you're only interested in the first value for each field.
+        SetNestedField(result, keys, v[0]) 
     }
     return result
 }

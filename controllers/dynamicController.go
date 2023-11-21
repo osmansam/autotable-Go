@@ -18,172 +18,104 @@ import (
 
 // create an item for a given collection
 func CreateDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	// Placeholder to hold the parsed item
-	var item interface{}
-	schemaName := c.Query("schemaName")
+    schemaName := c.Query("schemaName")
 
-	// Fetch the associated container model from DB based on the schema name
-	var container models.ContainerModel
-	err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Unable to retrieve the container model from the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    // Fetch the associated container model
+    var container models.ContainerModel
+    err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status: http.StatusInternalServerError, Message: "Unable to retrieve container model.", Data: &fiber.Map{"data": err.Error()},
+        })
+    }
 
-	// Get the associated collection for this schema
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    // Check if there is an image field in the container
+    hasImageField := false
+    for _, field := range container.Fields {
+        if field.Type == "image" {
+            hasImageField = true
+            break
+        }
+    }
 
-	// Parse the provided item from the request body
-	if err := c.BodyParser(&item); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Failed to parse the request body. Please provide valid input.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    var itemMap map[string]interface{}
+    fileURLs := make(map[string]string)
 
-	// Convert the parsed item to a map for validation
-	itemMap, ok := item.(map[string]interface{})
-	if !ok {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided item format is not valid. Expected a JSON object.",
-			Data:    &fiber.Map{"data": "Item is not a valid map"},
-		})
-	}
+    if hasImageField {
+        // Parse multipart form for image fields
+        form, err := c.MultipartForm()
+        if err != nil {
+            return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Error parsing form.", Data: &fiber.Map{"data": err.Error()}})
+        }
+        itemMap = utils.ProcessFormFields(form.Value)
 
-	// Validate the provided item against its schema/container model
-	err = utils.ValidateContainerModel(itemMap, container)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation failed for the provided item.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-	// Convert fields that should be ObjectId to ObjectId type
-	for _, field := range container.Fields {
-		if field.Type == "objectId" {
-			if strId, ok := itemMap[field.Name].(string); ok {
-				objId, err := primitive.ObjectIDFromHex(strId)
-				if err == nil {
-					itemMap[field.Name] = objId
-				}
-			}
-		}
-	}
-	// Save the validated item into its associated collection
-	result, err := currentCollection.InsertOne(ctx, item)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to save the item to the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+        // Process image fields
+        for fieldName, files := range form.File {
+            for _, file := range files {
+                tempFilePath := "./temp/" + file.Filename
+                if err := c.SaveFile(file, tempFilePath); err != nil {
+                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.", Data: &fiber.Map{"data": err.Error()}})
+                }
+                imageURL, err := utils.UploadToCloudinary(tempFilePath)
+                os.Remove(tempFilePath) // Clean up temp file
+                if err != nil {
+                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error uploading to Cloudinary.", Data: &fiber.Map{"data": err.Error()}})
+                }
+                fileURLs[fieldName] = imageURL
+            }
+        }
+    } else {
+        // Parse the provided item from request body
+        if err := c.BodyParser(&itemMap); err != nil {
+            return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body.", Data: &fiber.Map{"data": err.Error()}})
+        }
+    }
 
-	// Successfully saved the item
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "Item successfully created.",
-		Data:    &fiber.Map{"data": result},
-	})
+    // Replace file fields with URLs
+    for fieldName, url := range fileURLs {
+        itemMap[fieldName] = url
+    }
+
+    // Validation
+    err = utils.ValidateContainerModel(itemMap, container)
+    if err != nil {
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status: http.StatusBadRequest, Message: "Validation failed.", Data: &fiber.Map{"data": err.Error()},
+        })
+    }
+
+    // Convert fields that should be ObjectId to ObjectId type
+    for _, field := range container.Fields {
+        if field.Type == "objectId" {
+            if strId, ok := itemMap[field.Name].(string); ok {
+                objId, err := primitive.ObjectIDFromHex(strId)
+                if err == nil {
+                    itemMap[field.Name] = objId
+                }
+            }
+        }
+    }
+
+    // Get the associated collection for this schema
+    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+
+    // Save the validated item into its associated collection
+    result, err := currentCollection.InsertOne(ctx, itemMap)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status: http.StatusInternalServerError, Message: "Failed to save item.", Data: &fiber.Map{"data": err.Error()},
+        })
+    }
+
+    // Successfully saved the item
+    return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
+        Status: http.StatusCreated, Message: "Item successfully created.", Data: &fiber.Map{"data": result},
+    })
 }
-// create with image
-func CreateDynamicModelItemWithImage(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
-	schemaName := c.Query("schemaName")
-
-	// Fetch the associated container model from DB based on the schema name
-	var container models.ContainerModel
-	err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Unable to retrieve the container model from the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	// Parse the multipart form to get files and other fields
-	form, err := c.MultipartForm()
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "error", Data: &fiber.Map{"data": err.Error()}})
-	}
-
-	fileURLs := make(map[string]string) // To store the URLs for each file
-
-	// Process the files
-	for fieldName, files := range form.File {
-		for _, file := range files {
-			// Save and upload the file
-			tempFilePath := "./temp/" + file.Filename
-			if err := c.SaveFile(file, tempFilePath); err != nil {
-				return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "error temp file path", Data: &fiber.Map{"data": err.Error()}})
-			}
-			imageURL, err := utils.UploadToCloudinary(tempFilePath)
-			os.Remove(tempFilePath) // Clean up temp file regardless of success
-			if err != nil {
-				return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "error uploading to cloudinary", Data: &fiber.Map{"data": err.Error()}})
-			}
-			fileURLs[fieldName] = imageURL
-		}
-	}
-
-	itemMap := utils.ProcessFormFields(form.Value)
-	// Replace file fields with their Cloudinary URLs
-	for fieldName, url := range fileURLs {
-		itemMap[fieldName] = url
-	}
-
-	// Validate the item
-	err = utils.ValidateContainerModel(itemMap, container)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation failed for the provided item.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-	// Convert fields that should be ObjectId to ObjectId type
-	for _, field := range container.Fields {
-		if field.Type == "objectId" {
-			if strId, ok := itemMap[field.Name].(string); ok {
-				objId, err := primitive.ObjectIDFromHex(strId)
-				if err == nil {
-					itemMap[field.Name] = objId
-				}
-			}
-		}
-	}
-	// Get the associated collection for this schema
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
-
-	// Save the validated item into its associated collection
-	result, err := currentCollection.InsertOne(ctx, itemMap)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to save the item to the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	// Successfully saved the item
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "Item successfully created.",
-		Data:    &fiber.Map{"data": result},
-	})
-}
 //get all item for given collection
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -287,200 +219,96 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 }
 //update an item in the collection
 func UpdateDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
+    schemaName := c.Query("schemaName")
+    updateIdStr := c.Params("id")
+    updateId, err := primitive.ObjectIDFromHex(updateIdStr)
+    if err != nil {
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status:  http.StatusBadRequest,
+            Message: "Provided ID is not in the valid format.",
+            Data:    &fiber.Map{"data": err.Error()},
+        })
+    }
 
-	// Check if the schema is present in containers
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    // Fetch the container model
+    var container models.ContainerModel
+    err = containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status:  http.StatusInternalServerError,
+            Message: "Unable to retrieve the container model from the database.",
+            Data:    &fiber.Map{"data": err.Error()},
+        })
+    }
 
-	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    // Check if there is an image field in the container
+    hasImageField := false
+    for _, field := range container.Fields {
+        if field.Type == "image" {
+            hasImageField = true
+            break
+        }
+    }
 
-	// Placeholder to hold the updated item
-	var updatedItem interface{}
-	if err := c.BodyParser(&updatedItem); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Failed to parse the request body. Please provide valid input.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    var updatedItemMap map[string]interface{}
+    fileURLs := make(map[string]string)
 
-	// Convert the parsed updated item to a map for validation
-	updatedItemMap, ok := updatedItem.(map[string]interface{})
-	if !ok {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided item format is not valid. Expected a JSON object.",
-			Data:    &fiber.Map{"data": "Updated item is not a valid map"},
-		})
-	}
+    if hasImageField  {
+        // Handle multipart form data
+        form, err := c.MultipartForm()
+        if err != nil {
+            return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Error in multipart form", Data: &fiber.Map{"data": err.Error()}})
+        }
+        updatedItemMap = utils.ProcessFormFields(form.Value)
 
-	// Validate the provided updated item against its schema/container model
-	var container models.ContainerModel
-	err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Unable to retrieve the container model from the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-	err = utils.ValidateContainerModel(updatedItemMap, container)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation failed for the provided updated item.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+        // Process image fields
+        for fieldName, files := range form.File {
+            for _, file := range files {
+                tempFilePath := "./temp/" + file.Filename
+                if err := c.SaveFile(file, tempFilePath); err != nil {
+                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file", Data: &fiber.Map{"data": err.Error()}})
+                }
+                imageURL, err := utils.UploadToCloudinary(tempFilePath)
+                os.Remove(tempFilePath)
+                if err != nil {
+                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error uploading to Cloudinary", Data: &fiber.Map{"data": err.Error()}})
+                }
+                fileURLs[fieldName] = imageURL
+            }
+        }
+    } else {
+        // Handle JSON body
+        if err := c.BodyParser(&updatedItemMap); err != nil {
+            return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body", Data: &fiber.Map{"data": err.Error()}})
+        }
+    }
 
-	// Get the ID of the item to be updated from the params and attempt to convert it to ObjectID
-	updateIdStr := c.Params("id")
-	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    // Replace file fields with URLs
+    for fieldName, url := range fileURLs {
+        updatedItemMap[fieldName] = url
+    }
 
-	// Update the validated item in the collection
-	updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedItem})
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to update the item in the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    // Validation
+    err = utils.ValidateContainerModel(updatedItemMap, container)
+    if err != nil {
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed", Data: &fiber.Map{"data": err.Error()}})
+    }
 
-	if updateResult.MatchedCount == 0 {
-		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
-			Status:  http.StatusNotFound,
-			Message: "No item found with the specified ID.",
-			Data:    nil,
-		})
-	}
+    // Update in collection
+    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedItemMap})
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to update item", Data: &fiber.Map{"data": err.Error()}})
+    }
 
-	// Successfully updated the item
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Item successfully updated.",
-		Data:    &fiber.Map{"data": updateResult},
-	})
-}
-//update an item with an image in the collection
-func UpdateDynamicModelItemWithImage(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    if updateResult.MatchedCount == 0 {
+        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
+    }
 
-	schemaName := c.Query("schemaName")
-
-	// Validate schema presence
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
-	
-	// Get the ID of the item to be updated from the params
-	updateIdStr := c.Params("id")
-	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	// Parse the multipart form to get files and other fields
-	form, err := c.MultipartForm()
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Error in multipart form", Data: &fiber.Map{"data": err.Error()}})
-	}
-
-	fileURLs := make(map[string]string)
-
-	// Process the files
-	for fieldName, files := range form.File {
-		for _, file := range files {
-			// Save and upload the file
-			tempFilePath := "./temp/" + file.Filename
-			if err := c.SaveFile(file, tempFilePath); err != nil {
-				return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file", Data: &fiber.Map{"data": err.Error()}})
-			}
-			imageURL, err := utils.UploadToCloudinary(tempFilePath)
-			os.Remove(tempFilePath)
-			if err != nil {
-				return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error uploading to cloudinary", Data: &fiber.Map{"data": err.Error()}})
-			}
-			fileURLs[fieldName] = imageURL
-		}
-	}
-
-	updatedItemMap := utils.ProcessFormFields(form.Value)
-
-	// If no new image is provided, retain the old URL. Else, use the new URL.
-	for fieldName, url := range fileURLs {
-		updatedItemMap[fieldName] = url
-	}
-
-	var container models.ContainerModel
-	err = containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Unable to retrieve the container model from the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	err = utils.ValidateContainerModel(updatedItemMap, container)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation failed for the provided updated item.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedItemMap})
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to update the item in the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
-
-	if updateResult.MatchedCount == 0 {
-		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
-			Status:  http.StatusNotFound,
-			Message: "No item found with the specified ID.",
-			Data:    nil,
-		})
-	}
-
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Item successfully updated.",
-		Data:    &fiber.Map{"data": updateResult},
-	})
+    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: &fiber.Map{"data": updateResult}})
 }
 
 // get an item from the database
@@ -594,4 +422,52 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		Data:    &fiber.Map{"data": items},
 	})
 }
+//get all item for given collection
+func GetPipeline(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
+	pipelineInput := models.PipelineStageInput{
+        Match:     c.Query("match"),
+        Lookup:    c.Query("lookup"),
+        Unwind:    c.Query("unwind"),
+        Group:     c.Query("group"),
+        Sort:      c.Query("sort"),
+        AddFields: c.Query("addFields"),
+        Limit:     c.Query("limit"),
+        Skip:      c.Query("skip"),
+        Facet:     c.Query("facet"),
+        Merge:     c.Query("merge"),
+        Out:       c.Query("out"),
+    }
+		// Fetching the schema name from the query params
+	schemaName := c.Query("schemaName")
+	//check if schema is in containers
+	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Schema name is not valid. Please provide a valid schema name.",
+			Data:    &fiber.Map{"data": err.Error()},
+		})
+	}
+
+	// Using the schema name to determine the appropriate collection
+	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+	
+items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineInput)
+    if err != nil {
+        // Handle error
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status:  http.StatusInternalServerError,
+            Message: "Failed to execute dynamic pipeline.",
+            Data:    &fiber.Map{"error": err.Error()},
+        })
+    }
+
+    // Return the results
+    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+        Status:  http.StatusOK,
+        Message: "Successfully fetched items using dynamic pipeline.",
+        Data:    &fiber.Map{"data": items},
+    })
+}

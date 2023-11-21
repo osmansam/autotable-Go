@@ -3,15 +3,13 @@ package routes
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
-	"github.com/osmansam/autotableGo/middlewares"
 )
 
 func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup := app.Group(baseUrl)
 	dynamicGroup.Post("/", controllers.CreateDynamicModelItem)
-	dynamicGroup.Get("/", middlewares.Authenticate,controllers.GetAllDynamicModelItems)
-	dynamicGroup.Post("/image", controllers.CreateDynamicModelItemWithImage)
-	dynamicGroup.Post("/image/:id", controllers.UpdateDynamicModelItemWithImage)
+	dynamicGroup.Get("/",controllers.GetAllDynamicModelItems)
+	dynamicGroup.Get("/pipeline", controllers.GetPipeline)
 	dynamicGroup.Get("/search", controllers.HandleSearchDynamicModelItem)
 	dynamicGroup.Delete("/:id", controllers.DeleteDynamicModelItem)
 	dynamicGroup.Patch("/:id", controllers.UpdateDynamicModelItem)

@@ -17,6 +17,7 @@ import (
 var userCollection *mongo.Collection=configs.GetCollection(configs.DB, "user")
 var refreshTokenCollection *mongo.Collection=configs.GetCollection(configs.DB, "token")
 
+// register a new user
 func Register(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -71,7 +72,7 @@ func Register(c *fiber.Ctx) error {
 		Data:    nil,
 	})
 }
-
+// login and create a token
 func Login(c *fiber.Ctx) error {
 	var user models.User
 	if err := c.BodyParser(&user); err != nil {
@@ -170,7 +171,7 @@ func Login(c *fiber.Ctx) error {
 	})
 }
 
-
+// RefreshToken refreshes the access token
 func Refresh(c *fiber.Ctx) error {
 	refreshTokenStr := c.Get("Authorization")
 	refreshToken := strings.TrimPrefix(refreshTokenStr, "Bearer ")
@@ -201,7 +202,7 @@ func Refresh(c *fiber.Ctx) error {
 		Data:    &fiber.Map{"accessToken": newAccessToken},
 	})
 }
-
+//log out the user
 func Logout(c *fiber.Ctx) error {
 	refreshTokenStr := c.Get("Authorization")
 	refreshToken := strings.TrimPrefix(refreshTokenStr, "Bearer ")

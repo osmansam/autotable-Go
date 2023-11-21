@@ -193,7 +193,25 @@ func UpdateContainer(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
-
+  // Check if any other container has the same schemaName
+    var existingContainer models.ContainerModel
+    err = containerCollection.FindOne(ctx, bson.M{"schemaName": updatedContainer.SchemaName, "_id": bson.M{"$ne": updateId}}).Decode(&existingContainer)
+    if err == nil {
+        // A container with the same schemaName and a different ID exists
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status: http.StatusBadRequest,
+            Message: "Another container with the specified schema name already exists.",
+            Data: nil,
+        })
+    }
+    if err != mongo.ErrNoDocuments {
+        // Handle database errors other than 'No Documents'
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status: http.StatusInternalServerError,
+            Message: "Database error occurred while checking for existing schema name.",
+            Data: &fiber.Map{"data": err.Error()},
+        })
+    }
 	// Update the validated item in the collection
 	updateResult, err := containerCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedContainer})
 	if err != nil {
