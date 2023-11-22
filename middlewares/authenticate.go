@@ -27,9 +27,10 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
         if err != nil {
             return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
         }
+        c.Locals("containerModel", container)
 
         // Check if route requires authentication
-        var route models.AuthenticatedField
+        var route models.RouteSpec
         switch routeName {
         case "CreateDynamicModelItem":
             route = container.Routes.CreateDynamicModelItem
