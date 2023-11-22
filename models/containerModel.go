@@ -8,20 +8,21 @@ type Field struct {
 	Tag      string  `bson:"tag,omitempty"`
 	Children []Field `bson:"children,omitempty"` // Changed from NestedField to Field to support recursive nesting
 }
-type AuthenticatedField struct {
+type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" default:"false"` 
     IsAuthorized    bool   `bson:"isAuthorized" default:"false"`
     AuthorizeRole   string `bson:"authorizeRole" default:""`
+    IsRedisCached   bool   `bson:"isRedisCached" default:"false"`
 }
 
 type Routes struct {
-    CreateDynamicModelItem AuthenticatedField `bson:"createDynamicModelItem"`
-    GetAllDynamicModelItems AuthenticatedField `bson:"getAllDynamicModelItems"`
-    GetPipeline AuthenticatedField `bson:"getPipeline"`
-    HandleSearchDynamicModelItem AuthenticatedField `bson:"handleSearchDynamicModelItem"`
-    DeleteDynamicModelItem AuthenticatedField `bson:"deleteDynamicModelItem"`
-    UpdateDynamicModelItem AuthenticatedField `bson:"updateDynamicModelItem"`
-    GetDynamicModelItem AuthenticatedField `bson:"getDynamicModelItem"`
+    CreateDynamicModelItem RouteSpec `bson:"createDynamicModelItem"`
+    GetAllDynamicModelItems RouteSpec `bson:"getAllDynamicModelItems"`
+    GetPipeline RouteSpec `bson:"getPipeline"`
+    HandleSearchDynamicModelItem RouteSpec `bson:"handleSearchDynamicModelItem"`
+    DeleteDynamicModelItem RouteSpec `bson:"deleteDynamicModelItem"`
+    UpdateDynamicModelItem RouteSpec `bson:"updateDynamicModelItem"`
+    GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
 }
 
 type ContainerModel struct {

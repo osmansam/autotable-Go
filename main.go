@@ -25,7 +25,7 @@ func main() {
 	app.Use(cors.New())
 	//run database
 	configs.ConnectDB()
-
+	configs.ConnectRedis()
 	//routes
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)

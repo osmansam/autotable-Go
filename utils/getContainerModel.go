@@ -20,6 +20,5 @@ func GetContainerModel(schemaName string) (*models.ContainerModel, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return &containerModel, nil
 }

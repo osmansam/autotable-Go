@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"time"
@@ -24,13 +25,19 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     schemaName := c.Query("schemaName")
 
     // Fetch the associated container model
-    var container models.ContainerModel
-    err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-    if err != nil {
-        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-            Status: http.StatusInternalServerError, Message: "Unable to retrieve container model.", Data: &fiber.Map{"data": err.Error()},
-        })
-    }
+	var container *models.ContainerModel
+	var err error
+
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		// Use the container model from the context if available
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		// Fetch container model if not available in context
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+		}
+	}
 
     // Check if there is an image field in the container
     hasImageField := false
@@ -80,12 +87,12 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // Validation
-    err = utils.ValidateContainerModel(itemMap, container)
-    if err != nil {
-        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status: http.StatusBadRequest, Message: "Validation failed.", Data: &fiber.Map{"data": err.Error()},
-        })
-    }
+   err = utils.ValidateContainerModel(itemMap, *container)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status: http.StatusBadRequest, Message: "Validation failed.", Data: &fiber.Map{"data": err.Error()},
+		})
+	}
 
     // Convert fields that should be ObjectId to ObjectId type
     for _, field := range container.Fields {
@@ -115,61 +122,87 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         Status: http.StatusCreated, Message: "Item successfully created.", Data: &fiber.Map{"data": result},
     })
 }
-
-//get all item for given collection
+// get all items for a given collection
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	
-	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
-	//check if schema is in containers
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+	if schemaName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
 	}
 
-	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+  	var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        // Use the container model from the context if available
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        // Fetch container model if not available in context
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+        }
+    }
 
-	// Fetching all items from the specified collection
+	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", schemaName, container)
+	if shouldCache {
+		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+		
+		if err == nil {
+			var items []map[string]interface{}
+			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
+				// Data fetched from cache
+				return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "cache"})
+			}
+		}
+
+		// If not found in cache, fetch from database
+		currentCollection := configs.GetCollection(configs.DB, schemaName)
+		results, err := currentCollection.Find(ctx, bson.M{})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch items from the database"})
+		}
+		defer results.Close(ctx)
+
+		var items []map[string]interface{}
+		for results.Next(ctx) {
+			var singleItem map[string]interface{}
+			if err = results.Decode(&singleItem); err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode an item"})
+			}
+			items = append(items, singleItem)
+		}
+
+		// Cache the data fetched from database
+		dataToCache, _ := json.Marshal(items)
+		configs.RedisClient.Set(ctx, redisKey, dataToCache, 24*time.Hour)
+
+		// Data fetched from database
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "database"})
+	}
+
+	// If caching is not enabled, fetch from database
+	currentCollection := configs.GetCollection(configs.DB, schemaName)
 	results, err := currentCollection.Find(ctx, bson.M{})
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch items from the specified collection in the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch items from the database"})
 	}
 	defer results.Close(ctx)
 
-	// Placeholder to hold all items
 	var items []map[string]interface{}
-
-	// Iterating over each item and appending to the items slice
 	for results.Next(ctx) {
 		var singleItem map[string]interface{}
 		if err = results.Decode(&singleItem); err != nil {
-			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-				Status:  http.StatusInternalServerError,
-				Message: "Failed to decode an item from the specified collection.",
-				Data:    &fiber.Map{"data": err.Error()},
-			})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode an item"})
 		}
 		items = append(items, singleItem)
 	}
 
-	// Successfully fetched all items
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Successfully fetched all items from the specified collection.",
-		Data:    &fiber.Map{"data": items},
-	})
+	// Data fetched from database
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "database"})
 }
+
 //delete an item from the collection
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -177,14 +210,6 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
-	//check if schema is in containers
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
 
 	// Using the schema name to determine the appropriate collection
 	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
@@ -233,16 +258,18 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         })
     }
 
-    // Fetch the container model
-    var container models.ContainerModel
-    err = containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-    if err != nil {
-        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-            Status:  http.StatusInternalServerError,
-            Message: "Unable to retrieve the container model from the database.",
-            Data:    &fiber.Map{"data": err.Error()},
-        })
-    }
+    // Fetch the associated container model
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		// Use the container model from the context if available
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		// Fetch container model if not available in context
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+		}
+	}
 
     // Check if there is an image field in the container
     hasImageField := false
@@ -292,7 +319,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // Validation
-    err = utils.ValidateContainerModel(updatedItemMap, container)
+    err = utils.ValidateContainerModel(updatedItemMap, *container)
     if err != nil {
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed", Data: &fiber.Map{"data": err.Error()}})
     }
@@ -313,50 +340,57 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
 // get an item from the database
 func GetDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
+    schemaName := c.Query("schemaName")
+    if schemaName == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
+    }
 
-	// Check if the schema is present in containers
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+    getIdStr := c.Params("id")
+    getId, err := primitive.ObjectIDFromHex(getIdStr)
+    if err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid ID format"})
+    }
 
-	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
-	
-	// Get the ID of the item to be fetched from the params and attempt to convert it to ObjectID
-	getIdStr := c.Params("id")
-	getId, err := primitive.ObjectIDFromHex(getIdStr)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+   	var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        // Use the container model from the context if available
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        // Fetch container model if not available in context
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+        }
+    }
 
-	// Get the item from the collection
-	var result bson.M
-	if err := currentCollection.FindOne(ctx, bson.M{"_id": getId}).Decode(&result); err != nil {
-		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
-			Status:  http.StatusNotFound,
-			Message: "No item found with the specified ID.",
-			Data:    nil,
-		})
-	}
+    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schemaName, container, getIdStr)
+    if shouldCache {
+        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+        if err == nil {
+            var item bson.M
+            if err := json.Unmarshal([]byte(cachedData), &item); err == nil {
+                // Data fetched from cache
+                return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": item, "source": "cache"})
+            }
+        }
+    }
 
-	// Successfully get the item
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Item successfully fetched.",
-		Data:    &fiber.Map{"data": result},
-	})
+    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    var result bson.M
+    if err := currentCollection.FindOne(ctx, bson.M{"_id": getId}).Decode(&result); err != nil {
+        return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Item not found"})
+    }
+
+    if shouldCache {
+        dataToCache, _ := json.Marshal(result)
+        configs.RedisClient.Set(ctx, redisKey, dataToCache, 24*time.Hour)
+    }
+
+    return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": result, "source": "database"})
 }
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
@@ -366,17 +400,19 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	searchKey := c.Query("searchKey")
 
-	// Fetch the associated container model from DB based on the schema name
-	var container models.ContainerModel
-	err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Unable to retrieve the container model from the database.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+	    // Fetch the associated container model
+	var container *models.ContainerModel
+	var err error
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		// Use the container model from the context if available
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		// Fetch container model if not available in context
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+		}
 	}
-
 	// Define the regex pattern to match anywhere in the string
 	pattern := ".*" + searchKey + ".*"
 	regex := primitive.Regex{Pattern: pattern, Options: "i"} // "i" is for case-insensitive
@@ -442,14 +478,7 @@ func GetPipeline(c *fiber.Ctx) error {
     }
 		// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
-	//check if schema is in containers
-	if err := utils.IsSchemaInContainers(ctx, containerCollection, schemaName); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Schema name is not valid. Please provide a valid schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
-	}
+
 
 	// Using the schema name to determine the appropriate collection
 	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
