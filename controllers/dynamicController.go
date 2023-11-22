@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -116,7 +117,27 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
             Status: http.StatusInternalServerError, Message: "Failed to save item.", Data: &fiber.Map{"data": err.Error()},
         })
     }
+	// Delete the cache for this schema
+if container.Redis.IsRedisCached {
+    err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "status":  fiber.StatusInternalServerError,
+            "message": "Failed to delete the cache for the schema.",
+            "data":    err.Error(),
+        })
+    }
 
+    // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+    for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+        err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+        if err != nil {
+        // Log the error and continue with the next iteration
+        log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+        continue
+    }
+    }
+}
     // Successfully saved the item
     return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
         Status: http.StatusCreated, Message: "Item successfully created.", Data: &fiber.Map{"data": result},
@@ -176,7 +197,15 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 		// Cache the data fetched from database
 		dataToCache, _ := json.Marshal(items)
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, 24*time.Hour)
+		var expiration time.Duration
+		if container.Redis.CacheTime > 0 {
+			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+		} else {
+			expiration = 24 * time.Hour // Default to 24 Hours
+		}
+
+		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+
 
 		// Data fetched from database
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "database"})
@@ -211,6 +240,19 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
 
+	var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        // Use the container model from the context if available
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        // Fetch container model if not available in context
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+        }
+    }
+	
 	// Using the schema name to determine the appropriate collection
 	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
 
@@ -234,7 +276,27 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
+	// Now attempting to delete the related cache
+if container.Redis.IsRedisCached {
+    err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "status":  fiber.StatusInternalServerError,
+            "message": "Failed to delete the cache for the schema.",
+            "data":    err.Error(),
+        })
+    }
 
+    // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+    for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+        err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+        if err != nil {
+        // Log the error and continue with the next iteration
+        log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+        continue
+    }
+    }
+}
 	// Successfully deleted the item
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -334,6 +396,27 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     if updateResult.MatchedCount == 0 {
         return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
     }
+	// Now attempting to delete the related cache
+	if container.Redis.IsRedisCached {
+		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"status":  fiber.StatusInternalServerError,
+				"message": "Failed to delete the cache for the schema.",
+				"data":    err.Error(),
+			})
+		}
+
+		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+			if err != nil {
+			// Log the error and continue with the next iteration
+			log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+			continue
+		}
+		}
+	}
 
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: &fiber.Map{"data": updateResult}})
 }
@@ -387,7 +470,14 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 
     if shouldCache {
         dataToCache, _ := json.Marshal(result)
-        configs.RedisClient.Set(ctx, redisKey, dataToCache, 24*time.Hour)
+        var expiration time.Duration
+		if container.Redis.CacheTime > 0 {
+			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+		} else {
+			expiration = 24 * time.Hour // Default to 24 Hours
+		}
+
+		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
     }
 
     return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": result, "source": "database"})

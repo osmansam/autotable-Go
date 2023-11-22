@@ -12,9 +12,9 @@ func GenerateRedisKey(routeName, schemaName string, container *models.ContainerM
 	// Check if caching should be applied based on the IsRedisCached flag
 	switch routeName {
 	case "GetAllDynamicModelItems":
-		shouldCache = container.Routes.GetAllDynamicModelItems.IsRedisCached
+		shouldCache = container.Redis.IsRedisCached
 	case "GetDynamicModelItem":
-		shouldCache = container.Routes.GetDynamicModelItem.IsRedisCached
+		shouldCache = container.Redis.IsRedisCached
 	}
 
 	if shouldCache {

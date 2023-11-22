@@ -12,7 +12,6 @@ type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" default:"false"` 
     IsAuthorized    bool   `bson:"isAuthorized" default:"false"`
     AuthorizeRole   string `bson:"authorizeRole" default:""`
-    IsRedisCached   bool   `bson:"isRedisCached" default:"false"`
 }
 
 type Routes struct {
@@ -24,10 +23,15 @@ type Routes struct {
     UpdateDynamicModelItem RouteSpec `bson:"updateDynamicModelItem"`
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
 }
-
+type Redis struct {
+    IsRedisCached bool `bson:"isRedisCached" default:"false"`
+    CacheTime int `bson:"cacheTime" `
+    TriggeredRedisCaches []string `bson:"triggeredRedisCaches" `
+}
 type ContainerModel struct {
 	ID         primitive.ObjectID `bson:"_id,omitempty"`
 	SchemaName string             `bson:"schemaName"`
 	Fields     []Field            `bson:"fields"`
 	Routes Routes `bson:"routes"`
+    Redis Redis `bson:"redis"`
 }
