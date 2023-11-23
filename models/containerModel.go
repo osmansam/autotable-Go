@@ -9,9 +9,9 @@ type Field struct {
 	Children []Field `bson:"children,omitempty"` // Changed from NestedField to Field to support recursive nesting
 }
 type RouteSpec struct {
-    IsAuthenticated bool   `bson:"isAuthenticated" default:"false"` 
-    IsAuthorized    bool   `bson:"isAuthorized" default:"false"`
-    AuthorizeRole   string `bson:"authorizeRole" default:""`
+    IsAuthenticated bool   `bson:"isAuthenticated" ` 
+    IsAuthorized    bool   `bson:"isAuthorized" `
+    AuthorizeRole   string `bson:"authorizeRole" `
 }
 
 type Routes struct {
@@ -24,7 +24,7 @@ type Routes struct {
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
 }
 type Redis struct {
-    IsRedisCached bool `bson:"isRedisCached" default:"false"`
+    IsRedisCached bool `bson:"isRedisCached" `
     CacheTime int `bson:"cacheTime" `
     TriggeredRedisCaches []string `bson:"triggeredRedisCaches" `
 }
