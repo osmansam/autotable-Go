@@ -12,6 +12,8 @@ type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" ` 
     IsAuthorized    bool   `bson:"isAuthorized" `
     AuthorizeRole   string `bson:"authorizeRole" `
+    IsActive     bool   `bson:"isActivated" `
+    Method       string `bson:"method" `
 }
 
 type Routes struct {
