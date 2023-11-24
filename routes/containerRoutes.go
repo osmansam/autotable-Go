@@ -9,7 +9,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 	containerGroup := app.Group(baseUrl)
 	containerGroup.Post("/", controllers.CreateContainer)
 	containerGroup.Get("/", controllers.GetAllContainers)
-	containerGroup.Get("/schemaName", controllers.GetContainer)
+	containerGroup.Get("/:id", controllers.GetContainer)
 	containerGroup.Delete("/:id", controllers.DeleteContainer)
 	containerGroup.Patch("/:id", controllers.UpdateContainer)
 }
