@@ -8,133 +8,194 @@ import (
 	"github.com/osmansam/autotableGo/models"
 )
 
+// ValidateContainerModel validates the container model fields
 func ValidateContainerModel(item map[string]interface{}, containerModel models.ContainerModel) error {
-	for _, field := range containerModel.Fields {
-		err := validateField(item, field)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+    for _, field := range containerModel.Fields {
+        if err := validateField(item, field); err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
 func validateField(item map[string]interface{}, field models.Field) error {
-	err := validateFieldBase(item, field.Name, field.Type, field.Tag)
-	if err != nil {
-		return err
-	}
+    // Base validation
+    if err := validateFieldBase(item, field.Name, field.Type, field.Tag); err != nil {
+        return err
+    }
 
-	if field.Type == "array" {
-		arrayItems, ok := item[field.Name].([]interface{})
-		if !ok {
-			return fmt.Errorf("Field %s should be of type array", field.Name)
-		}
-		for _, obj := range arrayItems {
-			objMap, ok := obj.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("Element in array %s is not a valid map", field.Name)
-			}
-			for _, childField := range field.Children {
-				err := validateField(objMap, childField)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
+    // Validate nested fields if the field is an array
+    if field.Type == "array" {
+        if err := validateArrayField(item, field); err != nil {
+            return err
+        }
+    }
+    return nil
 }
 
-func validateFieldBase(item map[string]interface{}, fieldName string, fieldType string, tag string) error {
-	fieldValue, exists := item[fieldName]
-	if !exists {
-		return fmt.Errorf("Field %s is missing", fieldName)
-	}
-
-	switch fieldType {
-	case "objectId":
-	val, ok := fieldValue.(string)
-	if !ok {
-		return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
-	}
-	// Check if the ObjectId string has the correct length and is a valid hexadecimal string
-	if len(val) != 24 || !isValidHex(val) {
-		return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
-	}
-
-	case "string":
-		val, ok := fieldValue.(string)
-		if !ok {
-			return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
-		}
-		if strings.Contains(tag, "minlength=") {
-			minLenStr := strings.Split(strings.Split(tag, "minlength=")[1], ",")[0]
-			minLen, err := strconv.Atoi(minLenStr)
-			if err != nil {
-				return fmt.Errorf("Invalid minlength value specified for field %s", fieldName)
-			}
-			if len(val) < minLen {
-				return fmt.Errorf("Field %s should have a string length greater than or equal to %d", fieldName, minLen)
-			}
-		}
-		if strings.Contains(tag, "maxlength=") {
-			maxLenStr := strings.Split(strings.Split(tag, "maxlength=")[1], ",")[0]
-			maxLen, err := strconv.Atoi(maxLenStr)
-			if err != nil {
-				return fmt.Errorf("Invalid maxlength value specified for field %s", fieldName)
-			}
-			if len(val) > maxLen {
-				return fmt.Errorf("Field %s should have a string length less than or equal to %d", fieldName, maxLen)
-			}
-		}
-
-	case "int":
-		   var val int
-    switch v := fieldValue.(type) {
-    case int:
-        val = v
-    case float64:
-        val = int(v)  // Convert float64 to int
-    default:
-        return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
+func validateArrayField(item map[string]interface{}, field models.Field) error {
+    arrayItems, ok := item[field.Name].([]interface{})
+    if !ok {
+        return fmt.Errorf("Field %s should be of type array", field.Name)
     }
-		if strings.Contains(tag, "min=") {
-			minStr := strings.Split(strings.Split(tag, "min=")[1], "\"")[0]
 
-			min, err := strconv.Atoi(minStr)
-			if err != nil {
-				return fmt.Errorf("Invalid min value specified for field %s", fieldName)
-			}
-			if val < min {
-				return fmt.Errorf("Field %s should have a value greater than or equal to %d", fieldName, min)
-			}
+    for _, obj := range arrayItems {
+        objMap, ok := obj.(map[string]interface{})
+        if !ok {
+            return fmt.Errorf("Element in array %s is not a valid map", field.Name)
+        }
+        for _, childField := range field.Children {
+            if err := validateField(objMap, childField); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
+func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag string) error {
+    fieldValue, exists := item[fieldName]
+    if !exists {
+        return fmt.Errorf("Field %s is missing", fieldName)
+    }
+
+    // Extracting the rules and custom messages
+    rules := extractValidationRules(tag)
+
+    // Perform specific field type validations
+    switch fieldType {
+    case "objectId":
+        val, ok := fieldValue.(string)
+        if !ok {
+            return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
+        }
+        if len(val) != 24 || !isValidHex(val) {
+            return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
+        }
+
+    case "string":
+        val, ok := fieldValue.(string)
+        if !ok {
+            return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
+        }
+        if minLength, ok := rules["minlength"].(int); ok && len(val) < minLength {
+            if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have a string length greater than or equal to %d", fieldName, minLength)
+        }
+        if maxLength, ok := rules["maxlength"].(int); ok && len(val) > maxLength {
+            if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have a string length less than or equal to %d", fieldName, maxLength)
+        }
+
+    case "int":
+        var val int
+        switch v := fieldValue.(type) {
+        case int:
+            val = v
+        case float64:
+            val = int(v) // Convert float64 to int
+        default:
+            return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
+        }
+        if min, ok := rules["min"].(int); ok && val < min {
+            if msg, ok := rules["minMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have a value greater than or equal to %d", fieldName, min)
+        }
+        if max, ok := rules["max"].(int); ok && val > max {
+            if msg, ok := rules["maxMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
+        }
+    }
+
+    // Check for required field
+    if required, ok := rules["required"].(bool); ok && required && (fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "") {
+        if msg, ok := rules["requiredMessage"].(string); ok && msg != "" {
+            return fmt.Errorf(msg)
+        }
+        return fmt.Errorf("Field %s is required but not provided", fieldName)
+    }
+
+    return nil
+}
+
+
+// extractValidationRules parses the tag and extracts validation rules and custom messages
+func extractValidationRules(tag string) map[string]interface{} {
+	rules := make(map[string]interface{})
+
+	// Split the tag into parts to extract individual rules
+	parts := strings.Split(tag, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, "minlength=") {
+			minLength, message := extractRuleAndMessage(part, "minlength", "minlengthMessage")
+			rules["minlength"] = minLength
+			rules["minlengthMessage"] = message
 		}
-		if strings.Contains(tag, "max=") {
-			maxStr := strings.Split(strings.Split(tag, "max=")[1], "\"")[0]
-
-			max, err := strconv.Atoi(maxStr)
-			if err != nil {
-				return fmt.Errorf("Invalid max value specified for field %s", fieldName)
-			}
-			if val > max {
-				return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
-			}
+		if strings.Contains(part, "maxlength=") {
+			maxLength, message := extractRuleAndMessage(part, "maxlength", "maxlengthMessage")
+			rules["maxlength"] = maxLength
+			rules["maxlengthMessage"] = message
+		}
+		if strings.Contains(part, "min=") {
+			min, message := extractRuleAndMessage(part, "min", "minMessage")
+			rules["min"] = min
+			rules["minMessage"] = message
+		}
+		if strings.Contains(part, "max=") {
+			max, message := extractRuleAndMessage(part, "max", "maxMessage")
+			rules["max"] = max
+			rules["maxMessage"] = message
+		}
+		if strings.Contains(part, "required") {
+			rules["required"] = true
+			// Extract custom message for required, if provided
+			_, message := extractRuleAndMessage(part, "required", "requiredMessage")
+			rules["requiredMessage"] = message
 		}
 	}
+	return rules
+}
 
-	if strings.Contains(tag, "validate:\"required\"") && (fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "") {
-		return fmt.Errorf("Field %s is required but not provided", fieldName)
-	}
+// extractRuleAndMessage extracts a validation rule and its custom message from a part of the tag
+func extractRuleAndMessage(part, ruleKey, messageKey string) (int, string) {
+    var ruleValue int
+    var message string
 
-	return nil
+    // Extract rule value
+    if start := strings.Index(part, ruleKey+"="); start != -1 {
+        ruleStr := part[start+len(ruleKey+"="):]
+        if end := strings.Index(ruleStr, "\""); end != -1 {
+            ruleStr = ruleStr[:end]
+            ruleValue, _ = strconv.Atoi(ruleStr) // Error ignored as it is handled in the validation logic
+        }
+    }
+
+    // Extract custom message
+    if start := strings.Index(part, messageKey+"="); start != -1 {
+        messageStr := part[start+len(messageKey+"="):]
+        if end := strings.Index(messageStr, "\""); end != -1 {
+            message = messageStr[:end]
+        }
+    }
+
+    return ruleValue, message
 }
 
 // isValidHex checks if the given string is a valid hexadecimal value
 func isValidHex(s string) bool {
-	for _, c := range s {
-		if !('0' <= c && c <= '9') && !('a' <= c && c <= 'f') && !('A' <= c && c <= 'F') {
-			return false
-		}
-	}
-	return true
+    for _, c := range s {
+        if !('0' <= c && c <= '9') && !('a' <= c && c <= 'f') && !('A' <= c && c <= 'F') {
+            return false
+        }
+    }
+    return true
 }
