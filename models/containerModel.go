@@ -30,10 +30,24 @@ type Redis struct {
     CacheTime int `bson:"cacheTime" `
     TriggeredRedisCaches []string `bson:"triggeredRedisCaches" `
 }
-type ContainerModel struct {
-	ID         primitive.ObjectID `bson:"_id,omitempty"`
-	SchemaName string             `bson:"schemaName"`
-	Fields     []Field            `bson:"fields"`
-	Routes Routes `bson:"routes"`
-    Redis Redis `bson:"redis"`
+type PipelineStage struct {
+    Name            string `bson:"name"`
+    PipelineJSON    string `bson:"pipelineJson"` // JSON string of the pipeline
+    IsAuthenticated bool   `bson:"isAuthenticated"`
+    IsAuthorized    bool   `bson:"isAuthorized"`
+    AuthorizeRole   string `bson:"authorizeRole"`
+    IsActive        bool   `bson:"isActive"`
+    IsRedisCached   bool   `bson:"isRedisCached"`
+    CacheTime       int    `bson:"cacheTime"`
+    TriggeredRedisCaches []string `bson:"triggeredRedisCaches"`
 }
+
+type ContainerModel struct {
+    ID             primitive.ObjectID `bson:"_id,omitempty"`
+    SchemaName     string             `bson:"schemaName"`
+    Fields         []Field            `bson:"fields"`
+    Routes         Routes             `bson:"routes"`
+    Redis          Redis              `bson:"redis"`
+    Pipelines      []PipelineStage `bson:"pipelines"` // Array of pipeline configurations
+}
+

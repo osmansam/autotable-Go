@@ -81,7 +81,18 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body.", Data: &fiber.Map{"data": err.Error()}})
         }
     }
+    // Create a set of allowed field names
+    allowedFields := make(map[string]struct{})
+    for _, field := range container.Fields {
+        allowedFields[field.Name] = struct{}{}
+    }
 
+    // Filter out fields not in container.Fields
+    for key := range itemMap {
+        if _, exists := allowedFields[key]; !exists {
+            delete(itemMap, key)
+        }
+    }
     // Replace file fields with URLs
     for fieldName, url := range fileURLs {
         itemMap[fieldName] = url
@@ -374,7 +385,18 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body", Data: &fiber.Map{"data": err.Error()}})
         }
     }
+    // Create a set of allowed field names
+    allowedFields := make(map[string]struct{})
+    for _, field := range container.Fields {
+        allowedFields[field.Name] = struct{}{}
+    }
 
+    // Filter out fields not in container.Fields
+    for key := range updatedItemMap {
+        if _, exists := allowedFields[key]; !exists {
+            delete(updatedItemMap, key)
+        }
+    }
     // Replace file fields with URLs
     for fieldName, url := range fileURLs {
         updatedItemMap[fieldName] = url
@@ -550,35 +572,59 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 }
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	pipelineInput := models.PipelineStageInput{
-        Match:     c.Query("match"),
-        Lookup:    c.Query("lookup"),
-        Unwind:    c.Query("unwind"),
-        Group:     c.Query("group"),
-        Sort:      c.Query("sort"),
-        AddFields: c.Query("addFields"),
-        Limit:     c.Query("limit"),
-        Skip:      c.Query("skip"),
-        Facet:     c.Query("facet"),
-        Merge:     c.Query("merge"),
-        Out:       c.Query("out"),
+    // Fetching the schema name and pipeline name from the query params
+    schemaName := c.Query("schemaName")
+    pipelineName := c.Query("pipelineName")
+
+    // Validate schemaName and pipelineName
+    if schemaName == "" || pipelineName == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name and pipeline name are required"})
     }
-		// Fetching the schema name from the query params
-	schemaName := c.Query("schemaName")
+
+    // Get the container model for the schema
+    var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        // Use the container model from the context if available
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        // Fetch container model if not available in context
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+        }
+    }
 
 
-	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
-	
-items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineInput)
+    // Find the pipeline stage with the given name
+    var pipelineStage models.PipelineStage
+    found := false
+    for _, stage := range container.Pipelines {
+        if stage.Name == pipelineName {
+            pipelineStage = stage
+            found = true
+            break
+        }
+    }
+    if !found {
+        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+            Status:  http.StatusNotFound,
+            Message: "Pipeline not found",
+            Data:    nil,
+        })
+    }
+    pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
+
+    // Execute the dynamic pipeline
+    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
     if err != nil {
-        // Handle error
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
             Status:  http.StatusInternalServerError,
-            Message: "Failed to execute dynamic pipeline.",
+            Message: "Failed to execute dynamic pipeline",
             Data:    &fiber.Map{"error": err.Error()},
         })
     }
@@ -586,7 +632,7 @@ items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineInput
     // Return the results
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
         Status:  http.StatusOK,
-        Message: "Successfully fetched items using dynamic pipeline.",
+        Message: "Successfully fetched items using dynamic pipeline",
         Data:    &fiber.Map{"data": items},
     })
 }

@@ -2,120 +2,80 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func CreateDynamicPipeline(input models.PipelineStageInput) (mongo.Pipeline, error) {
-	var pipeline mongo.Pipeline
+// CreateDynamicPipeline constructs a MongoDB aggregation pipeline from a PipelineStage.
+func CreateDynamicPipeline(input models.PipelineStage) (mongo.Pipeline, error) {
+    var pipeline mongo.Pipeline
 
-	if input.Match != "" {
-		var matchStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Match), true, &matchStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{"$match", matchStage}})
-	}
+    // Unmarshal the JSON string into a slice of bson.M
+    var stages []bson.M
+    if err := json.Unmarshal([]byte(input.PipelineJSON), &stages); err != nil {
+        return nil, fmt.Errorf("error parsing pipeline JSON: %w", err)
+    }
 
-	if input.Lookup != "" {
-		var lookupStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Lookup), true, &lookupStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{"$lookup", lookupStage}})
-	}
+    // Convert slice of bson.M to mongo.Pipeline
+    for _, stage := range stages {
+        // Convert bson.M (map) to bson.D (ordered document)
+        stageD := bson.D{}
+        for key, value := range stage {
+            stageD = append(stageD, bson.E{Key: key, Value: value})
+        }
+        pipeline = append(pipeline, stageD)
+    }
 
-	if input.Unwind != "" {
-		var unwindStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Unwind), true, &unwindStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{"$unwind", unwindStage}})
-	}
-
-	if input.Group != "" {
-		var groupStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Group), true, &groupStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{"$group", groupStage}})
-	}
-
-	if input.Sort != "" {
-		var sortStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Sort), true, &sortStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{"$sort", sortStage}})
-	}
-	if input.AddFields != "" {
-		var addFieldsStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.AddFields), true, &addFieldsStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: addFieldsStage}})
-	}
-
-	if input.Limit != "" {
-		var limitStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Limit), true, &limitStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limitStage}})
-	}
-
-	if input.Skip != "" {
-		var skipStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Skip), true, &skipStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$skip", Value: skipStage}})
-	}
-
-	if input.Facet != "" {
-		var facetStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Facet), true, &facetStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$facet", Value: facetStage}})
-	}
-
-	if input.Merge != "" {
-		var mergeStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Merge), true, &mergeStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$merge", Value: mergeStage}})
-	}
-
-	if input.Out != "" {
-		var outStage bson.D
-		if err := bson.UnmarshalExtJSON([]byte(input.Out), true, &outStage); err != nil {
-			return nil, err
-		}
-		pipeline = append(pipeline, bson.D{{Key: "$out", Value: outStage}})
-	}
-	return pipeline, nil
+    return pipeline, nil
 }
 
-func ExecuteDynamicPipeline(ctx context.Context, collection *mongo.Collection, input models.PipelineStageInput) ([]bson.M, error) {
-    pipeline, err := CreateDynamicPipeline(input)
+// ExecuteDynamicPipeline executes a pipeline against a MongoDB collection.
+func ExecuteDynamicPipeline(ctx context.Context, collection *mongo.Collection, pipelineStage models.PipelineStage) ([]bson.M, error) {
+    pipeline, err := CreateDynamicPipeline(pipelineStage)
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("error creating pipeline: %w", err)
     }
 
     cursor, err := collection.Aggregate(ctx, pipeline)
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("error executing pipeline: %w", err)
     }
     defer cursor.Close(ctx)
 
     var results []bson.M
     if err = cursor.All(ctx, &results); err != nil {
-        return nil, err
+        return nil, fmt.Errorf("error reading pipeline results: %w", err)
     }
 
     return results, nil
+}
+
+// ReplacePlaceholdersWithQueryParams replaces placeholders in a pipeline JSON string with query parameters.
+func ReplacePlaceholdersWithQueryParams(pipelineJSON string, c *fiber.Ctx) string {
+    modifiedJSON := pipelineJSON
+
+    // Regular expression to find placeholders like {{placeholder}}
+    re := regexp.MustCompile(`\{\{(.+?)\}\}`)
+    matches := re.FindAllStringSubmatch(modifiedJSON, -1)
+
+    for _, match := range matches {
+        if len(match) > 1 {
+            placeholder := match[1] // Placeholder name
+            queryValue := c.Query(placeholder)
+
+            // Replace placeholder with query parameter value
+            if queryValue != "" {
+                modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("{{%s}}", placeholder), queryValue)
+            }
+        }
+    }
+
+    return modifiedJSON
 }

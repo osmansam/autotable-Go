@@ -65,6 +65,7 @@ func CreateContainer(c *fiber.Ctx) error {
 		Fields:     container.Fields,
 		Routes: container.Routes,
 		Redis: container.Redis,
+		Pipelines: container.Pipelines,
 	}
 
 	// Insert the container into the database

@@ -10,7 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 var containerCollection *mongo.Collection = configs.GetCollection(configs.DB, "containers")
-
+// this function is used to get the container model from the database
 func GetContainerModel(schemaName string) (*models.ContainerModel, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
