@@ -401,16 +401,26 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     for fieldName, url := range fileURLs {
         updatedItemMap[fieldName] = url
     }
+    // Fetch the existing item
+    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    var existingItem bson.M
+    err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to fetch item", Data: &fiber.Map{"data": err.Error()}})
+    }
+    // Apply updates from updatedItemMap to existingItem
+    for key, value := range updatedItemMap {
+        existingItem[key] = value
+    }
 
     // Validation
-    err = utils.ValidateContainerModel(updatedItemMap, *container)
+    err = utils.ValidateContainerModel(existingItem, *container)
     if err != nil {
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed", Data: &fiber.Map{"data": err.Error()}})
     }
 
     // Update in collection
-    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
-    updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedItemMap})
+    updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
     if err != nil {
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to update item", Data: &fiber.Map{"data": err.Error()}})
     }
