@@ -627,9 +627,19 @@ func GetPipeline(c *fiber.Ctx) error {
         })
     }
     pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
-
-    // Execute the dynamic pipeline
     currentCollection := configs.GetCollection(configs.DB, schemaName)
+
+    redisKey, shouldCache := utils.GeneratePipelineRedisKey(schemaName, pipelineName, container)
+	if shouldCache {
+		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+		if err == nil {
+			var items []bson.M
+			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
+				return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "cache"})
+			}
+		}
+	}
+    // Execute the dynamic pipeline
     items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
     if err != nil {
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -638,11 +648,21 @@ func GetPipeline(c *fiber.Ctx) error {
             Data:    &fiber.Map{"error": err.Error()},
         })
     }
+	if shouldCache {
+		dataToCache, _ := json.Marshal(items)
+		var expiration time.Duration
+		if pipelineStage.CacheTime > 0 {
+			expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
+		} else {
+			expiration = 24 * time.Hour // Default to 24 Hours
+		}
+		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+	}
 
     // Return the results
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
         Status:  http.StatusOK,
         Message: "Successfully fetched items using dynamic pipeline",
-        Data:    &fiber.Map{"data": items},
+        Data:    &fiber.Map{"data": items, "source": "database"},
     })
 }

@@ -39,7 +39,7 @@ type PipelineStage struct {
     IsActive        bool   `bson:"isActive"`
     IsRedisCached   bool   `bson:"isRedisCached"`
     CacheTime       int    `bson:"cacheTime"`
-    TriggeredRedisCaches []string `bson:"triggeredRedisCaches"`
+
 }
 
 type ContainerModel struct {

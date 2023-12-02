@@ -26,3 +26,23 @@ func GenerateRedisKey(routeName, schemaName string, container *models.ContainerM
 
 	return redisKey, shouldCache
 }
+
+// generatePipelineRedisKey generates a Redis key for caching pipelines based on schema name and pipeline name.
+func GeneratePipelineRedisKey(schemaName, pipelineName string, container *models.ContainerModel) (string, bool) {
+	var redisKey string
+	var shouldCache bool
+
+	// Check if caching should be applied based on the IsRedisCached flag for the specified pipeline
+	for _, pipeline := range container.Pipelines {
+		if pipeline.Name == pipelineName && pipeline.IsRedisCached {
+			shouldCache = true
+			break
+		}
+	}
+
+	if shouldCache {
+		redisKey = "pipeline_" + pipelineName + "_schema_" + schemaName
+	}
+
+	return redisKey, shouldCache
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -70,8 +71,12 @@ func ReplacePlaceholdersWithQueryParams(pipelineJSON string, c *fiber.Ctx) strin
             placeholder := match[1] // Placeholder name
             queryValue := c.Query(placeholder)
 
-            // Replace placeholder with query parameter value
-            if queryValue != "" {
+            // Check if the query value is an integer
+            if _, err := strconv.Atoi(queryValue); err == nil {
+                // It's an integer, so replace the placeholder without quotes
+                modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("\"{{%s}}\"", placeholder), queryValue)
+            } else if queryValue != "" {
+                // Replace placeholder with query parameter value (as string)
                 modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("{{%s}}", placeholder), queryValue)
             }
         }
