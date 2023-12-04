@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // create an item for a given collection
@@ -594,20 +596,20 @@ func GetPipeline(c *fiber.Ctx) error {
         return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name and pipeline name are required"})
     }
 
+    // Serialize the current query parameters
+    currentQuery := c.OriginalURL()
+
     // Get the container model for the schema
     var container *models.ContainerModel
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        // Use the container model from the context if available
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
-        // Fetch container model if not available in context
         var err error
         container, err = utils.GetContainerModel(schemaName)
         if err != nil {
             return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
         }
     }
-
 
     // Find the pipeline stage with the given name
     var pipelineStage models.PipelineStage
@@ -630,15 +632,27 @@ func GetPipeline(c *fiber.Ctx) error {
     currentCollection := configs.GetCollection(configs.DB, schemaName)
 
     redisKey, shouldCache := utils.GeneratePipelineRedisKey(schemaName, pipelineName, container)
-	if shouldCache {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var items []bson.M
-			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
-				return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "cache"})
-			}
-		}
-	}
+
+    // Check if query has changed
+    queryChanged := false
+    if shouldCache {
+        storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
+        if err == nil && storedQuery != currentQuery {
+            queryChanged = true
+        }
+    }
+
+    // Fetch from cache if query hasn't changed and cache is available
+    if shouldCache && !queryChanged {
+        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+        if err == nil {
+            var items []bson.M
+            if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
+                return c.Status(fiber.StatusOK).JSON(fiber.Map{"data": items, "source": "cache"})
+            }
+        }
+    }
+
     // Execute the dynamic pipeline
     items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
     if err != nil {
@@ -648,16 +662,19 @@ func GetPipeline(c *fiber.Ctx) error {
             Data:    &fiber.Map{"error": err.Error()},
         })
     }
-	if shouldCache {
-		dataToCache, _ := json.Marshal(items)
-		var expiration time.Duration
-		if pipelineStage.CacheTime > 0 {
-			expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
-		} else {
-			expiration = 24 * time.Hour // Default to 24 Hours
-		}
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-	}
+
+    // Cache the new data and query if shouldCache is true
+    if shouldCache {
+        dataToCache, _ := json.Marshal(items)
+        var expiration time.Duration
+        if pipelineStage.CacheTime > 0 {
+            expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
+        } else {
+            expiration = 24 * time.Hour // Default to 24 Hours
+        }
+        configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+    }
 
     // Return the results
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -666,3 +683,84 @@ func GetPipeline(c *fiber.Ctx) error {
         Data:    &fiber.Map{"data": items, "source": "database"},
     })
 }
+
+// GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
+func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    schemaName := c.Query("schemaName")
+    if schemaName == "" {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
+    }
+
+    // Parse pagination query parameters
+    pageStr := c.Query("page", "1") // Default to page 1
+    limitStr := c.Query("limit", "10") // Default to 10 items per page
+
+    page, err := strconv.Atoi(pageStr)
+    if err != nil || page < 1 {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid page number"})
+    }
+
+    limit, err := strconv.Atoi(limitStr)
+    if err != nil || limit < 1 {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid limit number"})
+    }
+
+    // var container *models.ContainerModel
+    // if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+    //     // Use the container model from the context if available
+    //     container, _ = storedContainer.(*models.ContainerModel)
+    // } else {
+    //     // Fetch container model if not available in context
+    //     var err error
+    //     container, err = utils.GetContainerModel(schemaName)
+    //     if err != nil {
+    //         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+    //     }
+    // }
+
+
+    // Calculate the number of documents to skip
+    skip := (page - 1) * limit
+
+    // Define find options for pagination
+    findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(limit))
+
+    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    cursor, err := currentCollection.Find(ctx, bson.M{}, findOptions)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch items from the database"})
+    }
+    defer cursor.Close(ctx)
+
+    var items []map[string]interface{}
+    for cursor.Next(ctx) {
+        var item map[string]interface{}
+        if err := cursor.Decode(&item); err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to decode an item"})
+        }
+        items = append(items, item)
+    }
+
+    // Get total count of documents in the collection
+    totalItems, err := currentCollection.CountDocuments(ctx, bson.M{})
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to count items"})
+    }
+
+    // Calculate total pages
+    totalPages := int(totalItems) / limit
+    if int(totalItems)%limit > 0 {
+        totalPages++
+    }
+
+    // Return paginated result
+    return c.Status(fiber.StatusOK).JSON(fiber.Map{
+        "data":         items,
+        "totalPages":   totalPages,
+        "totalItems":   totalItems,
+        "currentPage":  page,
+    })
+    }
