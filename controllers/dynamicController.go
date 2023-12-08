@@ -683,7 +683,6 @@ func GetPipeline(c *fiber.Ctx) error {
         Data:    &fiber.Map{"data": items, "source": "database"},
     })
 }
-
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
