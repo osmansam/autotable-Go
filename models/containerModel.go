@@ -42,6 +42,17 @@ type PipelineStage struct {
     CacheTime       int    `bson:"cacheTime"`
 
 }
+type DynamicFunction struct {
+    Name            string `bson:"name"`
+    CodeJSON    string `bson:"codeJson"` // JSON string of the code
+    IsAuthenticated bool   `bson:"isAuthenticated"`
+    IsAuthorized    bool   `bson:"isAuthorized"`
+    AuthorizeRole   string `bson:"authorizeRole"`
+    IsActive        bool   `bson:"isActive"`
+    IsRedisCached   bool   `bson:"isRedisCached"`
+    CacheTime       int    `bson:"cacheTime"`
+
+}
 
 type ContainerModel struct {
     ID             primitive.ObjectID `bson:"_id,omitempty"`
@@ -50,5 +61,6 @@ type ContainerModel struct {
     Routes         Routes             `bson:"routes"`
     Redis          Redis              `bson:"redis"`
     Pipelines      []PipelineStage `bson:"pipelines"` // Array of pipeline configurations
+    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` // Array of dynamic function configurations
 }
 
