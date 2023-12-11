@@ -29,6 +29,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		}
 		c.Locals("containerModel", container)
 
+		// Determine if route Dynamic func
+		isDynamicFunc := routeName == "ExecuteDynamicCode"
 		// Determine if routeName is for a standard route or a pipeline
 		isPipeline := routeName == "GetPipeline"
 		var isAuthenticated bool
@@ -40,7 +42,15 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 					break
 				}
 			}
-		} else {
+		}else if isDynamicFunc {
+			functionName := c.Query("functionName")
+			for _, function := range container.DynamicFunctions {
+				if function.Name == functionName {
+					isAuthenticated = function.IsAuthenticated
+					break
+				}
+			}
+		}else {
 			var route models.RouteSpec
 			switch routeName {
 			case "CreateDynamicModelItem":

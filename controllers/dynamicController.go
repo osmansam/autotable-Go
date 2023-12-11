@@ -767,42 +767,44 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     })
     }
 // executeDynamicCode executes dynamic code from a request.
-func ExecuteDynamicCode(c *fiber.Ctx) error {
-    type request struct {
-        Code string `json:"code"`
+func ExecuteDynamicCode(c *fiber.Ctx) error { 
+    // get the schema name and function name from the query
+    schemaName := c.Query("schemaName")
+    functionName := c.Query("functionName")
+
+    // Fetch the associated container model
+  	var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        // Use the container model from the context if available
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        // Fetch container model if not available in context
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+        }
     }
-    var req request
-    if err := c.BodyParser(&req); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+    // Check if the function exists in DynamicFunctions
+    var dynamicFuncCode string
+    functionExists := false
+    for _, dynamicFunc := range container.DynamicFunctions {
+        if dynamicFunc.Name == functionName {
+            dynamicFuncCode = dynamicFunc.CodeJSON
+            functionExists = true
+            break
+        }
+    }
+    if !functionExists {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Function not defined in container model"})
     }
 
-    functionName := c.Query("functionName")
+    // Define plugin file name
     pluginFileName := "temp_" + functionName + ".so"
     fileName := "temp_" + functionName + ".go"
 
-    var p *plugin.Plugin
-    var f plugin.Symbol
-    var err error
-
-    // Check if the plugin already exists
-    p, err = plugin.Open(pluginFileName)
-    if err == nil {
-        // Plugin exists, try to lookup the function
-        f, err = p.Lookup(functionName)
-        if err == nil {
-            // Function found, execute it
-            if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
-                result, err := executeFunc(c)
-                if err != nil {
-                    return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Function execution failed", "details": err.Error()})
-                }
-                return c.JSON(fiber.Map{"result": result})
-            }
-        }
-    }
-
-    // If the plugin doesn't exist or function not found, generate new code
-    err = ioutil.WriteFile(fileName, []byte(req.Code), 0644)
+    // Write the code to a .go file
+    err := ioutil.WriteFile(fileName, []byte(dynamicFuncCode), 0644)
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to write code"})
     }
@@ -813,16 +815,16 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to compile code", "output": string(out)})
     }
 
-    // Load the newly compiled plugin
-    p, err = plugin.Open(pluginFileName)
+    // Load the plugin
+    p, err := plugin.Open(pluginFileName)
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to open plugin"})
     }
 
-    // Lookup for the function in the new plugin
-    f, err = p.Lookup(functionName)
+    // Lookup for the function in the plugin
+    f, err := p.Lookup(functionName)
     if err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to find function in new code"})
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to find function in code"})
     }
 
     // Execute the function
