@@ -785,18 +785,28 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
             return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
         }
     }
-    // Check if the function exists in DynamicFunctions
+    // Check if the function is defined in c.Locals
     var dynamicFuncCode string
-    functionExists := false
-    for _, dynamicFunc := range container.DynamicFunctions {
-        if dynamicFunc.Name == functionName {
+    if storedFunc := c.Locals("dynamicFunction"); storedFunc != nil {
+        dynamicFunc, ok := storedFunc.(models.DynamicFunction)
+        if ok && dynamicFunc.Name == functionName {
             dynamicFuncCode = dynamicFunc.CodeJSON
-            functionExists = true
-            break
+        } else {
+            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Function not found in context"})
         }
-    }
-    if !functionExists {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Function not defined in container model"})
+    } else {
+        // Check if the function exists in DynamicFunctions
+        functionExists := false
+        for _, dynamicFunc := range container.DynamicFunctions {
+            if dynamicFunc.Name == functionName {
+                dynamicFuncCode = dynamicFunc.CodeJSON
+                functionExists = true
+                break
+            }
+        }
+        if !functionExists {
+            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Function not defined in container model"})
+        }
     }
 
     // Define plugin file name

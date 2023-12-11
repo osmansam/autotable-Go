@@ -47,6 +47,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			for _, function := range container.DynamicFunctions {
 				if function.Name == functionName {
 					isAuthenticated = function.IsAuthenticated
+					c.Locals("dynamicFunction", function)
 					break
 				}
 			}
