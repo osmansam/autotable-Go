@@ -46,3 +46,23 @@ func GeneratePipelineRedisKey(schemaName, pipelineName string, container *models
 
 	return redisKey, shouldCache
 }
+
+// generateDynamicFunctionRedisKey generates a Redis key for caching dynamic functions based on schema name and function name.
+func GenerateDynamicFunctionRedisKey(schemaName, functionName string, container *models.ContainerModel) (string, bool) {
+	var redisKey string
+	var shouldCache bool
+
+	// Check if caching should be applied based on the IsRedisCached flag for the specified function
+	for _, function := range container.DynamicFunctions {
+		if function.Name == functionName && function.IsRedisCached {
+			shouldCache = true
+			break
+		}
+	}
+
+	if shouldCache {
+		redisKey = "function_" + functionName + "_schema_" + schemaName
+	}
+
+	return redisKey, shouldCache
+}

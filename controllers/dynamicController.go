@@ -768,9 +768,13 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     }
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
     schemaName := c.Query("schemaName")
     functionName := c.Query("functionName")
 
+     // Serialize the current query parameters
+    currentQuery := c.OriginalURL()
     // Fetch the associated container model from context
     var container *models.ContainerModel
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
@@ -786,6 +790,27 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
     pluginFileName := "temp_" + functionName + ".so"
     fileName := "temp_" + functionName + ".go"
 
+    // generate new redis key
+    redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(schemaName, functionName, container)
+
+        // Check if query has changed
+    queryChanged := false
+    if shouldCache {
+        storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
+        if err == nil && storedQuery != currentQuery {
+            queryChanged = true
+        }
+    }
+  // Fetch from cache if query hasn't changed and cache is available
+    if shouldCache && !queryChanged {
+        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+        if err == nil {
+            var result interface{}
+            if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
+                return c.JSON(fiber.Map{"result": result, "source": "cache"})
+            }
+        }
+    }
     // Check if plugin exists
     p, err := plugin.Open(pluginFileName)
     if err == nil {
@@ -798,7 +823,16 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
                 if err != nil {
                     return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Function execution failed", "details": err.Error()})
                 }
-                return c.JSON(fiber.Map{"result": result})
+                // Cache result if query hasn't changed and cache is available
+                if shouldCache && !queryChanged {
+                    resultJSON, err := json.Marshal(result)
+                    if err == nil {
+                        configs.RedisClient.Set(ctx, redisKey, resultJSON, 0)
+                        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, 0)
+                    }
+                }
+
+                return c.JSON(fiber.Map{"result": result, "source": "plugin"})
             }
         }
     }
@@ -842,13 +876,27 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to find function in new code"})
     }
 
-    // Execute new function
+    // Execute the function and cache the result if caching is enabled
     if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
         result, err := executeFunc(c)
         if err != nil {
             return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Function execution failed", "details": err.Error()})
         }
-        return c.JSON(fiber.Map{"result": result})
+
+        // Cache the result
+        if shouldCache {
+            dataToCache, _ := json.Marshal(result)
+            var expiration time.Duration
+            if container.Redis.CacheTime > 0 {
+                expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+            } else {
+                expiration = 24 * time.Hour // Default to 24 Hours
+            }
+            configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+            configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+        }
+
+        return c.JSON(fiber.Map{"result": result, "source": "database"})
     } else {
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Invalid function signature"})
     }

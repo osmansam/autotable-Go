@@ -38,6 +38,15 @@ func DeleteCacheForSchema(ctx context.Context, schemaName string, container *mod
             }
         }
     }
+    // Iterate through each dynamic function and delete cache if IsRedisCached is true
+    for _, function := range pipelineContainer.DynamicFunctions {
+        if function.IsRedisCached {
+            functionKey, _ := GenerateDynamicFunctionRedisKey(schemaName, function.Name, pipelineContainer)
+            if _, err := configs.RedisClient.Del(ctx, functionKey).Result(); err != nil {
+                return fmt.Errorf("failed to delete function cache key %s: %v", functionKey, err)
+            }
+        }
+    }
 
     return nil
 }
