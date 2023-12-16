@@ -824,11 +824,17 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
                     return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Function execution failed", "details": err.Error()})
                 }
                 // Cache result if query hasn't changed and cache is available
-                if shouldCache && !queryChanged {
+                if shouldCache  {
+                    var expiration time.Duration
+                    if container.Redis.CacheTime > 0 {
+                        expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+                    } else {
+                        expiration = 24 * time.Hour // Default to 24 Hours
+                    }
                     resultJSON, err := json.Marshal(result)
                     if err == nil {
-                        configs.RedisClient.Set(ctx, redisKey, resultJSON, 0)
-                        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, 0)
+                        configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
+                        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
                     }
                 }
 
