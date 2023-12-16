@@ -224,6 +224,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 	 // Preserve the original Pipelines and DynamicFunctions
     updatedContainer.Pipelines = existingContainer.Pipelines
     updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
+
 	// Update the validated item in the collection
 	updateResult, err := containerCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedContainer})
 	if err != nil {
@@ -354,7 +355,6 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
         "data":    updateResult,
     })
 }
-
 // GetContainer retrieves a single container from the database based on its ID
 func GetContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
