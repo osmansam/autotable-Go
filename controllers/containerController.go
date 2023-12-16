@@ -16,6 +16,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+type DynamicFunctionsUpdate struct {
+    DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
+}
+type PipelinesUpdate struct {
+    Pipelines []models.PipelineStage `json:"Pipelines"`
+}
 var containerCollection *mongo.Collection = configs.GetCollection(configs.DB, "containers")
 var validate = validator.New()
 
@@ -215,6 +221,9 @@ func UpdateContainer(c *fiber.Ctx) error {
             Data: &fiber.Map{"data": err.Error()},
         })
     }
+	 // Preserve the original Pipelines and DynamicFunctions
+    updatedContainer.Pipelines = existingContainer.Pipelines
+    updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
 	// Update the validated item in the collection
 	updateResult, err := containerCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedContainer})
 	if err != nil {
@@ -238,6 +247,112 @@ func UpdateContainer(c *fiber.Ctx) error {
 		Message: "Container successfully updated.",
 		Data:    &fiber.Map{"data": updateResult},
 	})
+}
+// UpdatePipelines updates the Pipelines of a specific container
+func UpdatePipelines(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // Parse container ID from URL parameter
+    containerIdStr := c.Params("id")
+    containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+    if err != nil {
+        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+            "status":  http.StatusBadRequest,
+            "message": "Invalid container ID format",
+            "data":    err.Error(),
+        })
+    }
+
+    // Parse the request body into the update struct
+    var update PipelinesUpdate
+    if err := c.BodyParser(&update); err != nil {
+        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+            "status":  http.StatusBadRequest,
+            "message": "Failed to parse request body",
+            "data":    err.Error(),
+        })
+    }
+
+    // Update the Pipelines in the container
+    updateResult, err := containerCollection.UpdateOne(
+        ctx, 
+        bson.M{"_id": containerId}, 
+        bson.M{"$set": bson.M{"pipelines": update.Pipelines}},
+    )
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+            "status":  http.StatusInternalServerError,
+            "message": "Failed to update Pipelines",
+            "data":    err.Error(),
+        })
+    }
+
+    if updateResult.MatchedCount == 0 {
+        return c.Status(http.StatusNotFound).JSON(fiber.Map{
+            "status":  http.StatusNotFound,
+            "message": "No container found with the specified ID",
+        })
+    }
+
+    return c.Status(http.StatusOK).JSON(fiber.Map{
+        "status":  http.StatusOK,
+        "message": "Pipelines successfully updated",
+        "data":    updateResult,
+    })
+}
+ // Update the DynamicFunctions in the container
+func UpdateDynamicFunctions(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // Parse container ID from URL parameter
+    containerIdStr := c.Params("id")
+    containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+    if err != nil {
+        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+            "status":  http.StatusBadRequest,
+            "message": "Invalid container ID format",
+            "data":    err.Error(),
+        })
+    }
+
+    // Parse the request body into the update struct
+    var update DynamicFunctionsUpdate
+    if err := c.BodyParser(&update); err != nil {
+        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+            "status":  http.StatusBadRequest,
+            "message": "Failed to parse request body",
+            "data":    err.Error(),
+        })
+    }
+
+    // Update the DynamicFunctions in the container
+    updateResult, err := containerCollection.UpdateOne(
+        ctx, 
+        bson.M{"_id": containerId}, 
+        bson.M{"$set": bson.M{"dynamicFunctions": update.DynamicFunctions}},
+    )
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+            "status":  http.StatusInternalServerError,
+            "message": "Failed to update DynamicFunctions",
+            "data":    err.Error(),
+        })
+    }
+
+    if updateResult.MatchedCount == 0 {
+        return c.Status(http.StatusNotFound).JSON(fiber.Map{
+            "status":  http.StatusNotFound,
+            "message": "No container found with the specified ID",
+        })
+    }
+
+    return c.Status(http.StatusOK).JSON(fiber.Map{
+        "status":  http.StatusOK,
+        "message": "DynamicFunctions successfully updated",
+        "data":    updateResult,
+    })
 }
 
 // GetContainer retrieves a single container from the database based on its ID
