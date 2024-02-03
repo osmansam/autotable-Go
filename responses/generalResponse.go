@@ -1,10 +1,8 @@
 package responses
 
-import "github.com/gofiber/fiber/v2"
-
 type GeneralResponse struct {
-    Status int `json:"status"`
-    Message string `json:"message"`
-    Data  *fiber.Map `json:"data"`
-
+    Status  int         `json:"status"`
+    Message string      `json:"message"`
+    Data    interface{} `json:"data"`
+    Source  *string     `json:"source,omitempty"`
 }
