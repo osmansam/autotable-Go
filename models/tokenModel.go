@@ -22,3 +22,6 @@ type Token struct {
 	TimeStamps   `json:",inline"`
 	ExpiresAt time.Time `json:"expires_at" bson:"expires_at"`
 }
+type TokenRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}

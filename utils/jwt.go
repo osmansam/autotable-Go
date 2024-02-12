@@ -39,6 +39,7 @@ func GenerateTokens(userID string,role string) (*TokenDetails, error) {
 	// Refresh Token
 	rtClaims := jwt.MapClaims{}
 	rtClaims["user_id"] = userID
+	rtClaims["role"] = role
 	rtClaims["exp"] = td.RTExpires
 	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, rtClaims)
 	td.RefreshToken, err = rt.SignedString(jwtSecret)

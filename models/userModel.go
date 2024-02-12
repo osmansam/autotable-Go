@@ -13,8 +13,6 @@ type LoginRequest struct {
     Username string `json:"username"`
     Password string `json:"password"`
 }
-type TokenRequest struct {
-	RefreshToken string `json:"refreshToken"`
-}
+
 
 // TODO: Role enum will be added . this should be by default [superadmin, admin] and should be taken from db . by the reqiurement of the project it can be extended
