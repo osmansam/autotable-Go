@@ -6,12 +6,18 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 )
 
-func Authenticate(c *fiber.Ctx) error {
+func Authenticate(c *fiber.Ctx ,isAuthorized bool,authorizeRole string) error {
 	token := c.Get("Authorization") // Assuming the token is in the Authorization header
-	_, err := utils.ParseJWT(token)
+	userID, role, err := utils.ParseToken(token)
+	c.Locals("userID", userID)
+	c.Locals("userRole", role)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
+	if isAuthorized && role != authorizeRole {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+	}
+
 	return c.Next()
 }
 
@@ -34,11 +40,15 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		// Determine if routeName is for a standard route or a pipeline
 		isPipeline := routeName == "GetPipeline"
 		var isAuthenticated bool
+		var isAuthorized bool
+		var authorizeRole string
 		if isPipeline {
 			pipelineName := c.Query("pipelineName")
 			for _, pipeline := range container.Pipelines {
 				if pipeline.Name == pipelineName {
 					isAuthenticated = pipeline.IsAuthenticated
+					isAuthorized = pipeline.IsAuthorized
+					authorizeRole = pipeline.AuthorizeRole
 					break
 				}
 			}
@@ -47,6 +57,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			for _, function := range container.DynamicFunctions {
 				if function.Name == functionName {
 					isAuthenticated = function.IsAuthenticated
+					isAuthorized = function.IsAuthorized
+					authorizeRole = function.AuthorizeRole
 					c.Locals("dynamicFunction", function)
 					break
 				}
@@ -73,12 +85,15 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				return c.Next()
 			}
 			isAuthenticated = route.IsAuthenticated
+			isAuthorized = route.IsAuthorized
+			authorizeRole = route.AuthorizeRole
 		}
 
 		if isAuthenticated {
-			return Authenticate(c)
+			return Authenticate(c, isAuthorized, authorizeRole)
 		}
 
 		return c.Next()
 	}
 }
+// TODO: authorize role will become string array and adjusted in middleware

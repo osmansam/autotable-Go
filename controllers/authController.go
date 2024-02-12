@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,10 +13,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var userCollection *mongo.Collection=configs.GetCollection(configs.DB, "user")
-var refreshTokenCollection *mongo.Collection=configs.GetCollection(configs.DB, "token")
+var userCollection *mongo.Collection = configs.GetCollection(configs.DB, "user")
 
-// register a new user
+// Register a new user
 func Register(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -29,6 +27,7 @@ func Register(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
+	// Check if username exists
 	count, err := userCollection.CountDocuments(ctx, bson.M{"username": user.Username})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -46,6 +45,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	// Hash the password
 	hashedPassword, err := utils.HashPassword(user.Password)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -65,17 +65,17 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-
 	return c.Status(fiber.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  fiber.StatusCreated,
 		Message: "User registered successfully.",
 		Data:    nil,
 	})
 }
-// login and create a token
+
+// Login and create tokens
 func Login(c *fiber.Ctx) error {
-	var user models.User
-	if err := c.BodyParser(&user); err != nil {
+	var loginReq models.LoginRequest
+	if err := c.BodyParser(&loginReq); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Failed to parse the request body.",
@@ -84,7 +84,7 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	storedUser := models.User{}
-	err := userCollection.FindOne(context.TODO(), bson.M{"username": user.Username}).Decode(&storedUser)
+	err := userCollection.FindOne(context.TODO(), bson.M{"username": loginReq.Username}).Decode(&storedUser)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
@@ -93,7 +93,7 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	isValid := utils.CheckPasswordHash(user.Password, storedUser.Password)
+	isValid := utils.CheckPasswordHash(loginReq.Password, storedUser.Password)
 	if !isValid {
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
@@ -102,122 +102,72 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	accessToken, err := utils.CreateJWT(storedUser.ID.Hex())
+	tokenDetails, err := utils.GenerateTokens(storedUser.ID.Hex(),storedUser.Role)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
-			Message: "Could not generate access token.",
+			Message: "Could not generate tokens.",
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
 
-	ipAddress := c.IP()
-	userAgent := c.Get("User-Agent")
+	// Now, you can access the AccessToken and RefreshToken from tokenDetails
+	accessToken := tokenDetails.AccessToken
+	refreshToken := tokenDetails.RefreshToken
 
-	// Check if a refresh token already exists for the user
-	existingToken := models.Token{}
-	err = refreshTokenCollection.FindOne(context.TODO(), bson.M{"user": storedUser.ID}).Decode(&existingToken)
-
-	if err == nil { // If a refresh token is found
-		// Update the existing token's validity, expiration, IP, and UserAgent
-		update := bson.M{
-			"$set": bson.M{
-				"isValid": true,
-				"expires_at": time.Now().Add(30 * 24 * time.Hour),
-				"ip":       ipAddress,
-				"user_agent": userAgent,
-			},
-		}
-		_, err = refreshTokenCollection.UpdateOne(context.TODO(), bson.M{"_id": existingToken.ID}, update)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
-				Status:  fiber.StatusInternalServerError,
-				Message: "Could not update refresh token.",
-				Data:    &fiber.Map{"data": err.Error()},
-			})
-		}
-
-		return c.JSON(responses.GeneralResponse{
-			Status:  fiber.StatusOK,
-			Message: "Login successful.",
-			Data:    &fiber.Map{"accessToken": accessToken, "refreshToken": existingToken.RefreshToken},
-		})
-	}
-
-	// If no refresh token exists, create a new one
-	refreshToken := utils.GenerateRefreshToken()
-	tokenDocument := models.Token{
-		RefreshToken: refreshToken,
-		User:         storedUser.ID,
-		IsValid:      true,
-		Ip:           ipAddress,
-		UserAgent:    userAgent,
-		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
-	}
-
-	_, err = refreshTokenCollection.InsertOne(context.TODO(), tokenDocument)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  fiber.StatusInternalServerError,
-			Message: "Could not save refresh token.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+	// Continue with your logic to respond with the tokens
+	userData := map[string]interface{}{
+		"id":       storedUser.ID.Hex(),
+		"username": storedUser.Username,
+		"role":     storedUser.Role,
 	}
 
 	return c.JSON(responses.GeneralResponse{
 		Status:  fiber.StatusOK,
 		Message: "Login successful.",
-		Data:    &fiber.Map{"accessToken": accessToken, "refreshToken": refreshToken},
+		Data:    &fiber.Map{"accessToken": accessToken, "refreshToken": refreshToken, "user": userData},
 	})
+	
 }
-
-// RefreshToken refreshes the access token
 func Refresh(c *fiber.Ctx) error {
-	refreshTokenStr := c.Get("Authorization")
-	refreshToken := strings.TrimPrefix(refreshTokenStr, "Bearer ")
+	var tokenReq models.TokenRequest
+	if err := c.BodyParser(&tokenReq); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Failed to parse the request body.",
+			Data:    &fiber.Map{"data": err.Error()},
+		})
+	}
 
-	storedToken := models.Token{}
-	err := refreshTokenCollection.FindOne(context.TODO(), bson.M{"refreshtoken": refreshToken}).Decode(&storedToken)
 
-	if err != nil || !storedToken.IsValid || storedToken.ExpiresAt.Before(time.Now()) {
+	refreshToken := tokenReq.RefreshToken
+
+	userID,role, err := utils.ParseToken(refreshToken)
+	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid refresh token.",
-			Data:    nil,
-		})
-	}
-
-	newAccessToken, err := utils.CreateJWT(storedToken.User.Hex())
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  fiber.StatusInternalServerError,
-			Message: "Could not generate access token.",
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
 
-	return c.JSON(responses.GeneralResponse{
-		Status:  fiber.StatusOK,
-		Message: "Token refreshed successfully.",
-		Data:    &fiber.Map{"accessToken": newAccessToken},
-	})
-}
-//log out the user
-func Logout(c *fiber.Ctx) error {
-	refreshTokenStr := c.Get("Authorization")
-	refreshToken := strings.TrimPrefix(refreshTokenStr, "Bearer ")
-	update := bson.M{"$set": bson.M{"isValid": false}}
-	_, err := refreshTokenCollection.UpdateOne(context.TODO(), bson.M{"refreshToken": refreshToken}, update)
+	// TODO, check if the refresh token belongs to the user and is not expired
+	// This step requires storing tokens in DB or a cache with expiration times
+
+	// Generate new tokens
+	tokenDetails, err := utils.GenerateTokens(userID,role)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
-			Message: "Failed to logout.",
+			Message: "Could not generate tokens.",
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
+
+	// Respond with new tokens
 	return c.JSON(responses.GeneralResponse{
 		Status:  fiber.StatusOK,
-		Message: "Logout successful.",
-		Data:    nil,
+		Message: "Tokens refreshed successfully.",
+		Data:    &fiber.Map{"accessToken": tokenDetails.AccessToken, "refreshToken": tokenDetails.RefreshToken},
 	})
 }

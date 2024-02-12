@@ -6,7 +6,7 @@ type Field struct {
 	Name     string  `bson:"name"`
 	Type     string  `bson:"type"`
 	Tag      string  `bson:"tag,omitempty"`
-	Children []Field `bson:"children,omitempty"` // Changed from NestedField to Field to support recursive nesting
+	Children []Field `bson:"children,omitempty"` 
 }
 type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" ` 
@@ -33,7 +33,7 @@ type Redis struct {
 }
 type PipelineStage struct {
     Name            string `bson:"name"`
-    PipelineJSON    string `bson:"pipelineJson"` // JSON string of the pipeline
+    PipelineJSON    string `bson:"pipelineJson"` 
     IsAuthenticated bool   `bson:"isAuthenticated"`
     IsAuthorized    bool   `bson:"isAuthorized"`
     AuthorizeRole   string `bson:"authorizeRole"`
@@ -44,7 +44,7 @@ type PipelineStage struct {
 }
 type DynamicFunction struct {
     Name            string `bson:"name"`
-    CodeJSON    string `bson:"codeJson"` // JSON string of the code
+    CodeJSON    string `bson:"codeJson"` 
     IsAuthenticated bool   `bson:"isAuthenticated"`
     IsAuthorized    bool   `bson:"isAuthorized"`
     AuthorizeRole   string `bson:"authorizeRole"`
@@ -60,7 +60,8 @@ type ContainerModel struct {
     Fields         []Field            `bson:"fields"`
     Routes         Routes             `bson:"routes"`
     Redis          Redis              `bson:"redis"`
-    Pipelines      []PipelineStage `bson:"pipelines"` // Array of pipeline configurations
-    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` // Array of dynamic function configurations
+    Pipelines      []PipelineStage `bson:"pipelines"` 
+    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
 }
 
+// TODO: Authorize Role will be an string array to support multiple roles
