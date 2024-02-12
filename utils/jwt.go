@@ -2,46 +2,79 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 )
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))  
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-func CreateJWT(user string) (string, error) {
-	token := jwt.New(jwt.SigningMethodHS256)
-
-	claims := token.Claims.(jwt.MapClaims)
-	claims["user"] = user
-	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
-
-	t, err := token.SignedString(jwtSecret)
-	return t, err
+type TokenDetails struct {
+	AccessToken  string
+	RefreshToken string
+	ATExpires    int64 
+	RTExpires    int64 
 }
 
-func ParseJWT(tokenStr string) (string, error) {
-	// Remove the "Bearer " prefix
-	tokenStr = strings.TrimPrefix(tokenStr, "Bearer ")
+func GenerateTokens(userID string,role string) (*TokenDetails, error) {
+	td := &TokenDetails{}
+	td.ATExpires = time.Now().Add(time.Hour * 24).Unix() // 24 hours validity 
+	td.RTExpires = time.Now().Add(time.Hour * 24 * 7).Unix() // 7 days validity 
 
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
-	})
-
+	var err error
+	// Access Token
+	atClaims := jwt.MapClaims{}
+	atClaims["authorized"] = true
+	atClaims["user_id"] = userID
+	atClaims["role"] = role
+	atClaims["exp"] = td.ATExpires
+	at := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
+	td.AccessToken, err = at.SignedString(jwtSecret)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		userID, ok := claims["user"].(string)
-		if !ok {
-			return "", errors.New("user claim is missing from token")
-		}
-		return userID, nil
+	// Refresh Token
+	rtClaims := jwt.MapClaims{}
+	rtClaims["user_id"] = userID
+	rtClaims["exp"] = td.RTExpires
+	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, rtClaims)
+	td.RefreshToken, err = rt.SignedString(jwtSecret)
+	if err != nil {
+		return nil, err
 	}
 
-	return "", errors.New("invalid token")
+	return td, nil
+}
+
+func ParseToken(tokenStr string) (string, string, error) {
+    token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+        }
+        return jwtSecret, nil
+    })
+
+    if err != nil {
+        return "", "", err
+    }
+
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok || !token.Valid {
+        return "", "", errors.New("invalid token")
+    }
+
+    userID, ok := claims["user_id"].(string)
+    if !ok {
+        return "", "", errors.New("user_id claim is missing from token")
+    }
+    role, ok := claims["role"].(string)
+    if !ok {
+        return "", "", errors.New("role claim is missing from token")
+    }
+
+    return userID, role, nil
 }
 

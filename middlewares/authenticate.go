@@ -8,10 +8,15 @@ import (
 
 func Authenticate(c *fiber.Ctx) error {
 	token := c.Get("Authorization") // Assuming the token is in the Authorization header
-	_, err := utils.ParseJWT(token)
+	userID, role, err := utils.ParseToken(token)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
 	}
+
+	// You might want to use userID and role for further processing or logging
+	c.Locals("userID", userID)
+	c.Locals("role", role)
+
 	return c.Next()
 }
 
