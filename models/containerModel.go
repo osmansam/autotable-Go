@@ -6,6 +6,7 @@ type Field struct {
 	Name     string  `bson:"name"`
 	Type     string  `bson:"type"`
 	Tag      string  `bson:"tag,omitempty"`
+    CountCheck bool `bson:"countCheck,omitempty"`
 	Children []Field `bson:"children,omitempty"` 
 }
 type RouteSpec struct {

@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -129,6 +130,33 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 
     // Get the associated collection for this schema
     var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+
+    // Checking for CountCheck fields
+    for _, field := range container.Fields {
+        if field.CountCheck {
+            fieldValue, found := itemMap[field.Name]
+            if !found {
+                continue 
+            }
+
+            count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
+            if err != nil {
+                return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+                    "status":  http.StatusInternalServerError,
+                    "message": "Error checking existing field value.",
+                    "data":    err.Error(),
+                })
+            }
+
+            if count > 0 {
+                return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+                    "status":  http.StatusBadRequest,
+                    "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
+                    "data":    nil,
+                })
+            }
+        }
+    }
 
     // Save the validated item into its associated collection
     result, err := currentCollection.InsertOne(ctx, itemMap)
