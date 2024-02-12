@@ -54,13 +54,23 @@ func validateArrayField(item map[string]interface{}, field models.Field) error {
 }
 
 func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag string) error {
-    fieldValue, exists := item[fieldName]
-    if !exists {
-        return fmt.Errorf("Field %s is missing", fieldName)
-    }
+    fieldValue := item[fieldName]
 
     // Extracting the rules and custom messages
     rules := extractValidationRules(tag)
+
+    // Check for required field
+    if required, ok := rules["required"].(bool); ok && required {
+        if fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "" {
+            if msg, ok := rules["requiredMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s is required but not provided", fieldName)
+        }
+    } else if fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "" {
+        // If the field is not required and the value is empty, return without error
+        return nil
+    }
 
     // Perform specific field type validations
     switch fieldType {
