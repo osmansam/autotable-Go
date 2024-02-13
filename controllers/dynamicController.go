@@ -326,7 +326,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 
 	var container *models.ContainerModel
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        // Use the container model from the context if available
+        // Use the container model from the context if availabl
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
         // Fetch container model if not available in context
@@ -677,6 +677,79 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		Data:   items,
 	})
 }
+// handleFilter for a given collection with dynamic query parameters and values.the fields needs to be send in  query like field=value.
+func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    schemaName := c.Query("schemaName")
+
+    // Fetch the associated container model
+    var container *models.ContainerModel
+    var err error
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+                "status":  http.StatusInternalServerError,
+                "message": "Failed to fetch container model",
+                "data":    err.Error(),
+            })
+        }
+    }
+
+    filter := bson.M{}
+    for _, field := range container.Fields {
+        queryValue := c.Query(field.Name)
+        if queryValue == "" {
+            continue
+        }
+
+        convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
+        if err != nil {
+            return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+                "status":  http.StatusBadRequest,
+                "message": err.Error(),
+                "data":    nil,
+            })
+        }
+
+        filter[field.Name] = convertedValue
+    }
+
+    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    results, err := currentCollection.Find(ctx, filter)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+            "status":  http.StatusInternalServerError,
+            "message": "Error fetching filter results.",
+            "data":    err.Error(),
+        })
+    }
+
+    var items []map[string]interface{}
+    defer results.Close(ctx)
+    for results.Next(ctx) {
+        var item map[string]interface{}
+        if err = results.Decode(&item); err != nil {
+            return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+                "status":  http.StatusInternalServerError,
+                "message": "Error decoding filter result.",
+                "data":    err.Error(),
+            })
+        }
+        items = append(items, item)
+    }
+
+    return c.Status(http.StatusOK).JSON(fiber.Map{
+        "status":  http.StatusOK,
+        "message": "Filter results fetched successfully.",
+        "data":    items,
+    })
+}
+
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -72,6 +72,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				route = container.Routes.GetAllDynamicModelItems
 			case "HandleSearchDynamicModelItem":
 				route = container.Routes.HandleSearchDynamicModelItem
+			case "HandleFilterDynamicModelItem":
+				route = container.Routes.HandleFilterDynamicModelItem
 			case "DeleteDynamicModelItem":
 				route = container.Routes.DeleteDynamicModelItem
 			case "UpdateDynamicModelItem":
