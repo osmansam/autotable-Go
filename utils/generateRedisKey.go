@@ -5,7 +5,7 @@ import (
 )
 
 // GenerateRedisKey generates a Redis key for caching based on route, schema names, and an optional ID.
-func GenerateRedisKey(routeName, schemaName string, container *models.ContainerModel, id ...string) (string, bool) {
+func GenerateRedisKey(routeName, schemaName string, container *models.ContainerModel) (string, bool) {
 	var redisKey string
 	var shouldCache bool
 
@@ -19,9 +19,7 @@ func GenerateRedisKey(routeName, schemaName string, container *models.ContainerM
 
 	if shouldCache {
 		redisKey = "route_" + routeName + "_schema_" + schemaName
-		if len(id) > 0 && id[0] != "" {
-			redisKey += "_id_" + id[0]
-		}
+		
 	}
 
 	return redisKey, shouldCache

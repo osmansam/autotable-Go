@@ -575,7 +575,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
-    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schemaName, container, getIdStr)
+    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schemaName, container)
     if shouldCache {
         cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
         if err == nil {
