@@ -499,6 +499,32 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     if err != nil {
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed",  Data: err.Error()})
     }
+        // Checking for CountCheck fields
+    for _, field := range container.Fields {
+        if field.CountCheck {
+            fieldValue, found := updatedItemMap[field.Name]
+            if !found {
+                continue 
+            }
+
+            count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
+            if err != nil {
+                return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+                    "status":  http.StatusInternalServerError,
+                    "message": "Error checking existing field value.",
+                    "data":    err.Error(),
+                })
+            }
+
+            if count > 0 {
+                return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+                    "status":  http.StatusBadRequest,
+                    "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
+                    "data":    nil,
+                })
+            }
+        }
+    }
 
     // Update in collection
     updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
