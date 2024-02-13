@@ -1193,3 +1193,39 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
         })
     }
 }
+// function to test pipeline before saving
+func TestPipeline(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    schemaName := c.Query("schemaName")
+    // Parse request body
+    var requestBody models.TestPipelineRequestBody
+    if err := c.BodyParser(&requestBody); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "status":  fiber.StatusBadRequest,
+            "message": "Invalid request body",
+            "data":    err.Error(),
+        })  
+    }
+    requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
+    currentCollection := configs.GetCollection(configs.DB, schemaName)
+
+    // Execute the dynamic pipeline
+    items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)
+    if err != nil {
+        // Log the error; do not fail the server
+        log.Printf("Error executing test pipeline: %v", err)
+        return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+            "status":  fiber.StatusInternalServerError,
+            "message": "Failed to execute test pipeline",
+            "data":    err.Error(),
+        })
+    }
+
+    // Return the results
+    return c.Status(fiber.StatusOK).JSON(fiber.Map{
+        "status":  fiber.StatusOK,
+        "message": "Test pipeline executed successfully",
+        "data":    items,
+    })
+}

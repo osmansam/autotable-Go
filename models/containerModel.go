@@ -22,6 +22,7 @@ type Routes struct {
     GetAllDynamicModelItems RouteSpec `bson:"getAllDynamicModelItems"`
     GetAllDynamicModelItemsWithPagination RouteSpec `bson:"getAllDynamicModelItemsWithPagination"`
     GetPipeline RouteSpec `bson:"getPipeline"`
+    TestPipeline RouteSpec `bson:"testPipeline"`
     HandleSearchDynamicModelItem RouteSpec `bson:"handleSearchDynamicModelItem"`
     HandleFilterDynamicModelItem RouteSpec `bson:"handleFilterDynamicModelItem"`
     DeleteDynamicModelItem RouteSpec `bson:"deleteDynamicModelItem"`

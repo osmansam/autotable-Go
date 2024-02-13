@@ -82,6 +82,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				route = container.Routes.GetDynamicModelItem
 			case "GetAllDynamicModelItemsWithPagination":
 				route = container.Routes.GetAllDynamicModelItemsWithPagination
+			case "TestPipeline":
+				route = container.Routes.TestPipeline
 			default:
 				// If the route name does not match any known route, proceed without authentication
 				return c.Next()
