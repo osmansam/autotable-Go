@@ -131,9 +131,9 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     // Get the associated collection for this schema
     var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
 
-    // Checking for CountCheck fields
+    // Checking for Unique fields
     for _, field := range container.Fields {
-        if field.CountCheck {
+        if field.Unique {
             fieldValue, found := itemMap[field.Name]
             if !found {
                 continue 
@@ -499,9 +499,9 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     if err != nil {
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed",  Data: err.Error()})
     }
-        // Checking for CountCheck fields
+        // Checking for Unique fields
     for _, field := range container.Fields {
-        if field.CountCheck {
+        if field.Unique {
             fieldValue, found := updatedItemMap[field.Name]
             if !found {
                 continue 
