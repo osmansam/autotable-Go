@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -55,6 +54,6 @@ var DB *mongo.Client = ConnectDB()
 var RedisClient *redis.Client = ConnectRedis()
 //getting database collections
 func GetCollection(client *mongo.Client, collectionName string) *mongo.Collection {
-	collection := client.Database(os.Getenv("COLLECTION_NAME")).Collection(collectionName)
+	collection := client.Database("15-AUTOTABLE").Collection(collectionName)
 	return collection
 }

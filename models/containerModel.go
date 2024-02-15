@@ -66,5 +66,17 @@ type ContainerModel struct {
     Pipelines      []PipelineStage `bson:"pipelines"` 
     DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
 }
+type DynamicApiModel struct {
+    Url             string `bson:"url"`
+    Method          string `bson:"method"`
+    Dependencies    []string `bson:"dependencies"`
+    IsAuthenticated bool   `bson:"isAuthenticated"`
+    IsAuthorized    bool   `bson:"isAuthorized"`
+    AuthorizeRole   string `bson:"authorizeRole"`
+    IsActive        bool   `bson:"isActive"`
+    IsRedisCached   bool   `bson:"isRedisCached"`
+    CacheTime       int    `bson:"cacheTime"`
+}
+
 
 // TODO: Authorize Role will be an string array to support multiple roles
