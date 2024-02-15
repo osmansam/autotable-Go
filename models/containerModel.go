@@ -57,16 +57,8 @@ type DynamicFunction struct {
 
 }
 
-type ContainerModel struct {
-    ID             primitive.ObjectID `bson:"_id,omitempty"`
-    SchemaName     string             `bson:"schemaName"`
-    Fields         []Field            `bson:"fields"`
-    Routes         Routes             `bson:"routes"`
-    Redis          Redis              `bson:"redis"`
-    Pipelines      []PipelineStage `bson:"pipelines"` 
-    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
-}
 type DynamicApiModel struct {
+    Name            string `bson:"name"`    
     Url             string `bson:"url"`
     Method          string `bson:"method"`
     Dependencies    []string `bson:"dependencies"`
@@ -76,6 +68,16 @@ type DynamicApiModel struct {
     IsActive        bool   `bson:"isActive"`
     IsRedisCached   bool   `bson:"isRedisCached"`
     CacheTime       int    `bson:"cacheTime"`
+}
+type ContainerModel struct {
+    ID             primitive.ObjectID `bson:"_id,omitempty"`
+    SchemaName     string             `bson:"schemaName"`
+    Fields         []Field            `bson:"fields"`
+    Routes         Routes             `bson:"routes"`
+    Redis          Redis              `bson:"redis"`
+    Pipelines      []PipelineStage `bson:"pipelines"` 
+    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
+    DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
 }
 
 

@@ -1229,3 +1229,118 @@ func TestPipeline(c *fiber.Ctx) error {
         "data":    items,
     })
 }
+
+// TODO:redis generate key and delete key will added into this function and then the route will be added and tested again
+func ExecuteDynamicAPI(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    schemaName := c.Query("schemaName")
+    apiName := c.Query("apiName")
+
+    // Fetch the associated container model from context
+    var container *models.ContainerModel
+    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+        container, _ = storedContainer.(*models.ContainerModel)
+    } else {
+        var err error
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+                Status:  http.StatusInternalServerError,
+                Message: "Failed to fetch container model",
+                Data:    err.Error(),
+            })
+        }
+    }
+
+    // Check if API is defined in container model
+    var dynamicApi *models.DynamicApiModel
+    apiExists := false
+    for _, api := range container.DynamicApis {
+        if api.Name == apiName {
+            dynamicApi = &api
+            apiExists = true
+            break
+        }
+    }
+    if !apiExists {
+        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status:  http.StatusBadRequest,
+            Message: "API not found",
+            Data:    nil,
+        })
+    }
+
+    // Validate dependencies
+    var requestBody map[string]interface{}
+    if err := c.BodyParser(&requestBody); err != nil {
+        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status:  http.StatusBadRequest,
+            Message: "Invalid request body",
+            Data:    err.Error(),
+        })
+    }
+    for _, dependency := range dynamicApi.Dependencies {
+        if _, ok := requestBody[dependency]; !ok {
+            return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+                Status:  http.StatusBadRequest,
+                Message: fmt.Sprintf("Missing dependency: %s", dependency),
+                Data:    nil,
+            })
+        }
+    }
+
+    // Generate Redis key for caching
+    redisKey := fmt.Sprintf("%s:%s", schemaName, apiName)
+    // Attempt to fetch from cache if enabled
+    if dynamicApi.IsRedisCached {
+        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+        if err == nil {
+            var result interface{}
+            if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
+                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+                    Status:  http.StatusOK,
+                    Message: "API result fetched from cache",
+                    Data:    result,
+                    Source:  utils.PointerToString("cache"),
+                })
+            }
+        }
+    }
+
+    apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicApi.Method, dynamicApi.Url, requestBody)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status:  http.StatusInternalServerError,
+            Message: "Failed to execute API call",
+            Data:    err.Error(),
+        })
+    }
+
+    var apiResult interface{}
+    if err := json.Unmarshal(apiResultBytes, &apiResult); err != nil {
+        return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status:  http.StatusInternalServerError,
+            Message: "Failed to unmarshal API response",
+            Data:    err.Error(),
+        })
+    }
+    // Cache the result if enabled
+    if dynamicApi.IsRedisCached {
+        var expiration time.Duration
+        if dynamicApi.CacheTime > 0 {
+            expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
+        } else {
+            expiration = 24 * time.Hour // Default to 24 Hours
+        }
+        resultJSON, _ := json.Marshal(apiResult)
+        configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
+    }
+
+    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+        Status:  http.StatusOK,
+        Message: "API result fetched",
+        Data:    apiResult,
+        Source:  utils.PointerToString("API call"),
+    })
+}
