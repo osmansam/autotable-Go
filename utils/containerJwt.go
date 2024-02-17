@@ -2,6 +2,7 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/dgrijalva/jwt-go"
@@ -37,9 +38,9 @@ func ParseContainerToken(tokenStr string) ([]string, error) {
 		}
 		return []byte(os.Getenv("CONTAINER_JWT_SECRET")), nil
 	}
-
 	token, err := jwt.ParseWithClaims(tokenStr, &CustomClaims{}, keyFunc)
 	if err != nil {
+		fmt.Println("error: ", err)
 		return nil, err
 	}
 

@@ -17,6 +17,7 @@ func ContainerAuthenticate(routeName string) fiber.Handler {
 		// Extract the token
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		// Parse the token
+
 		permissions, err := utils.ParseContainerToken(token)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).SendString("Unauthorized: Invalid token")
