@@ -7,7 +7,6 @@ import (
 	"github.com/dgrijalva/jwt-go"
 )
 
-
 type CustomClaims struct {
 	UserId    string `json:"userId"`
 	Email     string `json:"email"`
@@ -15,24 +14,21 @@ type CustomClaims struct {
 	jwt.StandardClaims
 }
 
-
 type ProjectRole struct {
 	Project Project `json:"project"`
 	Role    Role    `json:"role"`
 }
 
-
 type Project struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	BaseUrl	 	string `json:"baseUrl"`
 }
-
 
 type Role struct {
 	Name        string `json:"name"`
 	Permissions []string `json:"permissions"`
 }
-
 
 func ParseContainerToken(tokenStr string) (*CustomClaims, error) {
 	keyFunc := func(token *jwt.Token) (interface{}, error) {

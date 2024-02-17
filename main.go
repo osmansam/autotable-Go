@@ -12,13 +12,8 @@ import (
 	"github.com/osmansam/autotableGo/routes"
 )
 
-
-
-
-const portNumber = ":3002"
-
 func main() {
-
+	portNumber:= os.Getenv("PORT_NUMBER")
 	app := fiber.New()
 	// Create a new directory if not exists to store images
 		if _, err := os.Stat("./temp"); os.IsNotExist(err) {
