@@ -7,25 +7,33 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 )
 
-func ContainerAuthenticate(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	// Check if the Authorization header is in the expected format
-	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).SendString("No Authorization header provided")
-	}
-	// Expecting "Bearer <token>"
-	parts := strings.SplitN(authHeader, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return c.Status(fiber.StatusUnauthorized).SendString("Invalid Authorization header format")
-	}
-	// Extract the token
-	token := parts[1]
-	// Parse the token
-	permissions, err := utils.ParseContainerToken(token)
+func ContainerAuthenticate(routeName string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		authHeader := c.Get("Authorization")
+		// Check for Bearer token format
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			return c.Status(fiber.StatusUnauthorized).SendString("Invalid or missing Authorization header")
+		}
+		// Extract the token
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		// Parse the token
+		permissions, err := utils.ParseContainerToken(token)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).SendString("Unauthorized: Invalid token")
+		}
 
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
-	}	
-	c.Locals("permissions", permissions)
-	return c.Next()
+		// Check if the routeName is in the permissions
+		hasAccess := false
+		for _, perm := range permissions {
+			if perm == routeName {
+				hasAccess = true
+				break
+			}
+		}
+		if !hasAccess {
+			return c.Status(fiber.StatusForbidden).SendString("Forbidden: You don't have permission to access this route")
+		}
+
+		return c.Next()
+	}
 }
