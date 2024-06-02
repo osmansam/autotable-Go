@@ -6,6 +6,7 @@ type Field struct {
 	Name     string  `bson:"name"`
 	Type     string  `bson:"type"`
 	Tag      string  `bson:"tag,omitempty"`
+	IsForceDelete      bool  `bson:"isForceDelete,omitempty"`
     Unique bool `bson:"unique,omitempty"`
 	Children []Field `bson:"children,omitempty"` 
 }

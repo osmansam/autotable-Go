@@ -345,7 +345,8 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
                 "data":    err.Error(),
             })
         }
-    	for _, container := range allContainers {
+	// First check if any reference prevents deletion
+	for _, container := range allContainers {
 		if container.SchemaName != schemaName { // Skip the current schema
 			for _, field := range container.Fields {
 				if field.Type == "objectId" && field.Name == schemaName { // Field referencing the schema as an objectId
@@ -358,11 +359,30 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 							"data":    err.Error(),
 						})
 					}
-					if count > 0 {
+					if count > 0 && !field.IsForceDelete {
 						return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 							"status":  http.StatusBadRequest,
-							"message": fmt.Sprintf("Cannot delete: This item is still referenced in schema '%s'.", container.SchemaName),
+							"message": fmt.Sprintf("Cannot delete: This item is still referenced in schema '%s' and cannot be forcibly deleted.", container.SchemaName),
 							"data":    nil,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// If passed, proceed with deletion
+	for _, container := range allContainers {
+		if container.SchemaName != schemaName { // Skip the current schema
+			for _, field := range container.Fields {
+				if field.Type == "objectId" && field.Name == schemaName && field.IsForceDelete { // Field referencing the schema as an objectId
+					collection := configs.GetCollection(configs.DB, container.SchemaName)
+					_, delErr := collection.DeleteMany(ctx, bson.M{field.Name: deleteId})
+					if delErr != nil {
+						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+							"status":  http.StatusInternalServerError,
+							"message": "Failed to force delete referenced items.",
+							"data":    delErr.Error(),
 						})
 					}
 				}
