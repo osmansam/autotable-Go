@@ -315,6 +315,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
         Source: utils.PointerToString("database"),
     })
 }
+// TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
 
 //delete an item from the collection
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
