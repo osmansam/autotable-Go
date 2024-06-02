@@ -320,10 +320,54 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
+    
+    // Attempting to convert the ID from string to ObjectID
+	deleteIdStr := c.Params("id")
+	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Provided ID is not in the valid format.",
+			Data:  err.Error(),
+		})
+	}
 
+
+    //check if schema is used as objectId in other containers
+    allContainers, err := utils.GetAllContainerModels()
+        if err != nil {
+            return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+                "status":  http.StatusInternalServerError,
+                "message": "Failed to retrieve container models.",
+                "data":    err.Error(),
+            })
+        }
+    	for _, container := range allContainers {
+		if container.SchemaName != schemaName { // Skip the current schema
+			for _, field := range container.Fields {
+				if field.Type == "objectId" && field.Name == schemaName { // Field referencing the schema as an objectId
+					collection := configs.GetCollection(configs.DB, container.SchemaName)
+					count, err := collection.CountDocuments(ctx, bson.M{field.Name: deleteId})
+					if err != nil {
+						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+							"status":  http.StatusInternalServerError,
+							"message": "Database error while checking references.",
+							"data":    err.Error(),
+						})
+					}
+					if count > 0 {
+						return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+							"status":  http.StatusBadRequest,
+							"message": fmt.Sprintf("Cannot delete: This item is still referenced in schema '%s'.", container.SchemaName),
+							"data":    nil,
+						})
+					}
+				}
+			}
+		}
+	}
 	var container *models.ContainerModel
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
         // Use the container model from the context if availabl
@@ -344,17 +388,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Using the schema name to determine the appropriate collection
 	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
 
-	// Attempting to convert the ID from string to ObjectID
-	deleteIdStr := c.Params("id")
-	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
-	if err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:  err.Error(),
-		})
-	}
-
+	
 	// Attempting to delete the item with the given ID from the specified collection
 	result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
