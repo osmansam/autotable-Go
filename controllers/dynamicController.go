@@ -713,17 +713,42 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
             })
 		}
 	}
-	// Define the regex pattern to match anywhere in the string
-	pattern := ".*" + searchKey + ".*"
-	regex := primitive.Regex{Pattern: pattern, Options: "i"} // "i" is for case-insensitive
 
 	// Build the query filter
 	var orQueries []bson.M
 	for _, field := range container.Fields {
-		if field.Type == "string" {
+		switch field.Type {
+		case "string":
+			pattern := ".*" + searchKey + ".*"
+			regex := primitive.Regex{Pattern: pattern, Options: "i"} // Case-insensitive
 			orQueries = append(orQueries, bson.M{field.Name: regex})
+		case "int", "float":
+			if num, err := strconv.ParseFloat(searchKey, 64); err == nil { // Converts to float for both int and float comparisons
+				orQueries = append(orQueries, bson.M{field.Name: num})
+			}
+		case "boolean":
+			if boolVal, err := strconv.ParseBool(searchKey); err == nil {
+				orQueries = append(orQueries, bson.M{field.Name: boolVal})
+			}
+		case "date":
+			if dateVal, err := time.Parse(time.RFC3339, searchKey); err == nil { // Assumes ISO 8601 format; adjust as necessary
+				orQueries = append(orQueries, bson.M{field.Name: dateVal})
+			}
+		case "objectId":
+			if objId, err := primitive.ObjectIDFromHex(searchKey); err == nil {
+				orQueries = append(orQueries, bson.M{field.Name: objId})
+			}
 		}
 	}
+
+	if len(orQueries) == 0 {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "No valid search queries could be constructed from the provided input.",
+			Data:    nil,
+		})
+	}
+
 	filter := bson.M{"$or": orQueries}
 
 	// Using the schema name to determine the appropriate collection
