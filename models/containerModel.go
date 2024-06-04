@@ -62,7 +62,7 @@ type DynamicApiModel struct {
     Name            string `bson:"name"`    
     Url             string `bson:"url"`
     Method          string `bson:"method"`
-    Dependencies    []string `bson:"dependencies"`
+    Dependencies    []string `bson:"dependencies,omitempty"`
     IsAuthenticated bool   `bson:"isAuthenticated"`
     IsAuthorized    bool   `bson:"isAuthorized"`
     AuthorizeRole   string `bson:"authorizeRole"`

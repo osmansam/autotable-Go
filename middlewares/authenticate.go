@@ -35,10 +35,9 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		}
 		c.Locals("containerModel", container)
 
-		// Determine if route Dynamic func
 		isDynamicFunc := routeName == "ExecuteDynamicCode"
-		// Determine if routeName is for a standard route or a pipeline
 		isPipeline := routeName == "GetPipeline"
+		isExecuteApi := routeName == "ExecuteDynamicAPI"
 		var isAuthenticated bool
 		var isAuthorized bool
 		var authorizeRole string
@@ -60,6 +59,17 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 					isAuthorized = function.IsAuthorized
 					authorizeRole = function.AuthorizeRole
 					c.Locals("dynamicFunction", function)
+					break
+				}
+			}
+		}else if isExecuteApi {
+			apiName := c.Query("apiName")
+			for _, api := range container.DynamicApis {
+				if api.Name == apiName {
+					isAuthenticated = api.IsAuthenticated
+					isAuthorized = api.IsAuthorized
+					authorizeRole = api.AuthorizeRole
+					c.Locals("apiName", api)
 					break
 				}
 			}

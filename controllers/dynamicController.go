@@ -1351,27 +1351,34 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         })
     }
 
-    // Validate dependencies
+  // Validate dependencies if they exist
     var requestBody map[string]interface{}
     if err := c.BodyParser(&requestBody); err != nil {
-        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
-            Message: "Invalid request body",
-            Data:    err.Error(),
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "status":  fiber.StatusBadRequest,
+            "message": "Invalid request body",
+            "data":    err.Error(),
         })
     }
-    for _, dependency := range dynamicApi.Dependencies {
-        if _, ok := requestBody[dependency]; !ok {
-            return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-                Status:  http.StatusBadRequest,
-                Message: fmt.Sprintf("Missing dependency: %s", dependency),
-                Data:    nil,
+
+    if dynamicApi.Dependencies != nil && len(dynamicApi.Dependencies) > 0 {
+        missingDependencies := []string{}
+        for _, dependency := range dynamicApi.Dependencies {
+            if value, ok := requestBody[dependency]; !ok || value == nil {
+                missingDependencies = append(missingDependencies, dependency)
+            }
+        }
+        if len(missingDependencies) > 0 {
+            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+                "status":  fiber.StatusBadRequest,
+                "message": "Missing dependencies",
+                "data":    missingDependencies,
             })
         }
     }
 
     // Generate Redis key for caching
-    redisKey := fmt.Sprintf("%s:%s", schemaName, apiName)
+    redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(schemaName, apiName, container)
     // Attempt to fetch from cache if enabled
     if dynamicApi.IsRedisCached {
         cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
@@ -1406,7 +1413,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         })
     }
     // Cache the result if enabled
-    if dynamicApi.IsRedisCached {
+    if shouldCache {
         var expiration time.Duration
         if dynamicApi.CacheTime > 0 {
             expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
