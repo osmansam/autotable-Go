@@ -129,7 +129,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // Get the associated collection for this schema
-    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
 
     // Checking for Unique fields
     for _, field := range container.Fields {
@@ -237,7 +237,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		}
 
 		// If not found in cache, fetch from database
-		currentCollection := configs.GetCollection(configs.DB, schemaName)
+		currentCollection := configs.GetCollection( schemaName)
 		results, err := currentCollection.Find(ctx, bson.M{})
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -283,7 +283,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	}
 
 	// If caching is not enabled, fetch from database
-	currentCollection := configs.GetCollection(configs.DB, schemaName)
+	currentCollection := configs.GetCollection( schemaName)
 	results, err := currentCollection.Find(ctx, bson.M{})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -350,7 +350,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		if container.SchemaName != schemaName { // Skip the current schema
 			for _, field := range container.Fields {
 				if field.Type == "objectId" && field.Name == schemaName { // Field referencing the schema as an objectId
-					collection := configs.GetCollection(configs.DB, container.SchemaName)
+					collection := configs.GetCollection(container.SchemaName)
 					count, err := collection.CountDocuments(ctx, bson.M{field.Name: deleteId})
 					if err != nil {
 						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -376,7 +376,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		if container.SchemaName != schemaName { // Skip the current schema
 			for _, field := range container.Fields {
 				if field.Type == "objectId" && field.Name == schemaName && field.IsForceDelete { // Field referencing the schema as an objectId
-					collection := configs.GetCollection(configs.DB, container.SchemaName)
+					collection := configs.GetCollection( container.SchemaName)
 					_, delErr := collection.DeleteMany(ctx, bson.M{field.Name: deleteId})
 					if delErr != nil {
 						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -407,7 +407,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
     }
 	
 	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+	var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
 
 	
 	// Attempting to delete the item with the given ID from the specified collection
@@ -538,7 +538,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         updatedItemMap[fieldName] = url
     }
     // Fetch the existing item
-    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
     var existingItem bson.M
     err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
     if err != nil {
@@ -668,7 +668,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
-    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    currentCollection := configs.GetCollection( schemaName)
     var result bson.M
     if err := currentCollection.FindOne(ctx, bson.M{"_id": getId}).Decode(&result); err != nil {
         return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "Item not found", Data: nil})
@@ -752,7 +752,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	filter := bson.M{"$or": orQueries}
 
 	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+	var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
 	results, err := currentCollection.Find(ctx, filter)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -825,7 +825,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         filter[field.Name] = convertedValue
     }
 
-    var currentCollection *mongo.Collection = configs.GetCollection(configs.DB, schemaName)
+    var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
     results, err := currentCollection.Find(ctx, filter)
     if err != nil {
         return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -911,7 +911,7 @@ func GetPipeline(c *fiber.Ctx) error {
         })
     }
     pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
-    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    currentCollection := configs.GetCollection( schemaName)
 
     redisKey, shouldCache := utils.GeneratePipelineRedisKey(schemaName, pipelineName, container)
 
@@ -1030,7 +1030,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     // Define find options for pagination
     findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(limit))
 
-    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    currentCollection := configs.GetCollection( schemaName)
     cursor, err := currentCollection.Find(ctx, bson.M{}, findOptions)
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -1288,7 +1288,7 @@ func TestPipeline(c *fiber.Ctx) error {
         })  
     }
     requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
-    currentCollection := configs.GetCollection(configs.DB, schemaName)
+    currentCollection := configs.GetCollection( schemaName)
 
     // Execute the dynamic pipeline
     items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)

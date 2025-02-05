@@ -49,11 +49,14 @@ func ConnectDB() *mongo.Client {
 	return client
 }
 
-//Client instance
-var DB *mongo.Client = ConnectDB()
-var RedisClient *redis.Client = ConnectRedis()
-//getting database collections
-func GetCollection(client *mongo.Client, collectionName string) *mongo.Collection {
-	collection := client.Database("15-AUTOTABLE").Collection(collectionName)
-	return collection
+
+var (
+	DB          *mongo.Client   = ConnectDB()
+	RedisClient *redis.Client   = ConnectRedis()
+	database    *mongo.Database = DB.Database("15-AUTOTABLE") 
+)
+
+//TODO: here database name can be put as an input and the function can be used to get the database
+func GetCollection(collectionName string) *mongo.Collection {
+	return database.Collection(collectionName)
 }

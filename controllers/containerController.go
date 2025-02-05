@@ -22,7 +22,7 @@ type DynamicFunctionsUpdate struct {
 type PipelinesUpdate struct {
     Pipelines []models.PipelineStage `json:"Pipelines"`
 }
-var containerCollection *mongo.Collection = configs.GetCollection(configs.DB, "containers")
+var containerCollection *mongo.Collection = configs.GetCollection( "containers")
 var validate = validator.New()
 
 // CreateContainer creates a container with the provided model name and schema fields

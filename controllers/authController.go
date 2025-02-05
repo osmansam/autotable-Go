@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var userCollection *mongo.Collection = configs.GetCollection(configs.DB, "user")
+var userCollection *mongo.Collection = configs.GetCollection( "user")
 
 // Register a new user
 func Register(c *fiber.Ctx) error {
@@ -126,8 +126,7 @@ func Login(c *fiber.Ctx) error {
 		Status:  fiber.StatusOK,
 		Message: "Login successful.",
 		Data:    &fiber.Map{"accessToken": accessToken, "refreshToken": refreshToken, "user": userData},
-	})
-	
+	})	
 }
 func Refresh(c *fiber.Ctx) error {
 	var tokenReq models.TokenRequest

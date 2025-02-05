@@ -14,7 +14,7 @@ func GetAllContainerModels() ([]models.ContainerModel, error) {
 	var containers []models.ContainerModel
 
 	// Setting up the MongoDB collection
-	containerCollection := configs.GetCollection(configs.DB, "containers")
+	containerCollection := configs.GetCollection( "containers")
 
 	// Context to manage timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
