@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/osmansam/autotableGo/models"
 )
@@ -123,7 +124,55 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
             }
             return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
         }
+        
+        case "date":
+		var dateVal time.Time
+		switch v := fieldValue.(type) {
+		case string:
+			parsedTime, err := time.Parse(time.RFC3339, v) // Expects ISO 8601 format
+			if err != nil {
+				return fmt.Errorf("Field %s should be a valid date in RFC3339 format (e.g., 2023-01-01T00:00:00Z)", fieldName)
+			}
+			dateVal = parsedTime
+		case int, int64, float64:
+			unixTimestamp, err := strconv.ParseInt(fmt.Sprintf("%v", v), 10, 64)
+			if err != nil {
+				return fmt.Errorf("Field %s should be a valid Unix timestamp", fieldName)
+			}
+			dateVal = time.Unix(unixTimestamp, 0)
+		default:
+			return fmt.Errorf("Field %s should be a valid date (RFC3339 string or Unix timestamp)", fieldName)
+		}
+
+		// Check minDate
+		if minDateStr, ok := rules["minDate"].(string); ok {
+			minDate, err := time.Parse(time.RFC3339, minDateStr)
+			if err != nil {
+				return fmt.Errorf("Invalid minDate format for field %s, should be RFC3339 format", fieldName)
+			}
+			if dateVal.Before(minDate) {
+				if msg, ok := rules["minDateMessage"].(string); ok && msg != "" {
+					return fmt.Errorf(msg)
+				}
+				return fmt.Errorf("Field %s should not be earlier than %s", fieldName, minDateStr)
+			}
+		}
+
+		// Check maxDate
+		if maxDateStr, ok := rules["maxDate"].(string); ok {
+			maxDate, err := time.Parse(time.RFC3339, maxDateStr)
+			if err != nil {
+				return fmt.Errorf("Invalid maxDate format for field %s, should be RFC3339 format", fieldName)
+			}
+			if dateVal.After(maxDate) {
+				if msg, ok := rules["maxDateMessage"].(string); ok && msg != "" {
+					return fmt.Errorf(msg)
+				}
+				return fmt.Errorf("Field %s should not be later than %s", fieldName, maxDateStr)
+			}
+		}
     }
+    
 
     // Check for required field
     if required, ok := rules["required"].(bool); ok && required && (fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "") {
