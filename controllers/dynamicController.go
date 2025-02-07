@@ -813,7 +813,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
             continue
         }
 
-        convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
+   convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
         if err != nil {
             return c.Status(http.StatusBadRequest).JSON(fiber.Map{
                 "status":  http.StatusBadRequest,
@@ -822,7 +822,13 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
             })
         }
 
-        filter[field.Name] = convertedValue
+        // Check if the converted value is a slice/array
+        switch v := convertedValue.(type) {
+        case []int, []string:
+            filter[field.Name] = bson.M{"$in": v} // Use $in operator for arrays
+        default:
+            filter[field.Name] = v
+        }
     }
 
     var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
