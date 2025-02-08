@@ -17,7 +17,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		"gt-":  "$gt",
 		"lte-": "$lte",
 		"lt-":  "$lt",
-		"eq-":   "$eq", // Exact match
+		"eq-":  "$eq", // Exact match
 	}
 
 	// Handle date filters with comparison operators
@@ -25,22 +25,52 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		filter := bson.M{}
 		conditionsFound := false
 
-		// Apply range and exact match operators
+		// Apply range and exact match operators for dates
 		for prefix, mongoOp := range operators {
 			if strings.HasPrefix(queryValue, prefix) {
 				dateStr := strings.TrimPrefix(queryValue, prefix)
+				// Optionally, you can parse the date here using parseDate:
+				// parsedDate, err := parseDate(dateStr)
+				// if err != nil {
+				//     return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
+				// }
+				// filter[mongoOp] = parsedDate
 				filter[mongoOp] = dateStr
 				conditionsFound = true
 			}
 		}
 
-		// If an operator (`gte-`, `lt-`, etc.) was found, return the filter
+		// If an operator was found, return the filter
 		if conditionsFound {
 			return filter, nil
 		}
 
 		// If no operator was found, return an error (user must provide one)
 		return nil, fmt.Errorf("invalid date filter for field %s, please use eq-, gte-, gt-, lte-, or lt-", fieldName)
+	}
+
+	// New block: Handle integer filters with comparison operators
+	if fieldType == "int" {
+		filter := bson.M{}
+		conditionsFound := false
+
+		// Apply range and exact match operators for integers
+		for prefix, mongoOp := range operators {
+			if strings.HasPrefix(queryValue, prefix) {
+				intStr := strings.TrimPrefix(queryValue, prefix)
+				intValue, err := strconv.Atoi(intStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid integer filter for field %s: %w", fieldName, err)
+				}
+				filter[mongoOp] = intValue
+				conditionsFound = true
+			}
+		}
+
+		// If an operator was found, return the filter
+		if conditionsFound {
+			return filter, nil
+		}
 	}
 
 	// Handle multiple values (comma-separated lists) - Only for non-date types
@@ -68,7 +98,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		}
 	}
 
-	// Handle single values
+	// Handle single values (when no comma or operator is provided)
 	switch fieldType {
 	case "string":
 		return queryValue, nil
@@ -89,7 +119,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 	}
 }
 
-// parseDate ensures date is parsed correctly and normalized to UTC
+// parseDate ensures the date is parsed correctly and normalized to UTC
 func parseDate(dateStr string) (time.Time, error) {
 	formats := []string{
 		"2006-01-02",
