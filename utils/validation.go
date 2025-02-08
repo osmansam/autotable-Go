@@ -125,55 +125,38 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
             return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
         }
         
-        case "date":
-		var dateVal time.Time
-		switch v := fieldValue.(type) {
-		case string:
-			parsedTime, err := time.Parse(time.RFC3339, v) // Expects ISO 8601 format
-			if err != nil {
-				return fmt.Errorf("Field %s should be a valid date in RFC3339 format (e.g., 2023-01-01T00:00:00Z)", fieldName)
-			}
-			dateVal = parsedTime
-		case int, int64, float64:
-			unixTimestamp, err := strconv.ParseInt(fmt.Sprintf("%v", v), 10, 64)
-			if err != nil {
-				return fmt.Errorf("Field %s should be a valid Unix timestamp", fieldName)
-			}
-			dateVal = time.Unix(unixTimestamp, 0)
-		default:
-			return fmt.Errorf("Field %s should be a valid date (RFC3339 string or Unix timestamp)", fieldName)
-		}
+   case "date":
+    var dateVal time.Time
+    var err error
 
-		// Check minDate
-		if minDateStr, ok := rules["minDate"].(string); ok {
-			minDate, err := time.Parse(time.RFC3339, minDateStr)
-			if err != nil {
-				return fmt.Errorf("Invalid minDate format for field %s, should be RFC3339 format", fieldName)
-			}
-			if dateVal.Before(minDate) {
-				if msg, ok := rules["minDateMessage"].(string); ok && msg != "" {
-					return fmt.Errorf(msg)
-				}
-				return fmt.Errorf("Field %s should not be earlier than %s", fieldName, minDateStr)
-			}
-		}
+    switch v := fieldValue.(type) {
+    case string:
+        dateVal, err = time.Parse(time.RFC3339, v)
+        if err != nil {
+            dateVal, err = time.Parse("2006-01-02", v) // Try without timestamp
+        }
+        if err != nil {
+            return fmt.Errorf("Field %s should be a valid date in RFC3339 (e.g., 2023-01-01T00:00:00Z) or YYYY-MM-DD format", fieldName)
+        }
 
-		// Check maxDate
-		if maxDateStr, ok := rules["maxDate"].(string); ok {
-			maxDate, err := time.Parse(time.RFC3339, maxDateStr)
-			if err != nil {
-				return fmt.Errorf("Invalid maxDate format for field %s, should be RFC3339 format", fieldName)
-			}
-			if dateVal.After(maxDate) {
-				if msg, ok := rules["maxDateMessage"].(string); ok && msg != "" {
-					return fmt.Errorf(msg)
-				}
-				return fmt.Errorf("Field %s should not be later than %s", fieldName, maxDateStr)
-			}
-		}
+    case int64:
+        dateVal = time.Unix(v, 0)
+
+    case int, float64:
+        unixTimestamp := int64(v.(int))
+        dateVal = time.Unix(unixTimestamp, 0)
+
+    default:
+        return fmt.Errorf("Field %s should be a valid date (RFC3339 string, YYYY-MM-DD, or Unix timestamp)", fieldName)
     }
-    
 
+    dateVal = time.Date(dateVal.Year(), dateVal.Month(), dateVal.Day(), 0, 0, 0, 0, time.UTC)
+
+    // Validate minDate and maxDate
+    if err := validateDateConstraints(fieldName, dateVal, rules); err != nil {
+        return err
+    }
+    }
     // Check for required field
     if required, ok := rules["required"].(bool); ok && required && (fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "") {
         if msg, ok := rules["requiredMessage"].(string); ok && msg != "" {
@@ -257,4 +240,35 @@ func isValidHex(s string) bool {
         }
     }
     return true
+}
+
+// validateDateConstraints checks if a date value falls within the defined min/max range
+func validateDateConstraints(fieldName string, dateVal time.Time, rules map[string]interface{}) error {
+    if minDateStr, ok := rules["minDate"].(string); ok {
+        minDate, err := time.Parse("2006-01-02", minDateStr)
+        if err != nil {
+            return fmt.Errorf("Invalid minDate format for field %s, should be YYYY-MM-DD", fieldName)
+        }
+        if dateVal.Before(minDate) {
+            if msg, ok := rules["minDateMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should not be earlier than %s", fieldName, minDateStr)
+        }
+    }
+
+    if maxDateStr, ok := rules["maxDate"].(string); ok {
+        maxDate, err := time.Parse("2006-01-02", maxDateStr)
+        if err != nil {
+            return fmt.Errorf("Invalid maxDate format for field %s, should be YYYY-MM-DD", fieldName)
+        }
+        if dateVal.After(maxDate) {
+            if msg, ok := rules["maxDateMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should not be later than %s", fieldName, maxDateStr)
+        }
+    }
+
+    return nil
 }
