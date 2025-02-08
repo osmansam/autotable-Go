@@ -335,6 +335,19 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		})
 	}
 
+	// Define Redis Lock Key to prevent concurrent deletions of the same item
+	lockKey := fmt.Sprintf("lock:delete:%s:%s", schemaName, deleteId.Hex())
+
+	// Acquire Redis Lock (expires in 10 seconds)
+	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+	if !locked {
+		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
+			Status:  http.StatusConflict,
+			Message: "Another process is already deleting this item",
+			Data:    nil,
+		})
+	}
+	defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
 
     //check if schema is used as objectId in other containers
     allContainers, err := utils.GetAllContainerModels()
@@ -462,6 +475,19 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
             Data:    err.Error(),
         })
     }
+    // Define Redis Lock Key to prevent concurrent updates of the same item
+    lockKey := fmt.Sprintf("lock:update:%s:%s", schemaName, updateId.Hex())
+
+    // Acquire Redis Lock (expires in 10 seconds)
+    lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+    if !locked {
+        return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
+            Status:  http.StatusConflict,
+            Message: "Another process is already updating this item",
+            Data:    nil,
+        })
+    }
+    defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
 
     // Fetch the associated container model
 	var container *models.ContainerModel
