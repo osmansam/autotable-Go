@@ -30,6 +30,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     defer cancel()
 
     schemaName := c.Query("schemaName")
+    log.Printf("Creating item for schema: %s", schemaName)
 
     // Fetch the associated container model
 	var container *models.ContainerModel
@@ -42,7 +43,8 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 		// Fetch container model if not available in context
 		container, err = utils.GetContainerModel(schemaName)
 		if err != nil {
-			  return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
                 Data:    err.Error(),
@@ -66,6 +68,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         // Parse multipart form for image fields
         form, err := c.MultipartForm()
         if err != nil {
+            log.Printf("Error parsing form for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Error parsing form.",  Data: err.Error()})
         }
         itemMap = utils.ProcessFormFields(form.Value)
@@ -80,6 +83,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
                 imageURL, err := utils.UploadToCloudinary(tempFilePath)
                 os.Remove(tempFilePath) // Clean up temp file
                 if err != nil {
+                    log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
                     return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error uploading to Cloudinary.",  Data: err.Error()})
                 }
                 fileURLs[fieldName] = imageURL
@@ -88,6 +92,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     } else {
         // Parse the provided item from request body
         if err := c.BodyParser(&itemMap); err != nil {
+            log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body.",  Data: err.Error()})
         }
     }
@@ -111,6 +116,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     // Validation
    err = utils.ValidateContainerModel(itemMap, *container)
 	if err != nil {
+		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status: http.StatusBadRequest, Message: "Validation failed.", Data: err.Error(),
 		})
@@ -141,6 +147,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 
             count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
             if err != nil {
+                log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
                 return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
                     "status":  http.StatusInternalServerError,
                     "message": "Error checking existing field value.",
@@ -149,6 +156,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
             }
 
             if count > 0 {
+                log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
                 return c.Status(http.StatusBadRequest).JSON(fiber.Map{
                     "status":  http.StatusBadRequest,
                     "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
@@ -161,6 +169,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     // Save the validated item into its associated collection
     result, err := currentCollection.InsertOne(ctx, itemMap)
     if err != nil {
+        log.Printf("Failed to save item for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
             Status: http.StatusInternalServerError, Message: "Failed to save item.", Data: err.Error(),
         })
@@ -169,6 +178,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 if container.Redis.IsRedisCached {
     err = utils.DeleteCacheForSchema(ctx, schemaName, container)
     if err != nil {
+        log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "status":  fiber.StatusInternalServerError,
             "message": "Failed to delete the cache for the schema.",
@@ -187,6 +197,7 @@ if container.Redis.IsRedisCached {
     }
 }
     // Successfully saved the item
+    log.Printf("Item successfully created for schema: %s", schemaName)
     return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
         Status: http.StatusCreated, Message: "Item successfully created.", Data: result,
     })
@@ -197,6 +208,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	defer cancel()
 
 	schemaName := c.Query("schemaName")
+	log.Printf("Fetching all items for schema: %s", schemaName)
 	if schemaName == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
             Status:  fiber.StatusBadRequest,
@@ -214,6 +226,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
         var err error
         container, err = utils.GetContainerModel(schemaName)
         if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
               return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
@@ -230,6 +243,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 			var items []map[string]interface{}
 			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
 				// Data fetched from cache
+				log.Printf("Items successfully fetched from cache for schema: %s", schemaName)
 				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
                     Status: fiber.StatusOK, Message: "Items successfully fetched.", Data: items,Source: utils.PointerToString("cache"),
                 })
@@ -240,6 +254,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		currentCollection := configs.GetCollection( schemaName)
 		results, err := currentCollection.Find(ctx, bson.M{})
 		if err != nil {
+			log.Printf("Failed to fetch items from database for schema: %s, error: %v", schemaName, err)
 			return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  fiber.StatusInternalServerError,
                 Message: "Failed to fetch items",
@@ -274,6 +289,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 
 		// Data fetched from database
+		log.Printf("Items successfully fetched from database for schema: %s", schemaName)
 		return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
             Status:  fiber.StatusOK,
             Message: "Items fetched successfully",
@@ -308,6 +324,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	}
 
 	// Data fetched from database
+	log.Printf("Items successfully fetched from database for schema: %s", schemaName)
 	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
         Status:  fiber.StatusOK,
         Message: "Items successfully fetched.",
@@ -323,11 +340,13 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	defer cancel()
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
+	log.Printf("Deleting item for schema: %s", schemaName)
     
     // Attempting to convert the ID from string to ObjectID
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
 	if err != nil {
+		log.Printf("Provided ID is not in the valid format for schema: %s, error: %v", schemaName, err)
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Provided ID is not in the valid format.",
@@ -341,6 +360,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Acquire Redis Lock (expires in 10 seconds)
 	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
 	if !locked {
+		log.Printf("Another process is already deleting this item for schema: %s", schemaName)
 		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
 			Status:  http.StatusConflict,
 			Message: "Another process is already deleting this item",
@@ -352,6 +372,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
     //check if schema is used as objectId in other containers
     allContainers, err := utils.GetAllContainerModels()
         if err != nil {
+			log.Printf("Failed to retrieve container models for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
                 "status":  http.StatusInternalServerError,
                 "message": "Failed to retrieve container models.",
@@ -366,6 +387,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 					collection := configs.GetCollection(container.SchemaName)
 					count, err := collection.CountDocuments(ctx, bson.M{field.Name: deleteId})
 					if err != nil {
+						log.Printf("Database error while checking references for schema: %s, error: %v", schemaName, err)
 						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 							"status":  http.StatusInternalServerError,
 							"message": "Database error while checking references.",
@@ -392,6 +414,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 					collection := configs.GetCollection( container.SchemaName)
 					_, delErr := collection.DeleteMany(ctx, bson.M{field.Name: deleteId})
 					if delErr != nil {
+						log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, delErr)
 						return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 							"status":  http.StatusInternalServerError,
 							"message": "Failed to force delete referenced items.",
@@ -411,6 +434,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
         var err error
         container, err = utils.GetContainerModel(schemaName)
         if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
               return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
@@ -426,6 +450,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Attempting to delete the item with the given ID from the specified collection
 	result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
+		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", schemaName, err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to delete the item from the specified collection.",
@@ -436,6 +461,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 if container.Redis.IsRedisCached {
     err = utils.DeleteCacheForSchema(ctx, schemaName, container)
     if err != nil {
+		log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
         return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
             "status":  fiber.StatusInternalServerError,
             "message": "Failed to delete the cache for the schema.",
@@ -454,6 +480,7 @@ if container.Redis.IsRedisCached {
     }
 }
 	// Successfully deleted the item
+	log.Printf("Item successfully deleted for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Item successfully deleted from the specified collection.",
@@ -466,9 +493,11 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     defer cancel()
 
     schemaName := c.Query("schemaName")
+    log.Printf("Updating item for schema: %s", schemaName)
     updateIdStr := c.Params("id")
     updateId, err := primitive.ObjectIDFromHex(updateIdStr)
     if err != nil {
+		log.Printf("Provided ID is not in the valid format for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
             Status:  http.StatusBadRequest,
             Message: "Provided ID is not in the valid format.",
@@ -481,6 +510,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     // Acquire Redis Lock (expires in 10 seconds)
     lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
     if !locked {
+		log.Printf("Another process is already updating this item for schema: %s", schemaName)
         return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
             Status:  http.StatusConflict,
             Message: "Another process is already updating this item",
@@ -498,6 +528,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		// Fetch container model if not available in context
 		container, err = utils.GetContainerModel(schemaName)
 		if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			  return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
@@ -522,6 +553,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         // Handle multipart form data
         form, err := c.MultipartForm()
         if err != nil {
+			log.Printf("Error in multipart form for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Error in multipart form",  Data: err.Error()})
         }
         updatedItemMap = utils.ProcessFormFields(form.Value)
@@ -536,6 +568,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
                 imageURL, err := utils.UploadToCloudinary(tempFilePath)
                 os.Remove(tempFilePath)
                 if err != nil {
+					log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
                     return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error uploading to Cloudinary",  Data: err.Error()})
                 }
                 fileURLs[fieldName] = imageURL
@@ -544,6 +577,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     } else {
         // Handle JSON body
         if err := c.BodyParser(&updatedItemMap); err != nil {
+			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Failed to parse body",  Data: err.Error()})
         }
     }
@@ -568,6 +602,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     var existingItem bson.M
     err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
     if err != nil {
+		log.Printf("Failed to fetch item for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to fetch item", Data: err.Error()})
     }
     // Apply updates from updatedItemMap to existingItem
@@ -578,6 +613,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     // Validation
     err = utils.ValidateContainerModel(existingItem, *container)
     if err != nil {
+		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Validation failed",  Data: err.Error()})
     }
         // Checking for Unique fields
@@ -590,6 +626,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
             count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
             if err != nil {
+				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
                 return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
                     "status":  http.StatusInternalServerError,
                     "message": "Error checking existing field value.",
@@ -598,6 +635,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
             }
 
             if count > 0 {
+				log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
                 return c.Status(http.StatusBadRequest).JSON(fiber.Map{
                     "status":  http.StatusBadRequest,
                     "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
@@ -610,10 +648,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     // Update in collection
     updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
     if err != nil {
+		log.Printf("Failed to update item for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to update item",  Data: err.Error()})
     }
 
     if updateResult.MatchedCount == 0 {
+		log.Printf("No item found with specified ID for schema: %s", schemaName)
         return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
     }
 	// Now attempting to delete the related cache
@@ -638,6 +678,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
+	log.Printf("Item successfully updated for schema: %s", schemaName)
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: updateResult})
 }
 
@@ -647,7 +688,9 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     defer cancel()
 
     schemaName := c.Query("schemaName")
+    log.Printf("Fetching item for schema: %s", schemaName)
     if schemaName == "" {
+        log.Printf("Schema name is required")
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
             Status:  fiber.StatusBadRequest,
             Message: "Schema name is required",
@@ -658,6 +701,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     getIdStr := c.Params("id")
     getId, err := primitive.ObjectIDFromHex(getIdStr)
     if err != nil {
+        log.Printf("Invalid ID for schema: %s, error: %v", schemaName, err)
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
             Status:  fiber.StatusBadRequest,
             Message: "Invalid ID",
@@ -665,21 +709,24 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
         })
     }
 
-   	var container *models.ContainerModel
+    var container *models.ContainerModel
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
         // Use the container model from the context if available
         container, _ = storedContainer.(*models.ContainerModel)
+        log.Printf("Using container model from context for schema: %s", schemaName)
     } else {
         // Fetch container model if not available in context
         var err error
         container, err = utils.GetContainerModel(schemaName)
         if err != nil {
-              return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
+            return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
                 Data:    err.Error(),
             })
         }
+        log.Printf("Fetched container model for schema: %s", schemaName)
     }
 
     redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schemaName, container)
@@ -689,30 +736,40 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
             var item bson.M
             if err := json.Unmarshal([]byte(cachedData), &item); err == nil {
                 // Data fetched from cache
-                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item found", Data: item,Source: utils.PointerToString("cache")})
+                log.Printf("Item successfully fetched from cache for schema: %s", schemaName)
+                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+                    Status: http.StatusOK, Message: "Item found", Data: item, Source: utils.PointerToString("cache"),
+                })
             }
         }
     }
 
-    currentCollection := configs.GetCollection( schemaName)
+    currentCollection := configs.GetCollection(schemaName)
     var result bson.M
     if err := currentCollection.FindOne(ctx, bson.M{"_id": getId}).Decode(&result); err != nil {
-        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "Item not found", Data: nil})
+        log.Printf("Item not found for schema: %s, error: %v", schemaName, err)
+        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+            Status: http.StatusNotFound, Message: "Item not found", Data: nil,
+        })
     }
 
     if shouldCache {
         dataToCache, _ := json.Marshal(result)
         var expiration time.Duration
-		if container.Redis.CacheTime > 0 {
-			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-		} else {
-			expiration = 24 * time.Hour // Default to 24 Hours
-		}
+        if container.Redis.CacheTime > 0 {
+            expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+        } else {
+            expiration = 24 * time.Hour // Default to 24 Hours
+        }
 
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+        configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+        log.Printf("Item cached for schema: %s with key: %s", schemaName, redisKey)
     }
 
-    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item found", Data: result,Source: utils.PointerToString("database")})
+    log.Printf("Item successfully fetched from database for schema: %s", schemaName)
+    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+        Status: http.StatusOK, Message: "Item found", Data: result, Source: utils.PointerToString("database"),
+    })
 }
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
@@ -721,6 +778,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	searchKey := c.Query("searchKey")
+	log.Printf("Searching items for schema: %s with search key: %s", schemaName, searchKey)
 
 	    // Fetch the associated container model
 	var container *models.ContainerModel
@@ -732,6 +790,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		// Fetch container model if not available in context
 		container, err = utils.GetContainerModel(schemaName)
 		if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			  return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to fetch container model",
@@ -768,6 +827,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	if len(orQueries) == 0 {
+		log.Printf("No valid search queries could be constructed for schema: %s with search key: %s", schemaName, searchKey)
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "No valid search queries could be constructed from the provided input.",
@@ -781,6 +841,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
 	results, err := currentCollection.Find(ctx, filter)
 	if err != nil {
+		log.Printf("Error fetching search results for schema: %s, error: %v", schemaName, err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Error fetching search results.",
@@ -794,6 +855,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	for results.Next(ctx) {
 		var item map[string]interface{}
 		if err = results.Decode(&item); err != nil {
+			log.Printf("Error decoding search result for schema: %s, error: %v", schemaName, err)
 			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 				Status:  http.StatusInternalServerError,
 				Message: "Error decoding search result.",
@@ -803,6 +865,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		items = append(items, item)
 	}
 
+	log.Printf("Search results successfully fetched for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Search results fetched successfully.",
@@ -815,6 +878,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     defer cancel()
 
     schemaName := c.Query("schemaName")
+	log.Printf("Filtering items for schema: %s", schemaName)
 
     // Fetch the associated container model
     var container *models.ContainerModel
@@ -841,8 +905,8 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
         convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
         if err != nil {
-            return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-                "status":  http.StatusBadRequest,
+            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+                "status":  fiber.StatusBadRequest,
                 "message": err.Error(),
                 "data":    nil,
             })
@@ -867,6 +931,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     var currentCollection *mongo.Collection = configs.GetCollection(schemaName)
     results, err := currentCollection.Find(ctx, filter)
     if err != nil {
+		log.Printf("Error fetching filter results for schema: %s, error: %v", schemaName, err)
         return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
             "status":  http.StatusInternalServerError,
             "message": "Error fetching filter results.",
@@ -878,6 +943,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     for results.Next(ctx) {
         var item map[string]interface{}
         if err = results.Decode(&item); err != nil {
+			log.Printf("Error decoding filter result for schema: %s, error: %v", schemaName, err)
             return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
                 "status":  http.StatusInternalServerError,
                 "message": "Error decoding filter result.",
@@ -887,6 +953,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         items = append(items, item)
     }
 
+	log.Printf("Filter results successfully fetched for schema: %s", schemaName)
     return c.Status(http.StatusOK).JSON(fiber.Map{
         "status":  http.StatusOK,
         "message": "Filter results fetched successfully.",
@@ -902,6 +969,7 @@ func GetPipeline(c *fiber.Ctx) error {
     // Fetching the schema name and pipeline name from the query params
     schemaName := c.Query("schemaName")
     pipelineName := c.Query("pipelineName")
+	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s", schemaName, pipelineName)
 
     // Validate schemaName and pipelineName
     if schemaName == "" || pipelineName == "" {
@@ -981,7 +1049,7 @@ func GetPipeline(c *fiber.Ctx) error {
     // Execute the dynamic pipeline
     items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
     if err != nil {
-        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+        return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
             Status:  http.StatusInternalServerError,
             Message: "Failed to execute dynamic pipeline",
             Data:    err.Error(),
@@ -1002,7 +1070,8 @@ func GetPipeline(c *fiber.Ctx) error {
     }
 
     // Return the results
-    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+	log.Printf("Pipeline results successfully fetched for schema: %s with pipeline name: %s", schemaName, pipelineName)
+    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
         Status:  http.StatusOK,
         Message: "Successfully fetched items using dynamic pipeline",
         Data:    items,
@@ -1014,9 +1083,10 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     defer cancel()
 
     schemaName := c.Query("schemaName")
+	log.Printf("Fetching all items with pagination for schema: %s", schemaName)
     if schemaName == "" {
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
+            Status:  fiber.StatusBadRequest,
             Message: "schemaName is required",
             Data:    nil,
         })
@@ -1029,7 +1099,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     page, err := strconv.Atoi(pageStr)
     if err != nil || page < 1 {
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
+            Status:  fiber.StatusBadRequest,
             Message: "Invalid page number",
             Data:    nil,
         })
@@ -1038,7 +1108,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     limit, err := strconv.Atoi(limitStr)
     if err != nil || limit < 1 {
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
+            Status:  fiber.StatusBadRequest,
             Message: "Invalid limit",
             Data:    nil,
         })
@@ -1071,6 +1141,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     currentCollection := configs.GetCollection( schemaName)
     cursor, err := currentCollection.Find(ctx, bson.M{}, findOptions)
     if err != nil {
+		log.Printf("Failed to fetch items with pagination for schema: %s, error: %v", schemaName, err)
         return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
             Status:  http.StatusInternalServerError,
             Message: "Failed to fetch items",
@@ -1083,6 +1154,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     for cursor.Next(ctx) {
         var item map[string]interface{}
         if err := cursor.Decode(&item); err != nil {
+			log.Printf("Failed to decode item for schema: %s, error: %v", schemaName, err)
             return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
                 Status:  http.StatusInternalServerError,
                 Message: "Failed to decode item",
@@ -1095,6 +1167,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     // Get total count of documents in the collection
     totalItems, err := currentCollection.CountDocuments(ctx, bson.M{})
     if err != nil {
+		log.Printf("Failed to fetch total items for schema: %s, error: %v", schemaName, err)
         return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
             Status:  http.StatusInternalServerError,
             Message: "Failed to fetch total items",
@@ -1227,7 +1300,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
     }
     if !functionExists {
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
+            Status:  fiber.StatusBadRequest,
             Message: "Function not found",
             Data:    nil,
         })
@@ -1383,7 +1456,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
     }
     if !apiExists {
         return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
+            Status:  fiber.StatusBadRequest,
             Message: "API not found",
             Data:    nil,
         })

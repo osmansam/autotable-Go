@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"log" // Add log package
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,10 +18,12 @@ var userCollection *mongo.Collection = configs.GetCollection( "user")
 
 // Register a new user
 func Register(c *fiber.Ctx) error {
+	log.Println("Register endpoint called") // Log message
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var user models.User
 	if err := c.BodyParser(&user); err != nil {
+		log.Println("Failed to parse the request body:", err) // Log message
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Failed to parse the request body.",
@@ -30,6 +33,7 @@ func Register(c *fiber.Ctx) error {
 	// Check if username exists
 	count, err := userCollection.CountDocuments(ctx, bson.M{"username": user.Username})
 	if err != nil {
+		log.Println("Failed to query the user from the database:", err) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Failed to query the user from the database.",
@@ -38,6 +42,7 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	if count > 0 {
+		log.Println("Username already exists:", user.Username) // Log message
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Username already exists. Please choose another.",
@@ -48,6 +53,7 @@ func Register(c *fiber.Ctx) error {
 	// Hash the password
 	hashedPassword, err := utils.HashPassword(user.Password)
 	if err != nil {
+		log.Println("Failed to hash password:", err) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Failed to hash password.",
@@ -58,6 +64,7 @@ func Register(c *fiber.Ctx) error {
 	user.Password = hashedPassword
 	_, err = userCollection.InsertOne(ctx, user)
 	if err != nil {
+		log.Println("Failed to create user:", err) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Failed to create user.",
@@ -65,6 +72,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	log.Println("User registered successfully:", user.Username) // Log message
 	return c.Status(fiber.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  fiber.StatusCreated,
 		Message: "User registered successfully.",
@@ -74,8 +82,10 @@ func Register(c *fiber.Ctx) error {
 
 // Login and create tokens
 func Login(c *fiber.Ctx) error {
+	log.Println("Login endpoint called") // Log message
 	var loginReq models.LoginRequest
 	if err := c.BodyParser(&loginReq); err != nil {
+		log.Println("Failed to parse the request body:", err) // Log message
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Failed to parse the request body.",
@@ -86,6 +96,7 @@ func Login(c *fiber.Ctx) error {
 	storedUser := models.User{}
 	err := userCollection.FindOne(context.TODO(), bson.M{"username": loginReq.Username}).Decode(&storedUser)
 	if err != nil {
+		log.Println("Invalid login credentials for username:", loginReq.Username) // Log message
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid login credentials.",
@@ -95,6 +106,7 @@ func Login(c *fiber.Ctx) error {
 
 	isValid := utils.CheckPasswordHash(loginReq.Password, storedUser.Password)
 	if !isValid {
+		log.Println("Invalid login credentials for username:", loginReq.Username) // Log message
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid login credentials.",
@@ -104,6 +116,7 @@ func Login(c *fiber.Ctx) error {
 
 	tokenDetails, err := utils.GenerateTokens(storedUser.ID.Hex(),storedUser.Role)
 	if err != nil {
+		log.Println("Could not generate tokens for user:", storedUser.Username) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Could not generate tokens.",
@@ -122,6 +135,7 @@ func Login(c *fiber.Ctx) error {
 		"role":     storedUser.Role,
 	}
 
+	log.Println("Login successful for user:", storedUser.Username) // Log message
 	return c.JSON(responses.GeneralResponse{
 		Status:  fiber.StatusOK,
 		Message: "Login successful.",
@@ -129,8 +143,10 @@ func Login(c *fiber.Ctx) error {
 	})	
 }
 func Refresh(c *fiber.Ctx) error {
+	log.Println("Refresh endpoint called") // Log message
 	var tokenReq models.TokenRequest
 	if err := c.BodyParser(&tokenReq); err != nil {
+		log.Println("Failed to parse the request body:", err) // Log message
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Failed to parse the request body.",
@@ -143,6 +159,7 @@ func Refresh(c *fiber.Ctx) error {
 
 	userID,role, err := utils.ParseToken(refreshToken)
 	if err != nil {
+		log.Println("Invalid refresh token:", err) // Log message
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid refresh token.",
@@ -156,6 +173,7 @@ func Refresh(c *fiber.Ctx) error {
 	// Generate new tokens
 	tokenDetails, err := utils.GenerateTokens(userID,role)
 	if err != nil {
+		log.Println("Could not generate tokens for user ID:", userID) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Could not generate tokens.",
@@ -163,6 +181,7 @@ func Refresh(c *fiber.Ctx) error {
 		})
 	}
 
+	log.Println("Tokens refreshed successfully for user ID:", userID) // Log message
 	// Respond with new tokens
 	return c.JSON(responses.GeneralResponse{
 		Status:  fiber.StatusOK,
