@@ -874,93 +874,175 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 }
 // handleFilter for a given collection with dynamic query parameters and values.the fields needs to be send in  query like field=value.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    schemaName := c.Query("schemaName")
+	schemaName := c.Query("schemaName")
 	log.Printf("Filtering items for schema: %s", schemaName)
 
-    // Fetch the associated container model
-    var container *models.ContainerModel
-    var err error
-    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        container, _ = storedContainer.(*models.ContainerModel)
-    } else {
-        container, err = utils.GetContainerModel(schemaName)
-        if err != nil {
-            return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-                "status":  http.StatusInternalServerError,
-                "message": "Failed to fetch container model",
-                "data":    err.Error(),
-            })
-        }
-    }
+	// Fetch the associated container model
+	var container *models.ContainerModel
+	var err error
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  http.StatusInternalServerError,
+				"message": "Failed to fetch container model",
+				"data":    err.Error(),
+			})
+		}
+	}
 
-    filter := bson.M{}
-    for _, field := range container.Fields {
-        queryValue := c.Query(field.Name)
-        if queryValue == "" {
-            continue
-        }
+	// Build the filter from container fields
+	filter := bson.M{}
+	for _, field := range container.Fields {
+		queryValue := c.Query(field.Name)
+		if queryValue == "" {
+			continue
+		}
 
-        convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
-        if err != nil {
-            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-                "status":  fiber.StatusBadRequest,
-                "message": err.Error(),
-                "data":    nil,
-            })
-        }
+		convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  fiber.StatusBadRequest,
+				"message": err.Error(),
+				"data":    nil,
+			})
+		}
 
-        if convertedMap, ok := convertedValue.(bson.M); ok {
-            if existingCondition, exists := filter[field.Name]; exists {
-                existingMap, ok := existingCondition.(bson.M)
-                if ok {
-                    for key, val := range convertedMap {
-                        existingMap[key] = val
-                    }
-                }
-            } else {
-                filter[field.Name] = convertedMap
-            }
-        } else {
-            filter[field.Name] = convertedValue
-        }
-    }
+		// If convertedValue is a map, merge conditions if necessary
+		if convertedMap, ok := convertedValue.(bson.M); ok {
+			if existingCondition, exists := filter[field.Name]; exists {
+				if existingMap, ok := existingCondition.(bson.M); ok {
+					for key, val := range convertedMap {
+						existingMap[key] = val
+					}
+					continue
+				}
+			}
+		}
+		filter[field.Name] = convertedValue
+	}
 
-    var currentCollection *mongo.Collection = configs.GetCollection(schemaName)
-    results, err := currentCollection.Find(ctx, filter)
-    if err != nil {
+	currentCollection := configs.GetCollection(schemaName)
+
+	// Check if both pagination parameters are supplied.
+	pageStr := c.Query("page")
+	limitStr := c.Query("limit")
+
+	// If both parameters are provided, apply pagination.
+	if pageStr != "" && limitStr != "" {
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  fiber.StatusBadRequest,
+				"message": "Invalid page number",
+				"data":    nil,
+			})
+		}
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  fiber.StatusBadRequest,
+				"message": "Invalid limit",
+				"data":    nil,
+			})
+		}
+
+		skip := (page - 1) * limit
+
+		// Define find options for pagination
+		findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(limit))
+
+		// Fetch paginated results
+		cursor, err := currentCollection.Find(ctx, filter, findOptions)
+		if err != nil {
+			log.Printf("Error fetching paginated filter results for schema: %s, error: %v", schemaName, err)
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  http.StatusInternalServerError,
+				"message": "Error fetching paginated filter results.",
+				"data":    err.Error(),
+			})
+		}
+		defer cursor.Close(ctx)
+
+		var items []map[string]interface{}
+		for cursor.Next(ctx) {
+			var item map[string]interface{}
+			if err := cursor.Decode(&item); err != nil {
+				log.Printf("Error decoding paginated filter result for schema: %s, error: %v", schemaName, err)
+				return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+					"status":  http.StatusInternalServerError,
+					"message": "Error decoding paginated filter result.",
+					"data":    err.Error(),
+				})
+			}
+			items = append(items, item)
+		}
+
+		// Get the total count of filtered documents to calculate total pages
+		totalItems, err := currentCollection.CountDocuments(ctx, filter)
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  http.StatusInternalServerError,
+				"message": "Error counting filtered documents.",
+				"data":    err.Error(),
+			})
+		}
+
+		totalPages := int(totalItems) / limit
+		if int(totalItems)%limit > 0 {
+			totalPages++
+		}
+
+		return c.Status(http.StatusOK).JSON(fiber.Map{
+			"status":  http.StatusOK,
+			"message": "Paginated filter results fetched successfully.",
+			"data": fiber.Map{
+				"items":       items,
+				"totalItems":  totalItems,
+				"totalPages":  totalPages,
+				"currentPage": page,
+			},
+		})
+	}
+
+	// If pagination parameters are not supplied together, return all filtered results.
+	cursor, err := currentCollection.Find(ctx, filter)
+	if err != nil {
 		log.Printf("Error fetching filter results for schema: %s, error: %v", schemaName, err)
-        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-            "status":  http.StatusInternalServerError,
-            "message": "Error fetching filter results.",
-            "data":    err.Error(),
-        })
-    }
-    var items []map[string]interface{}
-    defer results.Close(ctx)
-    for results.Next(ctx) {
-        var item map[string]interface{}
-        if err = results.Decode(&item); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+			"status":  http.StatusInternalServerError,
+			"message": "Error fetching filter results.",
+			"data":    err.Error(),
+		})
+	}
+	defer cursor.Close(ctx)
+
+	var items []map[string]interface{}
+	for cursor.Next(ctx) {
+		var item map[string]interface{}
+		if err := cursor.Decode(&item); err != nil {
 			log.Printf("Error decoding filter result for schema: %s, error: %v", schemaName, err)
-            return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-                "status":  http.StatusInternalServerError,
-                "message": "Error decoding filter result.",
-                "data":    err.Error(),
-            })
-        }
-        items = append(items, item)
-    }
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
+				"status":  http.StatusInternalServerError,
+				"message": "Error decoding filter result.",
+				"data":    err.Error(),
+			})
+		}
+		items = append(items, item)
+	}
 
-	log.Printf("Filter results successfully fetched for schema: %s", schemaName)
-    return c.Status(http.StatusOK).JSON(fiber.Map{
-        "status":  http.StatusOK,
-        "message": "Filter results fetched successfully.",
-        "data":    items,
-    })
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  http.StatusOK,
+		"message": "Filter results fetched successfully.",
+		"data":    items,
+	})
 }
-
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
