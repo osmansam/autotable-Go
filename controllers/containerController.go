@@ -37,31 +37,20 @@ func CreateContainer(c *fiber.Ctx) error {
 	log.Println("Parsing request body for CreateContainer")
 	if err := c.BodyParser(&container); err != nil {
 		log.Printf("Failed to parse request body: %v", err)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Failed to parse the request body. Ensure the provided JSON is valid.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to parse the request body. Ensure the provided JSON is valid.")
 	}
 
 	log.Println("Validating parsed data for CreateContainer")
 	if validationErr := validate.Struct(&container); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation error. Some required fields might be missing or have invalid values.",
-			Data:    &fiber.Map{"data": validationErr.Error()},
-		})
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 
 	log.Println("Checking if container already exists in the database")
 	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": container.SchemaName})
 	if err != nil {
 		log.Printf("Database query error: %v", err)
-		return &fiber.Error{
-			Code:    http.StatusInternalServerError,
-			Message: "Unable to query the container model from the database.",
-		}
+		return utils.SendErrorResponse(c, err, "Unable to query the container model from the database.")
 	}
 
 	if count != 0 {
@@ -84,11 +73,7 @@ func CreateContainer(c *fiber.Ctx) error {
 	result, err := containerCollection.InsertOne(ctx, newContainer)
 	if err != nil {
 		log.Printf("Failed to insert container: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to insert the container into the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
 	}
 
 	log.Println("Container successfully created")
@@ -110,11 +95,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 	results, err := containerCollection.Find(ctx, bson.M{})
 	if err != nil {
 		log.Printf("Failed to retrieve containers: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to retrieve containers from the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to retrieve containers from the database. Please try again later.")
 	}
 	defer results.Close(ctx)
 
@@ -123,11 +104,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 		var singleContainer models.ContainerModel
 		if err = results.Decode(&singleContainer); err != nil {
 			log.Printf("Error decoding container: %v", err)
-			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-				Status:  http.StatusInternalServerError,
-				Message: "An error occurred while processing the retrieved containers. Please try again later.",
-				Data:    &fiber.Map{"data": err.Error()},
-			})
+			return utils.SendErrorResponse(c, err, "An error occurred while processing the retrieved containers. Please try again later.")
 		}
 
 		containers = append(containers, singleContainer)
@@ -149,22 +126,14 @@ func DeleteContainer(c *fiber.Ctx) error {
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
 	if err != nil {
 		log.Printf("Invalid ID format: %v", err)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.")
 	}
 
 	log.Println("Attempting to delete container from the database")
 	result, err := containerCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
 		log.Printf("Failed to delete container: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the container from the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to delete the container from the database. Please try again later.")
 	}
 
 	log.Println("Container successfully deleted")
@@ -185,32 +154,20 @@ func UpdateContainer(c *fiber.Ctx) error {
 	log.Println("Parsing request body for UpdateContainer")
 	if err := c.BodyParser(&updatedContainer); err != nil {
 		log.Printf("Failed to parse request body: %v", err)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Failed to parse the request body. Ensure the provided JSON is valid.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to parse the request body. Ensure the provided JSON is valid.")
 	}
 
 	log.Println("Validating parsed data for UpdateContainer")
 	if validationErr := validate.Struct(&updatedContainer); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Validation error. Some required fields might be missing or have invalid values.",
-			Data:    &fiber.Map{"data": validationErr.Error()},
-		})
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 
 	updateIdStr := c.Params("id")
 	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
 	if err != nil {
 		log.Printf("Invalid ID format: %v", err)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
 
 	log.Println("Checking for existing container with the same schema name")
@@ -226,11 +183,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 	}
 	if err != mongo.ErrNoDocuments {
 		log.Printf("Database error: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Database error occurred while checking for existing schema name.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Database error occurred while checking for existing schema name.")
 	}
 
 	updatedContainer.Pipelines = existingContainer.Pipelines
@@ -240,11 +193,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 	updateResult, err := containerCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedContainer})
 	if err != nil {
 		log.Printf("Failed to update container: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to update the item in the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to update the item in the database. Please try again later.")
 	}
 
 	if updateResult.MatchedCount == 0 {
@@ -273,22 +222,14 @@ func UpdatePipelines(c *fiber.Ctx) error {
     containerId, err := primitive.ObjectIDFromHex(containerIdStr)
     if err != nil {
         log.Printf("Invalid container ID format: %v", err)
-        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-            "status":  http.StatusBadRequest,
-            "message": "Invalid container ID format",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Invalid container ID format")
     }
 
     log.Println("Parsing request body for UpdatePipelines")
     var update PipelinesUpdate
     if err := c.BodyParser(&update); err != nil {
         log.Printf("Failed to parse request body: %v", err)
-        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-            "status":  http.StatusBadRequest,
-            "message": "Failed to parse request body",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Failed to parse request body")
     }
 
     log.Println("Updating Pipelines in the container")
@@ -299,11 +240,7 @@ func UpdatePipelines(c *fiber.Ctx) error {
     )
     if err != nil {
         log.Printf("Failed to update Pipelines: %v", err)
-        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-            "status":  http.StatusInternalServerError,
-            "message": "Failed to update Pipelines",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Failed to update Pipelines")
     }
 
     if updateResult.MatchedCount == 0 {
@@ -331,22 +268,14 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
     containerId, err := primitive.ObjectIDFromHex(containerIdStr)
     if err != nil {
         log.Printf("Invalid container ID format: %v", err)
-        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-            "status":  http.StatusBadRequest,
-            "message": "Invalid container ID format",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Invalid container ID format")
     }
 
     log.Println("Parsing request body for UpdateDynamicFunctions")
     var update DynamicFunctionsUpdate
     if err := c.BodyParser(&update); err != nil {
         log.Printf("Failed to parse request body: %v", err)
-        return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-            "status":  http.StatusBadRequest,
-            "message": "Failed to parse request body",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Failed to parse request body")
     }
 
     log.Println("Updating DynamicFunctions in the container")
@@ -357,11 +286,7 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
     )
     if err != nil {
         log.Printf("Failed to update DynamicFunctions: %v", err)
-        return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
-            "status":  http.StatusInternalServerError,
-            "message": "Failed to update DynamicFunctions",
-            "data":    err.Error(),
-        })
+        return utils.SendErrorResponse(c, err, "Failed to update DynamicFunctions")
     }
 
     if updateResult.MatchedCount == 0 {
@@ -389,11 +314,7 @@ func GetContainer(c *fiber.Ctx) error {
 	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
 	if err != nil {
 		log.Printf("Invalid ID format: %v", err)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Provided ID is not in the valid format.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
 
 	log.Println("Fetching container from the database")
@@ -409,11 +330,7 @@ func GetContainer(c *fiber.Ctx) error {
 			})
 		}
 		log.Printf("Failed to retrieve container: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to retrieve the container from the database. Please try again later.",
-			Data:    &fiber.Map{"data": err.Error()},
-		})
+		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
 	}
 
 	log.Println("Container successfully retrieved")

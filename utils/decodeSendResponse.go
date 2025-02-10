@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"log"
+	"net/http"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/responses"
@@ -28,4 +30,12 @@ func SendResponse(c *fiber.Ctx, status int, message string, data interface{}) er
 		Message: message,
 		Data:    data,
 	})
+}
+
+// SendErrorResponse handles errors by logging the internal error and returning a generic message to the client.
+func SendErrorResponse(c *fiber.Ctx, err error, genericMessage string) error {
+	// Log the full error details on the server for debugging purposes.
+	log.Printf("Internal error: %v", err)
+	// Return a generic error message to the client so sensitive details aren't exposed.
+	return SendResponse(c, http.StatusInternalServerError, genericMessage, nil)
 }
