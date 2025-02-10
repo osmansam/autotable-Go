@@ -11,6 +11,7 @@ import (
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -117,6 +118,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 	}
 	defer results.Close(ctx)
 
+
 	for results.Next(ctx) {
 		var singleContainer models.ContainerModel
 		if err = results.Decode(&singleContainer); err != nil {
@@ -130,14 +132,14 @@ func GetAllContainers(c *fiber.Ctx) error {
 
 		containers = append(containers, singleContainer)
 	}
+	if err != nil {
+		return utils.SendResponse(c, http.StatusInternalServerError, "An error occurred while processing the retrieved containers. Please try again later.", err.Error())
+	}
 
 	log.Println("Containers successfully retrieved")
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Containers successfully retrieved.",
-		Data:    &fiber.Map{"data": containers},
-	})
+	return utils.SendResponse(c, http.StatusOK, "Containers successfully retrieved.", containers)
 }
+
 // Delete a container
 func DeleteContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -261,6 +263,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 		Data:    &fiber.Map{"data": updateResult},
 	})
 }
+
 // UpdatePipelines updates the Pipelines of a specific container
 func UpdatePipelines(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -318,7 +321,8 @@ func UpdatePipelines(c *fiber.Ctx) error {
         "data":    updateResult,
     })
 }
- // Update the DynamicFunctions in the container
+
+// Update the DynamicFunctions in the container
 func UpdateDynamicFunctions(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
@@ -375,6 +379,7 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
         "data":    updateResult,
     })
 }
+
 // GetContainer retrieves a single container from the database based on its ID
 func GetContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
