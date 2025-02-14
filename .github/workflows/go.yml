@@ -1,0 +1,65 @@
+name: Go CI/CD
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.20"
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install Dependencies
+        run: go mod download
+
+      - name: Build Application
+        run: go build -o myapp .
+
+      - name: Run Tests
+        run: go test -v ./...
+
+      - name: Create .env file
+        run: |
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
+          echo "API_KEY=${{ secrets.API_KEY }}" >> .env
+          echo CLOUD_NAME=${{ secrets.CLOUD_NAME }} >> .env
+          echo CLOUD_API_KEY=${{ secrets.CLOUD_API_KEY }} >> .env
+          echo CLOUD_API_SECRET=${{ secrets.CLOUD_API_SECRET }} >> .env
+          echo JWT_SECRET=${{ secrets.JWT_SECRET}} >> .env
+          echo CONTAINER_JWT_SECRET=${{secrets.CONTAINER_JWT_SECRET}} >> .env
+          echo PORT_NUMBER=${{secrets.PORT_NUMBER}} >> .env
+          echo MONGO_DB_NAME=${{secrets.MONGO_DB_NAME}} >> .env
+          echo MONGO_URI=${{secrets.MONGO_URI}} >> .env
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rsync files to remote host
+        run: |
+          rsync -avz -e "ssh -i ~/.ssh/id_rsa" myapp .env docker-compose.yml ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
+
+      - name: Run deploy command on remote host
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build myapp && sudo docker system prune -af"
