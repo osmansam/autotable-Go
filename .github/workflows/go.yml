@@ -46,8 +46,9 @@ jobs:
           echo JWT_SECRET=${{ secrets.JWT_SECRET}} >> .env
           echo CONTAINER_JWT_SECRET=${{secrets.CONTAINER_JWT_SECRET}} >> .env
           echo PORT_NUMBER=${{secrets.PORT_NUMBER}} >> .env
-          echo MONGO_DB_NAME=${{secrets.MONGO_DB_NAME}} >> .env
-          echo MONGO_URI=${{secrets.MONGO_URI}} >> .env
+          echo MONGO_URI_BASE=${{secrets.MONGO_URI_BASE}} >> .env
+          echo COLLECTION_NAME=${{secrets.COLLECTION_NAME}} >> .env
+          echo MONGO_URI_SUFFIX=${{secrets.MONGO_URI_SUFFIX}} >> .env
 
       - name: Setup SSH
         run: |
@@ -58,8 +59,8 @@ jobs:
 
       - name: Rsync files to remote host
         run: |
-          rsync -avz -e "ssh -i ~/.ssh/id_rsa" myapp .env docker-compose.yml ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
+          rsync -avz -r -e "ssh -i ./ssh/id_rsa" ./dist ./config .env Dockerfile.production Dockerfile.staging docker-compose.yml  ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
 
       - name: Run deploy command on remote host
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build myapp && sudo docker system prune -af"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"

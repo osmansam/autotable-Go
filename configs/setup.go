@@ -122,7 +122,7 @@ func ConnectRedis() *redis.Client {
 var (
 	DB          *mongo.Client   = ConnectDB()
 	RedisClient *redis.Client   = ConnectRedis()
-	database    *mongo.Database = DB.Database(os.Getenv("MONGO_DB_NAME"))
+	database    *mongo.Database = DB.Database(os.Getenv("COLLECTION_NAME"))
 )
 
 // GetCollection returns a collection from the MongoDB database.

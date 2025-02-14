@@ -26,4 +26,4 @@ jobs:
 
       - name: Run production deploy command
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autotable-production && sudo docker system prune -af"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-production && sudo docker system prune -af"
