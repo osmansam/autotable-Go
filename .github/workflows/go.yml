@@ -47,7 +47,9 @@ jobs:
           chmod 700 ~/.ssh/id_rsa
           touch ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" 
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
+          echo "${{ secrets.HOST }}"
 
       - name: Rsync files to remote host
         run: |
