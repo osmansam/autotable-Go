@@ -81,5 +81,9 @@ type ContainerModel struct {
     DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
 }
 
+var RestrictedSchemaNames = []string{
+    "user",
+}//this is needed so that user container is not created by mistake and get all the data.
+
 
 // TODO: Authorize Role will be an string array to support multiple roles

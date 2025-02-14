@@ -46,6 +46,14 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 
+	// Check if the schema name is in the restricted schema names list
+	for _, restrictedName := range models.RestrictedSchemaNames {
+		if container.SchemaName == restrictedName {
+			log.Println("Schema name is restricted and cannot be used")
+			return utils.SendErrorResponse(c, nil, "The specified schema name is restricted and cannot be used.")
+		}
+	}
+
 	log.Println("Checking if container already exists in the database")
 	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": container.SchemaName})
 	if err != nil {
