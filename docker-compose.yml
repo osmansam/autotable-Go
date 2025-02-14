@@ -1,0 +1,38 @@
+version: "3.8"
+services:
+  autoapi-redis-staging:
+    image: redis:latest
+    container_name: autoapi-redis-staging
+    restart: always
+    ports:
+      - "6379:6379"
+  autoapi-redis-production:
+    image: redis:latest
+    container_name: autoapi-redis-production
+    restart: always
+    ports:
+      - "6380:6379"
+  autoapi-production:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.production
+    container_name: autoapi-production
+    restart: always
+    depends_on:
+      - autoapi-redis-production
+    ports:
+      - "8070:4000"
+    volumes:
+      - ./logs:/app/logs
+  autoapi-staging:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile.staging
+    container_name: autoapi-staging
+    restart: always
+    depends_on:
+      - autoapi-redis-staging
+    ports:
+      - "8080:4000"
+    volumes:
+      - ./logs:/app/logs-staging
