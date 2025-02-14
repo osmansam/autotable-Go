@@ -33,7 +33,10 @@ func main() {
 
 	
 	//cors
-	app.Use(cors.New())
+app.Use(cors.New(cors.Config{
+   
+}))
+
 	//run database
 	configs.ConnectDB()
 	configs.ConnectRedis()

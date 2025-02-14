@@ -1,0 +1,22 @@
+{
+  "redis": {
+    "port": "6379",
+    "host": "autotable-redis-staging"
+  },
+  "app": {
+    "port": 4000
+  },
+  "panel": {
+    "host": "http://localhost:3000"
+  },
+  "corsWhitelist": [
+    "https://panel.davinciboardgame.com",
+    "https://panelv2.davinciboardgame.com",
+    "http://localhost:3000",
+    "https://davinci-nextjs.vercel.app",
+    "https://yervarmi-davinci-git-v2-erdemalpay.vercel.app",
+    "https://yervarmi.davinciboardgame.com",
+    "https://davinciboardgame.myikas.com"
+  ],
+  "migrationEnabled": false
+}
