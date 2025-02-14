@@ -21,7 +21,7 @@ jobs:
         run: go mod download
 
       - name: Build Application
-        run: go build -o app-autoapi .
+        run: go build -o app .
 
       - name: Run Tests
         run: go test -v ./...
@@ -54,8 +54,8 @@ jobs:
       - name: Rsync files to remote host
         run: |
           echo "${{ secrets.HOST }}"
-          rsync -avz -r -e "ssh -i ./ssh/id_rsa" ./dist ./config .env Dockerfile.production Dockerfile.staging docker-compose.yml  ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app-autoapi
+          rsync -avz -r -e "ssh -i ~/.ssh/id_rsa" ./dist ./config .env Dockerfile.production Dockerfile.staging docker-compose.yml  ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
 
       - name: Run deploy command on remote host
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app-autoapi && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"

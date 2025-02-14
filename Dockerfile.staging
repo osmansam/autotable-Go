@@ -1,7 +1,7 @@
 # Stage 1: Build the Go binary.
 FROM golang:1.20-alpine AS builder
 
-WORKDIR /app-autoapi
+WORKDIR /app
 
 # Copy go.mod and go.sum, then download dependencies.
 COPY go.mod go.sum ./
