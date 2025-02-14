@@ -14,7 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var userCollection *mongo.Collection = configs.GetCollection( "user")
+var userCollection *mongo.Collection = configs.GetCollection( "users")
 
 // Register a new user
 func Register(c *fiber.Ctx) error {
@@ -31,7 +31,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 	// Check if username exists
-	count, err := userCollection.CountDocuments(ctx, bson.M{"username": user.Username})
+	count, err := userCollection.CountDocuments(ctx, bson.M{"email": user.Email})
 	if err != nil {
 		log.Println("Failed to query the user from the database:", err) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -42,10 +42,10 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	if count > 0 {
-		log.Println("Username already exists:", user.Username) // Log message
+		log.Println("Email already exists:", user.Email) // Log message
 		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusBadRequest,
-			Message: "Username already exists. Please choose another.",
+			Message: "Email already exists. Please choose another.",
 			Data:    nil,
 		})
 	}
@@ -72,7 +72,7 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	log.Println("User registered successfully:", user.Username) // Log message
+	log.Println("User registered successfully:", user.Name) // Log message
 	return c.Status(fiber.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  fiber.StatusCreated,
 		Message: "User registered successfully.",
@@ -94,9 +94,9 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	storedUser := models.User{}
-	err := userCollection.FindOne(context.TODO(), bson.M{"username": loginReq.Username}).Decode(&storedUser)
+	err := userCollection.FindOne(context.TODO(), bson.M{"name": loginReq.Name}).Decode(&storedUser)
 	if err != nil {
-		log.Println("Invalid login credentials for username:", loginReq.Username) // Log message
+		log.Println("Invalid login credentials for name:", loginReq.Name) // Log message
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid login credentials.",
@@ -106,7 +106,7 @@ func Login(c *fiber.Ctx) error {
 
 	isValid := utils.CheckPasswordHash(loginReq.Password, storedUser.Password)
 	if !isValid {
-		log.Println("Invalid login credentials for username:", loginReq.Username) // Log message
+		log.Println("Invalid login credentials for name:", loginReq.Name) // Log message
 		return c.Status(fiber.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusUnauthorized,
 			Message: "Invalid login credentials.",
@@ -116,7 +116,7 @@ func Login(c *fiber.Ctx) error {
 
 	tokenDetails, err := utils.GenerateTokens(storedUser.ID.Hex(),storedUser.Role)
 	if err != nil {
-		log.Println("Could not generate tokens for user:", storedUser.Username) // Log message
+		log.Println("Could not generate tokens for user:", storedUser.Name) // Log message
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Could not generate tokens.",
@@ -130,12 +130,14 @@ func Login(c *fiber.Ctx) error {
 
 	// Continue with your logic to respond with the tokens
 	userData := map[string]interface{}{
-		"id":       storedUser.ID.Hex(),
-		"username": storedUser.Username,
+		"_id":       storedUser.ID.Hex(),
+		"name": storedUser.Name,
+		"lastName": storedUser.LastName,
+		"email": storedUser.Email,
 		"role":     storedUser.Role,
 	}
 
-	log.Println("Login successful for user:", storedUser.Username) // Log message
+	log.Println("Login successful for user:", storedUser.Name) // Log message
 	return c.JSON(responses.GeneralResponse{
 		Status:  fiber.StatusOK,
 		Message: "Login successful.",

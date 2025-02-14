@@ -20,34 +20,36 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		"eq-":  "$eq", // Exact match
 	}
 
-	// Handle date filters with comparison operators
-	if fieldType == "date" {
-		filter := bson.M{}
-		conditionsFound := false
 
-		// Apply range and exact match operators for dates
-		for prefix, mongoOp := range operators {
-			if strings.HasPrefix(queryValue, prefix) {
-				dateStr := strings.TrimPrefix(queryValue, prefix)
-				// Optionally, you can parse the date here using parseDate:
-				// parsedDate, err := parseDate(dateStr)
-				// if err != nil {
-				//     return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
-				// }
-				// filter[mongoOp] = parsedDate
-				filter[mongoOp] = dateStr
-				conditionsFound = true
-			}
-		}
+    // Handle date filters with comparison operators or as exact match
+    if fieldType == "date" {
+        filter := bson.M{}
+        conditionsFound := false
 
-		// If an operator was found, return the filter
-		if conditionsFound {
-			return filter, nil
-		}
+        // Apply range and exact match operators for dates if operator is provided
+        for prefix, mongoOp := range operators {
+            if strings.HasPrefix(queryValue, prefix) {
+                dateStr := strings.TrimPrefix(queryValue, prefix)
+                parsedDate, err := parseDate(dateStr)
+                if err != nil {
+                    return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
+                }
+                filter[mongoOp] = parsedDate
+                conditionsFound = true
+            }
+        }
 
-		// If no operator was found, return an error (user must provide one)
-		return nil, fmt.Errorf("invalid date filter for field %s, please use eq-, gte-, gt-, lte-, or lt-", fieldName)
-	}
+        // If no operator was found, try to parse the plain date string as an exact match
+        if !conditionsFound {
+            parsedDate, err := parseDate(queryValue)
+            if err != nil {
+                return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
+            }
+            filter["$eq"] = parsedDate
+        }
+        return filter, nil
+    }
+
 
 	// New block: Handle integer filters with comparison operators
 	if fieldType == "int" {
