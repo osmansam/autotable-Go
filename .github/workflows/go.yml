@@ -50,7 +50,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
       - name: Rsync files to remote host
         run: |
-          rsync -avz -r -e "ssh -i ~/.ssh/id_rsa" ./config .env Dockerfile.production Dockerfile.staging docker-compose.yml  ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
+          rsync -avz -r -e "ssh -i ./ssh/id_rsa" ./dist ./config .env Dockerfile.production Dockerfile.staging docker-compose.yml yarn.lock package.json ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
       - name: Run deploy command on remote host
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
