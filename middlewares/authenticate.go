@@ -78,6 +78,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			switch routeName {
 			case "CreateDynamicModelItem":
 				route = container.Routes.CreateDynamicModelItem
+			case "CreateMultipleDynamicModelItem":
+				route = container.Routes.CreateMultipleDynamicModelItem
 			case "GetAllDynamicModelItems":
 				route = container.Routes.GetAllDynamicModelItems
 			case "HandleSearchDynamicModelItem":

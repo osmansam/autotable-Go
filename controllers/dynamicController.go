@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"plugin"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -190,6 +191,247 @@ if container.Redis.IsRedisCached {
         Status: http.StatusCreated, Message: "Item successfully created.", Data: result,
     })
 }
+func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
+	// Set up a context with timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	schemaName := c.Query("schemaName")
+	log.Printf("Creating multiple items for schema: %s", schemaName)
+
+	// Fetch the container model (either from the context or by fetching it)
+	var container *models.ContainerModel
+	var err error
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to fetch container model",
+				Data:    err.Error(),
+			})
+		}
+	}
+
+	// Check whether any field in the container is of type "image"
+	hasImageField := false
+	for _, field := range container.Fields {
+		if field.Type == "image" {
+			hasImageField = true
+			break
+		}
+	}
+
+	// This slice will hold the items to be inserted.
+	var items []map[string]interface{}
+	// fileURLs holds, for each image field, an array of URLs (one per item).
+	fileURLs := make(map[string][]string)
+
+	// Determine if the request is multipart.
+	contentType := c.Get("Content-Type")
+	if strings.Contains(contentType, "multipart/form-data") {
+		// Expecting a multipart form with one field "items" (a JSON array)
+		form, err := c.MultipartForm()
+		if err != nil {
+			log.Printf("Error parsing multipart form for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Error parsing multipart form.")
+		}
+
+		itemsJSON, exists := form.Value["items"]
+		if !exists || len(itemsJSON) == 0 {
+			return utils.SendErrorResponse(c, fmt.Errorf("missing items field"), "Missing items JSON field.")
+		}
+
+		// Parse the JSON array into our items slice.
+		if err := json.Unmarshal([]byte(itemsJSON[0]), &items); err != nil {
+			log.Printf("Error parsing items JSON for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Error parsing items JSON.")
+		}
+
+		// Process each image field.
+		if hasImageField {
+			// For every field declared as an image, expect that form.File contains a file for each item.
+			for _, field := range container.Fields {
+				if field.Type != "image" {
+					continue
+				}
+
+				files, exists := form.File[field.Name]
+				if !exists {
+					// No files for this image field; you might decide to treat this as an error or simply skip.
+					continue
+				}
+
+				if len(files) != len(items) {
+					msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
+					log.Printf(msg)
+					return utils.SendErrorResponse(c, fmt.Errorf(msg), msg)
+				}
+
+				// Loop over the files so that each item gets its corresponding image.
+				for _, file := range files {
+                    tempFilePath := "./temp/" + file.Filename
+                    if err := c.SaveFile(file, tempFilePath); err != nil {
+                        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+                            Status:  http.StatusInternalServerError,
+                            Message: "Error saving temp file.",
+                            Data:    err.Error(),
+                        })
+                    }
+					imageURL, err := utils.UploadToCloudinary(tempFilePath)
+					os.Remove(tempFilePath) // Clean up the temp file.
+					if err != nil {
+						log.Printf("Error uploading image to Cloudinary for schema: %s, error: %v", schemaName, err)
+						return utils.SendErrorResponse(c, err, "Error uploading image to Cloudinary.")
+					}
+					fileURLs[field.Name] = append(fileURLs[field.Name], imageURL)
+				}
+			}
+		}
+	} else {
+		// Not a multipart request; parse the JSON array directly from the request body.
+		if err := c.BodyParser(&items); err != nil {
+			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to parse request body.")
+		}
+	}
+
+	// Build a set of allowed field names.
+	allowedFields := make(map[string]struct{})
+	for _, field := range container.Fields {
+		allowedFields[field.Name] = struct{}{}
+	}
+
+	// For each item: filter out disallowed fields and, if needed, add the corresponding image URL.
+	for i, item := range items {
+		for key := range item {
+			if _, ok := allowedFields[key]; !ok {
+				delete(item, key)
+			}
+		}
+		// If images were uploaded, replace the corresponding fields with the uploaded URLs.
+		for fieldName, urls := range fileURLs {
+			if i < len(urls) {
+				item[fieldName] = urls[i]
+			}
+		}
+		items[i] = item
+	}
+
+	// Validate each item against the container model.
+	for i, item := range items {
+		if err := utils.ValidateContainerModel(item, *container); err != nil {
+			log.Printf("Validation failed for schema: %s on item index %d, error: %v", schemaName, i, err)
+			return utils.SendErrorResponse(c, err, fmt.Sprintf("Validation failed for item at index %d.", i))
+		}
+	}
+
+	// Convert any fields that should be ObjectIds.
+	for i, item := range items {
+		for _, field := range container.Fields {
+			if field.Type == "objectId" {
+				if strId, ok := item[field.Name].(string); ok {
+					objId, err := primitive.ObjectIDFromHex(strId)
+					if err == nil {
+						item[field.Name] = objId
+					}
+				}
+			}
+		}
+		items[i] = item
+	}
+
+	// Get the MongoDB collection for this schema.
+	currentCollection := configs.GetCollection(schemaName)
+
+	// Check for unique field constraints.
+	// For each field that is marked as Unique, we check both within the request and against existing documents.
+	for _, field := range container.Fields {
+		if field.Unique {
+			valueSet := make(map[interface{}]bool)
+			var values []interface{}
+			for i, item := range items {
+				fieldValue, found := item[field.Name]
+				if !found {
+					continue
+				}
+				// Check duplicates within the same request.
+				if _, exists := valueSet[fieldValue]; exists {
+					msg := fmt.Sprintf("Duplicate value for unique field '%s' in item index %d", field.Name, i)
+					log.Printf(msg)
+					return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+						"status":  http.StatusBadRequest,
+						"message": msg,
+						"data":    nil,
+					})
+				}
+				valueSet[fieldValue] = true
+				values = append(values, fieldValue)
+			}
+
+			if len(values) > 0 {
+				filter := bson.M{field.Name: bson.M{"$in": values}}
+				count, err := currentCollection.CountDocuments(ctx, filter)
+				if err != nil {
+					log.Printf("Error checking unique field '%s' for schema: %s, error: %v", field.Name, schemaName, err)
+					return utils.SendErrorResponse(c, err, fmt.Sprintf("Error checking unique field '%s'.", field.Name))
+				}
+				if count > 0 {
+					msg := fmt.Sprintf("A document with the same '%s' already exists.", field.Name)
+					log.Printf(msg)
+					return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+						"status":  http.StatusBadRequest,
+						"message": msg,
+						"data":    nil,
+					})
+				}
+			}
+		}
+	}
+
+	// Convert the slice of items (map[string]interface{}) to a slice of interface{} for InsertMany.
+	var docs []interface{}
+	for _, item := range items {
+		docs = append(docs, item)
+	}
+
+	// Insert all items using a bulk operation.
+	result, err := currentCollection.InsertMany(ctx, docs)
+	if err != nil {
+		log.Printf("Failed to insert multiple items for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to insert multiple items.")
+	}
+
+	// Clear the cache for this schema.
+	if container.Redis.IsRedisCached {
+		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+		if err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
+		}
+
+		// Also clear cache for each schema in TriggeredRedisCaches.
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+			if err != nil {
+				log.Printf("Error deleting cache for schema '%s': %v", triggeredSchema, err)
+				// Continue with next triggered schema.
+				continue
+			}
+		}
+	}
+
+	log.Printf("Multiple items successfully created for schema: %s", schemaName)
+	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
+		Status:  http.StatusCreated,
+		Message: "Multiple items successfully created.",
+		Data:    result,
+	})
+}
+
 // get all items for a given collection
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

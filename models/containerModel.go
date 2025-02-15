@@ -21,6 +21,7 @@ type RouteSpec struct {
 type Routes struct {
     CreateDynamicModelItem RouteSpec `bson:"createDynamicModelItem"`
     GetAllDynamicModelItems RouteSpec `bson:"getAllDynamicModelItems"`
+    CreateMultipleDynamicModelItem RouteSpec `bson:"createMultipleDynamicModelItem"`
     GetAllDynamicModelItemsWithPagination RouteSpec `bson:"getAllDynamicModelItemsWithPagination"`
     GetPipeline RouteSpec `bson:"getPipeline"`
     TestPipeline RouteSpec `bson:"testPipeline"`
