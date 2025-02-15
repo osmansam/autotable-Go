@@ -21,7 +21,7 @@ jobs:
         run: go mod download
 
       - name: Build Application
-        run: go build -o app .
+        run: go build -o autoapi-app .
 
       - name: Run Tests
         run: go test -v ./...
@@ -60,7 +60,7 @@ jobs:
           SOURCE_FILES="./configs .env Dockerfile.production Dockerfile.staging docker-compose.yml"
 
           # Define the destination
-          DESTINATION="${{ secrets.USERNAME }}@${{ secrets.HOST }}:app"
+          DESTINATION="${{ secrets.USERNAME }}@${{ secrets.HOST }}:autoapi-app"
 
           # Print out variables for debugging (optional)
           echo "Using RSYNC_OPTIONS: $RSYNC_OPTIONS"
@@ -73,4 +73,4 @@ jobs:
 
       - name: Run deploy command on remote host
         run: |
-          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
+          ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd autoapi-app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
