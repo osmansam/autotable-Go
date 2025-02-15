@@ -23,7 +23,7 @@ services:
     ports:
       - "8020:4000"
     volumes:
-      - ./logs:/autoapi-app/logs
+      - ./logs:/app/logs
   autoapi-staging:
     build:
       context: ./
@@ -35,4 +35,4 @@ services:
     ports:
       - "8030:4000"
     volumes:
-      - ./logs:/autoapi-app/logs-staging
+      - ./logs:/app/logs-staging
