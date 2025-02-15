@@ -1,51 +1,45 @@
 # syntax=docker/dockerfile:1
 
-###############
-# Build Stage #
-###############
+# Stage 1: Build the Go binary.
 FROM golang:1.20-alpine AS builder
 
-# Set the working directory inside the container
 WORKDIR /autoapi-app
 
-# Copy the Go module files and download dependencies
+# Copy go.mod and go.sum and download dependencies.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the entire project into the container
+# Copy the entire project into the container.
 COPY . .
 
-# (Optional) Debug: list files to verify that main.go and other files are present
-RUN ls -la /autoapi-app
+# Debug: List all files to verify that your source files are present.
+RUN find . -type f
 
-# Build the binary from the current directory.
-# This assumes your main entrypoint is in main.go at the root.
+# Build the binary.
+# This command assumes your main.go is in the root.
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
-#########################
-# Runtime Release Stage #
-#########################
+# Stage 2: Create a minimal runtime image.
 FROM alpine:latest
 
-# Install CA certificates (if your app makes HTTPS requests)
+# Install necessary certificates.
 RUN apk --no-cache add ca-certificates
 
-# Set working directory for the runtime container
 WORKDIR /root/
 
-# Copy the built binary from the builder stage
+# Copy the built binary from the builder stage.
 COPY --from=builder /autoapi-app/main .
 
-# Optionally, copy configuration files if needed
+# Optionally, copy environment variables and configuration files.
 COPY ./.env ./.env
 COPY ./config ./config
 
-# Set environment variables as needed
+# Set environment variables.
 ENV NODE_ENV=staging
-ENV COLLECTION_NAME=AUTOAPI_STAGING
+ENV COLLECTION_NAME="AUTOAPI_STAGING"
 
-# Expose the port your application listens on (adjust if necessary)
+# Expose the port your application listens on.
 EXPOSE 4000
 
-# Run the binary
+# Run the binary.
 CMD ["./main"]
