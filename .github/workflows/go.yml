@@ -48,12 +48,29 @@ jobs:
       - name: Adding Known Hosts
         run: |
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
-      - name: Changing permissons of private key
+      - name: Rsync files to remote host (expanded)
         run: |
-          chmod 700 ~/.ssh/id_rsa
-      - name: Rsync files to remote host
-        run: |
-          rsync -avz -r -e "ssh -i ~/.ssh/id_rsa" ./configs .env Dockerfile.production Dockerfile.staging docker-compose.yml ${{ secrets.USERNAME }}@${{ secrets.HOST }}:app
+          # Define rsync options
+          RSYNC_OPTIONS="-avz -r"
+
+          # Define SSH options with the key and disable strict host checking for simplicity
+          SSH_OPTIONS="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+
+          # Define source files (adjust as needed)
+          SOURCE_FILES="./configs .env Dockerfile.production Dockerfile.staging docker-compose.yml"
+
+          # Define the destination
+          DESTINATION="${{ secrets.USERNAME }}@${{ secrets.HOST }}:app"
+
+          # Print out variables for debugging (optional)
+          echo "Using RSYNC_OPTIONS: $RSYNC_OPTIONS"
+          echo "Using SSH_OPTIONS: $SSH_OPTIONS"
+          echo "Source files: $SOURCE_FILES"
+          echo "Destination: $DESTINATION"
+
+          # Run the rsync command
+          rsync $RSYNC_OPTIONS -e "$SSH_OPTIONS" $SOURCE_FILES $DESTINATION
+
       - name: Run deploy command on remote host
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
