@@ -27,7 +27,7 @@ WORKDIR /root/
 
 # Copy the built binary from the builder stage.
 COPY --from=builder /app/main .
-COPY ./config ./config
+COPY ./configs ./configs
 COPY ./.env ./.env
 
 ENV NODE_ENV=staging
