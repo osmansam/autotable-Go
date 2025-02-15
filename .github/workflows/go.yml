@@ -54,7 +54,7 @@ jobs:
           RSYNC_OPTIONS="-avz -r"
 
           # Define SSH options with the key and disable strict host checking for simplicity
-          SSH_OPTIONS="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+          SSH_OPTIONS="ssh -i ~/.ssh/id_rsa"
 
           # Define source files (adjust as needed)
           SOURCE_FILES="./configs .env Dockerfile.production Dockerfile.staging docker-compose.yml"
