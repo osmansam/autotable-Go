@@ -27,7 +27,8 @@ WORKDIR /root/
 
 # Copy the built binary from the builder stage.
 COPY --from=builder /app/main .
-
+COPY ./config ./config
+COPY ./.env ./.env
 
 ENV NODE_ENV=staging
 ENV COLLECTION_NAME=AUTOAPI_STAGING
