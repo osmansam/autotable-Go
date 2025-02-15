@@ -21,9 +21,6 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-# Copy the built binary from the builder stage.
-COPY --from=builder /app/main .
-
 # (Optional) Copy the .env file if your application needs it.
 COPY ./.env ./.env
 COPY ./config ./config
