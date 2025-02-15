@@ -50,7 +50,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
       - name: Rsync files to remote host
         run: |
-          rsync -avz -r -e "ssh -i ~/.ssh/id_rsa" ./configs .env go.mod go.sum  Dockerfile.production Dockerfile.staging docker-compose.yml ${{ secrets.USERNAME }}@${{ secrets.HOST }}:autoapi-app
+          rsync -avz -r -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.USERNAME }}@${{ secrets.HOST }}:autoapi-app
       - name: Run deploy command on remote host
         run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.USERNAME }}@${{ secrets.HOST }} "cd autoapi-app && sudo docker-compose up -d --build autoapi-staging && sudo docker system prune -af"
