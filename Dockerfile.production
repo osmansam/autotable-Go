@@ -1,34 +1,41 @@
 # Stage 1: Build the Go binary.
 FROM golang:1.20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /autoapi-app
 
 # Copy go.mod and go.sum, then download dependencies.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of your application source code.
-COPY . .
+# Copy the entire project into the container.
+COPY . .  
+# Debugging: List the files to confirm the presence of main.go and other directories.
+RUN ls -la /autoapi-app
 
-# Debug: List files to verify that .go files are present.
-RUN ls -la /app
-
-# Build the binary.
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Build the Go binary from the root where main.go is located.
+RUN CGO_ENABLED=0 GOOS=linux go build -o main main.go  # <-- Correct binary name.
 
 # Stage 2: Create a minimal runtime image.
 FROM alpine:latest
 
+# Install necessary certificates.
 RUN apk --no-cache add ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/main .
 
-# Optionally, copy .env and config if needed.
+WORKDIR /root/
+
+# Copy the built binary from the builder stage.
+COPY --from=builder /autoapi-app/main .
+
+# Copy environment variables and config files if needed.
 COPY ./.env ./.env
 COPY ./config ./config
 
+# Set environment variables.
 ENV NODE_ENV=production
 ENV COLLECTION_NAME=AUTOAPI_PRODUCTION
 
+# Expose the application port.
 EXPOSE 4000
+
+# Run the binary.
 CMD ["./main"]
