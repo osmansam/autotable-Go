@@ -7,14 +7,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the rest of your application source code.
+# Copy the entire project into the container.
 COPY . .
 
-# Debug: list files in /app (optional)
+# Debugging: List the files to confirm the presence of main.go.
 RUN ls -la /app
 
-# Build the binary from the root.
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Build the Go binary from the root where main.go is located.
+RUN CGO_ENABLED=0 GOOS=linux go build -o main main.go
 
 # Stage 2: Create a minimal runtime image.
 FROM alpine:latest
@@ -27,7 +27,7 @@ WORKDIR /root/
 # Copy the built binary from the builder stage.
 COPY --from=builder /app/main .
 
-# Optionally, copy .env and config if needed.
+# Copy environment variables and config files if needed.
 COPY ./.env ./.env
 COPY ./config ./config
 
@@ -35,7 +35,7 @@ COPY ./config ./config
 ENV NODE_ENV=staging
 ENV COLLECTION_NAME=AUTOAPI_STAGING
 
-# Expose port 4000.
+# Expose the application port.
 EXPOSE 4000
 
 # Run the binary.
