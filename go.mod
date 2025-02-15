@@ -1,6 +1,6 @@
 module github.com/osmansam/autotableGo
 
-go 1.21.3
+go 1.21
 
 require (
 	github.com/cloudinary/cloudinary-go/v2 v2.5.1
