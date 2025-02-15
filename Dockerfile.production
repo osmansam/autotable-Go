@@ -10,15 +10,16 @@ RUN go mod download
 # Copy the entire project into the container.
 COPY . .
 
-# Debug: list all files (optional)
-RUN find . -type f
+# (Optional) Debug: list files to confirm that main.go and other files are present.
+RUN ls -la /autoapi-app
 
-# Build the binary from the root.
+# Build the binary from the current directory.
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Stage 2: Create a minimal runtime image.
 FROM alpine:latest
 
+# Install necessary certificates.
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
@@ -26,13 +27,15 @@ WORKDIR /root/
 # Copy the built binary from the builder stage.
 COPY --from=builder /autoapi-app/main .
 
-# Copy environment variables and config files if needed.
+# Copy any necessary configuration files (if needed).
 COPY ./.env ./.env
 COPY ./config ./config
 
+# Set environment variables.
 ENV NODE_ENV=production
 ENV COLLECTION_NAME=AUTOAPI_PRODUCTION
-
+# Expose the port (ensure your app listens on the same port).
 EXPOSE 4000
 
+# Run the binary.
 CMD ["./main"]
