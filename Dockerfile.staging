@@ -1,6 +1,5 @@
 # Stage 1: Build the Go binary.
 FROM golang:1.20-alpine AS builder
-
 WORKDIR /app
 
 # Copy go.mod and go.sum, then download dependencies.
@@ -10,18 +9,21 @@ RUN go mod download
 # Copy the rest of your application source code.
 COPY . .
 
-# # Build the binary. Adjust the output name ("main") as needed.
-# RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Build the binary.
+RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Stage 2: Create a minimal runtime image.
 FROM alpine:latest
 
-# Install any necessary certificates.
+# Install necessary certificates.
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-# (Optional) Copy the .env file if your application needs it.
+# Copy the built binary from the builder stage.
+COPY --from=builder /app/main .
+
+# (Optional) Copy the .env file and config if your application needs them.
 COPY ./.env ./.env
 COPY ./config ./config
 
@@ -34,4 +36,3 @@ EXPOSE 4000
 
 # Run the binary.
 CMD ["./main"]
-# Note: Ensure that your Go application listens on port 4000.
