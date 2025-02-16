@@ -1976,7 +1976,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to execute function")
     }
 }
-// function to test pipeline before saving
+
 func TestPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
