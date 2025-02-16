@@ -491,7 +491,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		if container.Redis.CacheTime > 0 {
 			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
 		} else {
-			expiration = 24 * time.Hour // Default to 24 Hours.
+			expiration = 0 //the key will never expire.
 		}
 		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
 
@@ -1408,7 +1408,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
         if container.Redis.CacheTime > 0 {
             expiration = time.Duration(container.Redis.CacheTime) * time.Minute
         } else {
-            expiration = 24 * time.Hour // Default to 24 Hours
+            expiration = 0 //the key will never expire.
         }
 
         configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
@@ -1716,7 +1716,7 @@ func GetPipeline(c *fiber.Ctx) error {
         if pipelineStage.CacheTime > 0 {
             expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
         } else {
-            expiration = 24 * time.Hour // Default to 24 Hours
+            expiration = 0 //the key will never expire.
         }
         configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
         configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
@@ -1882,7 +1882,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
                     if container.Redis.CacheTime > 0 {
                         expiration = time.Duration(container.Redis.CacheTime) * time.Minute
                     } else {
-                        expiration = 24 * time.Hour // Default to 24 Hours
+                        expiration = 0 //the key will never expire.
                     }
                     resultJSON, err := json.Marshal(result)
                     if err == nil {
@@ -1960,7 +1960,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
             if container.Redis.CacheTime > 0 {
                 expiration = time.Duration(container.Redis.CacheTime) * time.Minute
             } else {
-                expiration = 24 * time.Hour // Default to 24 Hours
+                expiration = 0 //the key will never expire.
             }
             configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
             configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
@@ -2097,7 +2097,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         if dynamicApi.CacheTime > 0 {
             expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
         } else {
-            expiration = 24 * time.Hour // Default to 24 Hours
+            expiration = 0 //the key will never expire.
         }
         resultJSON, _ := json.Marshal(apiResult)
         configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
