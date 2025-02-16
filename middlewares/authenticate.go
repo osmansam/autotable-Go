@@ -90,6 +90,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				route = container.Routes.DeleteDynamicModelItem
 			case "UpdateDynamicModelItem":
 				route = container.Routes.UpdateDynamicModelItem
+			case "UpdateMultipleDynamicModelItem":
+				route = container.Routes.UpdateMultipleDynamicModelItem
 			case "GetDynamicModelItem":
 				route = container.Routes.GetDynamicModelItem
 			case "GetAllDynamicModelItemsWithPagination":

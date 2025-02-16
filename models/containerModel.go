@@ -29,6 +29,7 @@ type Routes struct {
     HandleFilterDynamicModelItem RouteSpec `bson:"handleFilterDynamicModelItem"`
     DeleteDynamicModelItem RouteSpec `bson:"deleteDynamicModelItem"`
     UpdateDynamicModelItem RouteSpec `bson:"updateDynamicModelItem"`
+    UpdateMultipleDynamicModelItem RouteSpec `bson:"updateMultipleDynamicModelItem"`
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
 }
 type Redis struct {
