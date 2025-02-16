@@ -31,6 +31,7 @@ type Routes struct {
     UpdateDynamicModelItem RouteSpec `bson:"updateDynamicModelItem"`
     UpdateMultipleDynamicModelItem RouteSpec `bson:"updateMultipleDynamicModelItem"`
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
+    DeleteMultipleDynamicModelItem RouteSpec `bson:"deleteMultipleDynamicModelItem"`
 }
 type Redis struct {
     IsRedisCached bool `bson:"isRedisCached" `

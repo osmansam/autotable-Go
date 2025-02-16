@@ -643,6 +643,214 @@ if container.Redis.IsRedisCached {
 		Data:   result,
 	})
 }
+
+func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	schemaName := c.Query("schemaName")
+	log.Printf("Deleting multiple items for schema: %s", schemaName)
+
+	// Parse the request body as a JSON array.
+	var items []map[string]interface{}
+	if err := c.BodyParser(&items); err != nil {
+		log.Printf("Failed to parse request body for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+
+	// Retrieve all container models (to check for references).
+	allContainers, err := utils.GetAllContainerModels()
+	if err != nil {
+		log.Printf("Failed to retrieve container models for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to retrieve container models")
+	}
+
+	// Get the container model for the current schema.
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(schemaName)
+		if err != nil {
+			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+		}
+	}
+
+	// Get the collection for the current schema.
+	currentCollection := configs.GetCollection(schemaName)
+
+	// Slices to keep track of successful and failed deletions.
+	var successfulDeletes []interface{}
+	var failedDeletes []map[string]interface{}
+
+	// Iterate over each deletion request.
+	for _, item := range items {
+		// Extract the ID from "id" or "_id".
+		var idStr string
+		if v, ok := item["id"]; ok {
+			idStr, ok = v.(string)
+			if !ok {
+				failedDeletes = append(failedDeletes, map[string]interface{}{
+					"item":  item,
+					"error": "Invalid id format, expected string",
+				})
+				continue
+			}
+		} else if v, ok := item["_id"]; ok {
+			idStr, ok = v.(string)
+			if !ok {
+				failedDeletes = append(failedDeletes, map[string]interface{}{
+					"item":  item,
+					"error": "Invalid _id format, expected string",
+				})
+				continue
+			}
+		} else {
+			failedDeletes = append(failedDeletes, map[string]interface{}{
+				"item":  item,
+				"error": "Missing id field",
+			})
+			continue
+		}
+
+		// Convert the id string to an ObjectID.
+		deleteId, err := primitive.ObjectIDFromHex(idStr)
+		if err != nil {
+			failedDeletes = append(failedDeletes, map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "Provided ID is not in the valid format",
+			})
+			continue
+		}
+
+		// Acquire a Redis lock for this deletion to prevent concurrent deletions.
+		lockKey := fmt.Sprintf("lock:delete:%s:%s", schemaName, deleteId.Hex())
+		lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+		if !locked {
+			failedDeletes = append(failedDeletes, map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "Another process is already deleting this item",
+			})
+			continue
+		}
+		// Remember to release the lock manually (cannot use defer in a loop).
+
+		// Check if this item is referenced in other containers.
+		referencePreventDeletion := false
+		for _, otherContainer := range allContainers {
+			// Skip the current schema.
+			if otherContainer.SchemaName == schemaName {
+				continue
+			}
+			// Check each field in the other container.
+			for _, field := range otherContainer.Fields {
+				// If the field references the current schema.
+				if field.Type == "objectId" && field.Name == schemaName {
+					coll := configs.GetCollection(otherContainer.SchemaName)
+					count, err := coll.CountDocuments(ctx, bson.M{field.Name: deleteId})
+					if err != nil {
+						utils.ReleaseLock(lockKey, lockID)
+						failedDeletes = append(failedDeletes, map[string]interface{}{
+							"id":    idStr,
+							"item":  item,
+							"error": "Database error while checking references: " + err.Error(),
+						})
+						referencePreventDeletion = true
+						break
+					}
+					// If references exist and force deletion is not enabled, record an error.
+					if count > 0 && !field.IsForceDelete {
+						utils.ReleaseLock(lockKey, lockID)
+						failedDeletes = append(failedDeletes, map[string]interface{}{
+							"id":    idStr,
+							"item":  item,
+							"error": fmt.Sprintf("Cannot delete: This item is still referenced in schema '%s' and cannot be forcibly deleted", otherContainer.SchemaName),
+						})
+						referencePreventDeletion = true
+						break
+					}
+				}
+			}
+			if referencePreventDeletion {
+				break
+			}
+		}
+		if referencePreventDeletion {
+			continue
+		}
+
+		// For any references that allow force deletion, remove the referenced items.
+		for _, otherContainer := range allContainers {
+			if otherContainer.SchemaName == schemaName {
+				continue
+			}
+			for _, field := range otherContainer.Fields {
+				if field.Type == "objectId" && field.Name == schemaName && field.IsForceDelete {
+					coll := configs.GetCollection(otherContainer.SchemaName)
+					if _, err := coll.DeleteMany(ctx, bson.M{field.Name: deleteId}); err != nil {
+						// Log error but continue with deletion.
+						log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, err)
+					}
+				}
+			}
+		}
+
+		// Attempt deletion from the current collection.
+		result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
+		// Release the lock immediately.
+		utils.ReleaseLock(lockKey, lockID)
+		if err != nil {
+			failedDeletes = append(failedDeletes, map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "Failed to delete item: " + err.Error(),
+			})
+			continue
+		}
+		if result.DeletedCount == 0 {
+			failedDeletes = append(failedDeletes, map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "No item found with the specified ID",
+			})
+			continue
+		}
+
+		// Record a successful deletion.
+		successfulDeletes = append(successfulDeletes, map[string]interface{}{
+			"id":     idStr,
+			"result": result,
+		})
+	}
+
+	// Clear the cache for this schema if caching is enabled.
+	if container.Redis.IsRedisCached {
+		if err = utils.DeleteCacheForSchema(ctx, schemaName, container); err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
+		}
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			if err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container); err != nil {
+				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+			}
+		}
+	}
+
+	// Prepare the final response containing both successes and failures.
+	responseData := fiber.Map{
+		"successful": successfulDeletes,
+		"failed":     failedDeletes,
+	}
+	log.Printf("Multiple deletion process completed for schema: %s", schemaName)
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Multiple deletion process completed",
+		Data:    responseData,
+	})
+}
+
 //update an item in the collection
 func UpdateDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
