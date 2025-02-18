@@ -58,9 +58,7 @@ type DynamicFunction struct {
     IsActive        bool   `bson:"isActive"`
     IsRedisCached   bool   `bson:"isRedisCached"`
     CacheTime       int    `bson:"cacheTime"`
-
 }
-
 type DynamicApiModel struct {
     Name            string `bson:"name"`    
     Url             string `bson:"url"`
