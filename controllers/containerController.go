@@ -12,7 +12,6 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
-
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -26,6 +25,7 @@ type PipelinesUpdate struct {
 }
 var containerCollection *mongo.Collection = configs.GetCollection( "containers")
 var validate = validator.New()
+
 
 // CreateContainer creates a container with the provided model name and schema fields
 func CreateContainer(c *fiber.Ctx) error {
@@ -346,5 +346,25 @@ func GetContainer(c *fiber.Ctx) error {
 		Status:  http.StatusOK,
 		Message: "Container successfully retrieved.",
 		Data:    &fiber.Map{"data": container},
+	})
+}
+
+// ResetRedis resets the entire Redis cache
+func ResetRedis(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	log.Println("Resetting entire Redis cache")
+	err := configs.RedisClient.FlushAll(ctx).Err()
+	if err != nil {
+		log.Printf("Failed to reset Redis cache: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to reset the Redis cache. Please try again later.")
+	}
+
+	log.Println("Redis cache successfully reset")
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Redis cache successfully reset.",
+		Data:    nil,
 	})
 }
