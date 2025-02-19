@@ -1,24 +1,43 @@
 package middlewares
 
 import (
+	"log"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
 )
 
-func Authenticate(c *fiber.Ctx ,isAuthorized bool,authorizeRole string) error {
-	token := c.Get("Authorization") // Assuming the token is in the Authorization header
-	userID, role, err := utils.ParseToken(token)
-	c.Locals("userID", userID)
-	c.Locals("userRole", role)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
-	}
-	if isAuthorized && role != authorizeRole {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
-	}
+func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole string, isActive bool) error {
+    authHeader := c.Get("Authorization")
+    if authHeader == "" {
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing Authorization header"})
+    }
 
-	return c.Next()
+    var token string
+    if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+        token = authHeader[7:]
+    } else {
+        token = authHeader // fallback if no "Bearer " prefix
+    }
+    userID, role, err := utils.ParseToken(token)
+    if err != nil {
+        log.Printf("Error parsing token: %v", err)
+        return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+    }
+    c.Locals("userID", userID)
+    c.Locals("userRole", role)
+    // Check if the account is active.
+    if !isActive {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+    }
+
+    // Check if the role is authorized.
+    if isAuthorized && role != authorizeRole {
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+    }
+
+    return c.Next()
 }
 
 func ConditionalAuthentication(routeName string) fiber.Handler {
@@ -40,6 +59,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		isExecuteApi := routeName == "ExecuteDynamicAPI"
 		var isAuthenticated bool
 		var isAuthorized bool
+		var isActive bool
 		var authorizeRole string
 		if isPipeline {
 			pipelineName := c.Query("pipelineName")
@@ -106,11 +126,12 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			}
 			isAuthenticated = route.IsAuthenticated
 			isAuthorized = route.IsAuthorized
+			isActive= route.IsActive
 			authorizeRole = route.AuthorizeRole
 		}
 
-		if isAuthenticated {
-			return Authenticate(c, isAuthorized, authorizeRole)
+		if isAuthenticated||!isActive {
+			return Authenticate(c, isAuthorized, authorizeRole,isActive)
 		}
 
 		return c.Next()

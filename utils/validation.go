@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,14 @@ import (
 
 // ValidateContainerModel validates the container model fields
 func ValidateContainerModel(item map[string]interface{}, containerModel models.ContainerModel) error {
+    // First, enforce that login credential fields exist.
+    for _, field := range containerModel.Fields {
+        if field.IsLoginCredential {
+            if val, exists := item[field.Name]; !exists || fmt.Sprintf("%v", val) == "" {
+                return fmt.Errorf("Field %s is required as a login credential", field.Name)
+            }
+        }
+    }
     for _, field := range containerModel.Fields {
         if err := validateField(item, field); err != nil {
             return err
@@ -88,6 +97,12 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
         val, ok := fieldValue.(string)
         if !ok {
             return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
+        }
+        if emailRule, exists := rules["email"]; exists && emailRule == true {
+            re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s should be a valid email address", fieldName)
+            }
         }
         if minLength, ok := rules["minlength"].(int); ok && len(val) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
@@ -202,6 +217,9 @@ func extractValidationRules(tag string) map[string]interface{} {
 			// Extract custom message for required, if provided
 			_, message := extractRuleAndMessage(part, "required", "requiredMessage")
 			rules["requiredMessage"] = message
+		}
+        if strings.Contains(part, "email") {
+			rules["email"] = true
 		}
 	}
 	return rules

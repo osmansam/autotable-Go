@@ -8,6 +8,6 @@ func AuthRoutes(baseUrl string, app *fiber.App) {
 	authGroup := app.Group(baseUrl)
 	authGroup.Post("/register", controllers.Register)
 	authGroup.Post("/login", controllers.Login)
-	authGroup.Post("/refresh", controllers.Refresh)
+	// authGroup.Post("/refresh", controllers.Refresh)
 
 }

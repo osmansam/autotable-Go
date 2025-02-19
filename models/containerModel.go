@@ -3,12 +3,14 @@ package models
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
 type Field struct {
-	Name     string  `bson:"name"`
-	Type     string  `bson:"type"`
-	Tag      string  `bson:"tag,omitempty"`
-	IsForceDelete      bool  `bson:"isForceDelete,omitempty"`
-    Unique bool `bson:"unique,omitempty"`
-	Children []Field `bson:"children,omitempty"` 
+    Name              string  `bson:"name"`
+    Type              string  `bson:"type"`
+    Tag               string  `bson:"tag,omitempty"`
+    IsForceDelete     bool    `bson:"isForceDelete,omitempty"`
+    Unique            bool    `bson:"unique,omitempty"`
+    IsHashed          bool    `bson:"isHashed,omitempty"`          
+    IsLoginCredential bool    `bson:"isLoginCredential,omitempty"` 
+    Children          []Field `bson:"children,omitempty"`
 }
 type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" ` 
@@ -80,10 +82,11 @@ type ContainerModel struct {
     Pipelines      []PipelineStage `bson:"pipelines"` 
     DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
     DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
+    IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
 }
 
 var RestrictedSchemaNames = []string{
-    "user",
+    // "user",
 }//this is needed so that user container is not created by mistake and get all the data.
 
 
