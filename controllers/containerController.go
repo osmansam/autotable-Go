@@ -53,7 +53,6 @@ func CreateContainer(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, nil, "The specified schema name is restricted and cannot be used.")
 		}
 	}
-
 	log.Println("Checking if container already exists in the database")
 	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": container.SchemaName})
 	if err != nil {
@@ -66,6 +65,26 @@ func CreateContainer(c *fiber.Ctx) error {
 		return &fiber.Error{
 			Code:    http.StatusNotFound,
 			Message: "The specified schema already exists in containers",
+		}
+	}
+	// Validate that objectId fields reference an existing container (not the one being created)
+	for _, field := range container.Fields {
+		if field.Type == "objectId" {
+			// Ensure the field's name is not the same as the container being created.
+			if field.Name == container.SchemaName {
+				log.Println("ObjectId field cannot reference the container being created")
+				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference an already defined container name, not the one being created.")
+			}
+			// Optionally, verify that the referenced container exists in the database.
+			count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": field.Name})
+			if err != nil {
+				log.Printf("Database error when verifying objectId reference: %v", err)
+				return utils.SendErrorResponse(c, err, "Database error while verifying objectId reference.")
+			}
+			if count == 0 {
+				log.Printf("Referenced container %s does not exist", field.Name)
+				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference a valid, existing container name.")
+			}
 		}
 	}
 

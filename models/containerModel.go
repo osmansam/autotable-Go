@@ -86,7 +86,7 @@ type ContainerModel struct {
 }
 
 var RestrictedSchemaNames = []string{
-    // "user",
+    "containers",
 }//this is needed so that user container is not created by mistake and get all the data.
 
 
