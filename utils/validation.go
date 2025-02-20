@@ -140,6 +140,10 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
             return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
         }
         
+    case "bool", "boolean":
+    if _, ok := fieldValue.(bool); !ok {
+        return fmt.Errorf("Field %s should be of type boolean", fieldName)
+    }
    case "date":
     var dateVal time.Time
     var err error
