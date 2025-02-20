@@ -151,6 +151,23 @@ func DeleteContainer(c *fiber.Ctx) error {
 
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
+	
+	log.Println("Fetching container from the database")
+	var container models.ContainerModel
+	err = containerCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&container)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			log.Println("No container found with the specified ID")
+			return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+				Status:  http.StatusNotFound,
+				Message: "No container found with the specified ID.",
+				Data:    nil,
+			})
+		}
+		log.Printf("Failed to retrieve container: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
+	}
+
 	if err != nil {
 		log.Printf("Invalid ID format: %v", err)
 		return utils.SendErrorResponse(c, err, "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.")
@@ -163,7 +180,16 @@ func DeleteContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to delete the container from the database. Please try again later.")
 	}
 
-	log.Println("Container successfully deleted")
+	// Drop the dynamic collection associated with the container.
+	collectionName := container.SchemaName
+	log.Printf("Dropping collection '%s' from the database", collectionName)
+	err = containerCollection.Database().Collection(collectionName).Drop(ctx)
+	if err != nil {
+		log.Printf("Failed to drop collection '%s': %v", collectionName, err)
+		return utils.SendErrorResponse(c, err, "Container deleted but failed to drop the corresponding collection.")
+	}
+
+	log.Println("Container and its corresponding collection successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Container successfully deleted.",
