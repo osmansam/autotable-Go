@@ -73,6 +73,11 @@ type DynamicApiModel struct {
     IsRedisCached   bool   `bson:"isRedisCached"`
     CacheTime       int    `bson:"cacheTime"`
 }
+
+type Population struct {
+    FieldName          string   `bson:"fieldName"`
+    PopulatedVariables []string `bson:"populatedVariables"`
+}
 type ContainerModel struct {
     ID             primitive.ObjectID `bson:"_id,omitempty"`
     SchemaName     string             `bson:"schemaName"`
@@ -83,6 +88,7 @@ type ContainerModel struct {
     DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
     DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
     IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
+    PopulationArray  []Population       `bson:"populationArray,omitempty"`
 }
 
 var RestrictedSchemaNames = []string{
