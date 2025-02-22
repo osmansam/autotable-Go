@@ -431,8 +431,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		Data:    result,
 	})
 }
-
-// get all items for a given collection
+// GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -452,7 +451,6 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		container, err = utils.GetContainerModel(schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			// Using SendErrorResponse to avoid exposing internal error details.
 			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
 		}
 	}
@@ -470,8 +468,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 				})
 			}
 		}
-
-		// If not found in cache, fetch from database.
+		// Not found in cache: fetch from database.
 		currentCollection := configs.GetCollection(schemaName)
 		results, err := currentCollection.Find(ctx, bson.M{})
 		if err != nil {
@@ -479,12 +476,12 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, err, "Failed to fetch items")
 		}
 		defer results.Close(ctx)
-
 		items, err := utils.DecodeCursor(results, ctx)
 		if err != nil {
 			return utils.SendErrorResponse(c, err, "Failed to decode items")
 		}
-        // Remove hashed fields from the items.
+
+		// Remove hashed fields from the items.
 		for _, field := range container.Fields {
 			if field.IsHashed {
 				for i := range items {
@@ -492,13 +489,24 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 				}
 			}
 		}
-		// Cache the data fetched from database.
+
+		// ----- Population logic begins -----
+		if len(container.PopulationArray) > 0 {
+			items, err = populateItems(ctx, container, items)
+			if err != nil {
+				log.Printf("Failed to populate items: %v", err)
+				return utils.SendErrorResponse(c, err, "Failed to populate items")
+			}
+		}
+		// ----- Population logic ends -----
+
+		// Cache the populated data.
 		dataToCache, _ := json.Marshal(items)
 		var expiration time.Duration
 		if container.Redis.CacheTime > 0 {
 			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
 		} else {
-			expiration = 0 //the key will never expire.
+			expiration = 0 // key will never expire.
 		}
 		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
 
@@ -519,19 +527,28 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to decode an item")
 	}
 
-    // Remove hashed fields from the items.
+	// Remove hashed fields from the items.
 	for _, field := range container.Fields {
 		if field.IsHashed {
 			for i := range items {
 				delete(items[i], field.Name)
 			}
 		}
-	}    
+	}
+
+	// ----- Population logic begins -----
+	if len(container.PopulationArray) > 0 {
+		items, err = populateItems(ctx, container, items)
+		if err != nil {
+			log.Printf("Failed to populate items: %v", err)
+			return utils.SendErrorResponse(c, err, "Failed to populate items")
+		}
+	}
+	// ----- Population logic ends -----
 
 	log.Printf("Items successfully fetched from database for schema: %s", schemaName)
 	return utils.SendResponse(c, fiber.StatusOK, "Items successfully fetched.", items)
 }
-
 // TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
 
 //delete an item from the collection
@@ -1406,6 +1423,17 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 						delete(item, field.Name)
 					}
 				}
+				// ----- Population logic begins -----
+				if len(container.PopulationArray) > 0 {
+					// Wrap the item in a slice to reuse the populateItems helper.
+					items, err := populateItems(ctx, container, []map[string]interface{}{item})
+					if err != nil {
+						log.Printf("Population error on cached item: %v", err)
+					} else if len(items) > 0 {
+						item = items[0]
+					}
+				}
+				// ----- Population logic ends -----
 				log.Printf("Item successfully fetched from cache for schema: %s", schemaName)
 				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
 					Status:  http.StatusOK,
@@ -1430,6 +1458,20 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 			delete(result, field.Name)
 		}
 	}
+
+	// ----- Population logic begins -----
+	if len(container.PopulationArray) > 0 {
+		// Wrap the result in a slice to reuse the populateItems helper.
+		items, err := populateItems(ctx, container, []map[string]interface{}{result})
+		if err != nil {
+			log.Printf("Failed to populate item for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to populate item")
+		}
+		if len(items) > 0 {
+			result = items[0]
+		}
+	}
+	// ----- Population logic ends -----
 
 	if shouldCache {
 		dataToCache, _ := json.Marshal(result)
@@ -1582,6 +1624,16 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 			}
 		}
 
+		// ----- Population logic begins -----
+		if len(container.PopulationArray) > 0 {
+			items, err = populateItems(ctx, container, items)
+			if err != nil {
+				log.Printf("Failed to populate items: %v", err)
+				return utils.SendErrorResponse(c, err, "Failed to populate items")
+			}
+		}
+		// ----- Population logic ends -----
+
 		// Retrieve total count of matching documents for pagination metadata.
 		totalItems, err := currentCollection.CountDocuments(ctx, filter)
 		if err != nil {
@@ -1627,12 +1679,21 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
+	// ----- Population logic begins -----
+	if len(container.PopulationArray) > 0 {
+		items, err = populateItems(ctx, container, items)
+		if err != nil {
+			log.Printf("Failed to populate items: %v", err)
+			return utils.SendErrorResponse(c, err, "Failed to populate items")
+		}
+	}
+	// ----- Population logic ends -----
+
 	log.Printf("Search results successfully fetched for schema: %s", schemaName)
 	return utils.SendResponse(c, http.StatusOK, "Search results fetched successfully", items)
 }
 
-
-// handleFilter for a given collection with dynamic query parameters and values.the fields needs to be send in  query like field=value.
+// HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 	// Create a context with a timeout for database operations.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1671,7 +1732,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, err, err.Error())
 		}
 
-		// If the converted value is a map, merge it with an existing filter if necessary.
+		// Merge condition if converted value is a map.
 		if convertedMap, ok := convertedValue.(bson.M); ok {
 			if existingCondition, exists := filter[field.Name]; exists {
 				if existingMap, ok := existingCondition.(bson.M); ok {
@@ -1690,7 +1751,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 	// Always create find options to support sorting even without pagination.
 	findOptions := options.Find()
 
-	// Check for sorting parameters. Apply sort if both "sort" and "asc" are provided.
+	// Apply sorting if both "sort" and "asc" are provided.
 	sortField := c.Query("sort")
 	ascStr := c.Query("asc")
 	if sortField != "" && ascStr != "" {
@@ -1705,7 +1766,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 		findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
 	}
 
-	// Check if pagination parameters are provided together.
+	// Check if pagination parameters are provided.
 	pageStr := c.Query("page")
 	limitStr := c.Query("limit")
 	if pageStr != "" && limitStr != "" {
@@ -1741,6 +1802,16 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 				}
 			}
 		}
+
+		// ----- Population logic begins -----
+		if len(container.PopulationArray) > 0 {
+			items, err = populateItems(ctx, container, items)
+			if err != nil {
+				log.Printf("Failed to populate items: %v", err)
+				return utils.SendErrorResponse(c, err, "Failed to populate items")
+			}
+		}
+		// ----- Population logic ends -----
 
 		// Retrieve the total number of documents for pagination metadata.
 		totalItems, err := currentCollection.CountDocuments(ctx, filter)
@@ -1783,9 +1854,18 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
+	// ----- Population logic begins -----
+	if len(container.PopulationArray) > 0 {
+		items, err = populateItems(ctx, container, items)
+		if err != nil {
+			log.Printf("Failed to populate items: %v", err)
+			return utils.SendErrorResponse(c, err, "Failed to populate items")
+		}
+	}
+	// ----- Population logic ends -----
+
 	return utils.SendResponse(c, http.StatusOK, "Filter results fetched successfully", items)
 }
-
 
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
@@ -1915,11 +1995,10 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		container, err = utils.GetContainerModel(schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			// Using SendErrorResponse to avoid exposing internal error details.
 			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
 		}
 	}
-	// Parse pagination query parameters
+	// Parse pagination query parameters.
 	pageStr := c.Query("page", "1")  // Default to page 1
 	limitStr := c.Query("limit", "10") // Default to 10 items per page
 
@@ -1968,12 +2047,6 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to decode items")
 	}
 
-	// Get total count of documents in the collection
-	totalItems, err := currentCollection.CountDocuments(ctx, bson.M{})
-	if err != nil {
-		log.Printf("Failed to fetch total items for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to fetch total items")
-	}
 	// Remove hashed fields from the items.
 	for _, field := range container.Fields {
 		if field.IsHashed {
@@ -1982,6 +2055,24 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 			}
 		}
 	}
+
+	// ----- Population logic begins -----
+	if len(container.PopulationArray) > 0 {
+		items, err = populateItems(ctx, container, items)
+		if err != nil {
+			log.Printf("Failed to populate items for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to populate items")
+		}
+	}
+	// ----- Population logic ends -----
+
+	// Get total count of documents in the collection
+	totalItems, err := currentCollection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to fetch total items for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to fetch total items")
+	}
+
 	// Calculate total pages
 	totalPages := int(totalItems) / limit
 	if int(totalItems)%limit > 0 {
@@ -2294,4 +2385,78 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         Data:    apiResult,
         Source:  utils.PointerToString("API call"),
     })
+}
+
+
+// populateItems iterates over each population configuration. If the corresponding field is of type "objectId",
+// it replaces the field's value with the populated document containing only the specified fields.
+func populateItems(ctx context.Context, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
+	for _, pop := range container.PopulationArray {
+		// Locate the field definition by matching the field name.
+		var targetField *models.Field
+		for _, f := range container.Fields {
+			if f.Name == pop.FieldName {
+				targetField = &f
+				break
+			}
+		}
+		if targetField == nil {
+			// Skip if the field definition is not found.
+			continue
+		}
+
+		// Only perform population if the field type is "objectId".
+		if targetField.Type == "objectId" {
+			// Iterate over each item to perform the population.
+			for i, item := range items {
+				if idVal, exists := item[pop.FieldName]; exists && idVal != nil {
+					var objectId primitive.ObjectID
+					switch v := idVal.(type) {
+					case primitive.ObjectID:
+						objectId = v
+					case string:
+						var err error
+						objectId, err = primitive.ObjectIDFromHex(v)
+						if err != nil {
+							// Skip population if conversion fails.
+							continue
+						}
+					default:
+						// Skip if the value is not in an expected format.
+						continue
+					}
+
+					// Fetch the populated document with only the specified fields.
+					populatedDoc, err := getPopulatedDocument(ctx, pop.FieldName, objectId, pop.PopulatedVariables)
+					if err != nil {
+						log.Printf("Failed to populate field %s for objectId %s: %v", pop.FieldName, objectId.Hex(), err)
+						continue
+					}
+					// Replace the ObjectID with the populated document.
+					items[i][pop.FieldName] = populatedDoc
+				}
+			}
+		}
+		// If the field type is not "objectId", no changes are made.
+	}
+	return items, nil
+}
+
+func getPopulatedDocument(ctx context.Context, collectionName string, objectID primitive.ObjectID, fields []string) (map[string]interface{}, error) {
+	// Retrieve the collection (assumes you have a function configs.GetCollection)
+	coll := configs.GetCollection(collectionName)
+
+	// Build the projection document.
+	projection := bson.M{}
+	for _, field := range fields {
+		projection[field] = 1
+	}
+
+	// Find the document using the filter and projection.
+	var result bson.M
+	err := coll.FindOne(ctx, bson.M{"_id": objectID}, options.FindOne().SetProjection(projection)).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
