@@ -2386,15 +2386,12 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         Source:  utils.PointerToString("API call"),
     })
 }
-
-
-// populateItems iterates over each population configuration. If the corresponding field is of type "objectId",
-// it replaces the field's value with the populated document containing only the specified fields.
 func populateItems(ctx context.Context, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
 	for _, pop := range container.PopulationArray {
-		// Locate the field definition by matching the field name.
+		// Locate the field definition by matching the local field name.
 		var targetField *models.Field
 		for _, f := range container.Fields {
+			// Here we assume that the PopulationArray's FieldName matches the local field name.
 			if f.Name == pop.FieldName {
 				targetField = &f
 				break
@@ -2408,8 +2405,9 @@ func populateItems(ctx context.Context, container *models.ContainerModel, items 
 		// Only perform population if the field type is "objectId".
 		if targetField.Type == "objectId" {
 			// Iterate over each item to perform the population.
+			// Look for the ObjectID stored under the local field name.
 			for i, item := range items {
-				if idVal, exists := item[pop.FieldName]; exists && idVal != nil {
+				if idVal, exists := item[targetField.Name]; exists && idVal != nil {
 					var objectId primitive.ObjectID
 					switch v := idVal.(type) {
 					case primitive.ObjectID:
@@ -2426,14 +2424,15 @@ func populateItems(ctx context.Context, container *models.ContainerModel, items 
 						continue
 					}
 
-					// Fetch the populated document with only the specified fields.
-					populatedDoc, err := getPopulatedDocument(ctx, pop.FieldName, objectId, pop.PopulatedVariables)
+					// Fetch the populated document.
+					// Use targetField.ObjectSchemaName as the collection name.
+					populatedDoc, err := getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
 					if err != nil {
-						log.Printf("Failed to populate field %s for objectId %s: %v", pop.FieldName, objectId.Hex(), err)
+						log.Printf("Failed to populate field %s for objectId %s: %v", targetField.Name, objectId.Hex(), err)
 						continue
 					}
-					// Replace the ObjectID with the populated document.
-					items[i][pop.FieldName] = populatedDoc
+					// Replace the ObjectID with the populated document under the local field name.
+					items[i][targetField.Name] = populatedDoc
 				}
 			}
 		}

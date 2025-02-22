@@ -71,23 +71,22 @@ func CreateContainer(c *fiber.Ctx) error {
 	for _, field := range container.Fields {
 		if field.Type == "objectId" {
 			// Ensure the field's name is not the same as the container being created.
-			if field.Name == container.SchemaName {
+			if field.ObjectSchemaName == container.SchemaName {
 				log.Println("ObjectId field cannot reference the container being created")
 				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference an already defined container name, not the one being created.")
 			}
 			// Optionally, verify that the referenced container exists in the database.
-			count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": field.Name})
+			count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": field.ObjectSchemaName})
 			if err != nil {
 				log.Printf("Database error when verifying objectId reference: %v", err)
 				return utils.SendErrorResponse(c, err, "Database error while verifying objectId reference.")
 			}
 			if count == 0 {
-				log.Printf("Referenced container %s does not exist", field.Name)
+				log.Printf("Referenced container %s does not exist", field.ObjectSchemaName)
 				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference a valid, existing container name.")
 			}
 		}
 	}
-
 	newContainer := models.ContainerModel{
 		SchemaName: container.SchemaName,
 		Fields:     container.Fields,
@@ -151,7 +150,7 @@ func DeleteContainer(c *fiber.Ctx) error {
 
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
-	
+
 	log.Println("Fetching container from the database")
 	var container models.ContainerModel
 	err = containerCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&container)
