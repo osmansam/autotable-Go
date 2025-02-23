@@ -90,6 +90,8 @@ type ContainerModel struct {
     DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
     IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
     PopulationArray  []Population       `bson:"populationArray,omitempty"`
+    PopulatedRoutes    []string `bson:"populatedRoutes"`
+
 }
 
 var RestrictedSchemaNames = []string{

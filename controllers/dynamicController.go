@@ -491,7 +491,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		}
 
 		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0 {
+		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
 			items, err = populateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
@@ -537,7 +537,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	}
 
 	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 {
+	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
 		items, err = populateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
@@ -1424,7 +1424,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 					}
 				}
 				// ----- Population logic begins -----
-				if len(container.PopulationArray) > 0 {
+				if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
 					// Wrap the item in a slice to reuse the populateItems helper.
 					items, err := populateItems(ctx, container, []map[string]interface{}{item})
 					if err != nil {
@@ -1460,7 +1460,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 {
+	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
 		// Wrap the result in a slice to reuse the populateItems helper.
 		items, err := populateItems(ctx, container, []map[string]interface{}{result})
 		if err != nil {
@@ -1625,7 +1625,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		}
 
 		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0 {
+		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
 			items, err = populateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
@@ -1680,7 +1680,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 {
+	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
 		items, err = populateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
@@ -1804,7 +1804,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 		}
 
 		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0 {
+		if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
 			items, err = populateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
@@ -1855,7 +1855,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 {
+	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
 		items, err = populateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
@@ -2057,7 +2057,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	}
 
 	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 {
+	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetAllDynamicModelItemsWithPagination") {
 		items, err = populateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items for schema: %s, error: %v", schemaName, err)
@@ -2458,4 +2458,13 @@ func getPopulatedDocument(ctx context.Context, collectionName string, objectID p
 		return nil, err
 	}
 	return result, nil
+}
+// Helper function to check if a slice contains a given string.
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
