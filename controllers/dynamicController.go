@@ -114,6 +114,21 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         itemMap[fieldName] = url
     }
 
+	// Automatically set createdAt and updatedAt if they are defined in the container schema.
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, field := range container.Fields {
+		if field.Name == "createdAt" {
+			// Only set createdAt if not already provided.
+			if _, exists := itemMap["createdAt"]; !exists {
+				itemMap["createdAt"] = now
+			}
+		}
+		if field.Name == "updatedAt" {
+			// Always set updatedAt at creation.
+			itemMap["updatedAt"] = now
+		}
+	}
+
     // Validation
    err = utils.ValidateContainerModel(itemMap, *container)
 	if err != nil {
@@ -320,7 +335,21 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 		items[i] = item
 	}
-
+	// Automatically set createdAt and updatedAt for each item, if defined in the container schema.
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, item := range items {
+		for _, field := range container.Fields {
+			if field.Name == "createdAt" {
+				if _, exists := item["createdAt"]; !exists {
+					item["createdAt"] = now
+				}
+			}
+			if field.Name == "updatedAt" {
+				item["updatedAt"] = now
+			}
+		}
+		items[i] = item
+	}
 	// Validate each item against the container model.
 	for i, item := range items {
 		if err := utils.ValidateContainerModel(item, *container); err != nil {
@@ -998,7 +1027,13 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     for key, value := range updatedItemMap {
         existingItem[key] = value
     }
-
+    // Automatically update the updatedAt field if defined in the container schema.
+    now := time.Now().UTC().Format(time.RFC3339)
+    for _, field := range container.Fields {
+        if field.Name == "updatedAt" {
+            existingItem["updatedAt"] = now
+        }
+    }
     // Validation
     err = utils.ValidateContainerModel(existingItem, *container)
     if err != nil {
@@ -1263,7 +1298,14 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		for key, value := range item {
 			existingItem[key] = value
 		}
-
+		
+		// Automatically update updatedAt for each updated document.
+		now := time.Now().UTC().Format(time.RFC3339)
+		for _, field := range container.Fields {
+			if field.Name == "updatedAt" {
+				existingItem["updatedAt"] = now
+			}
+		}
 		// Validate the merged document.
 		if err = utils.ValidateContainerModel(existingItem, *container); err != nil {
 			utils.ReleaseLock(lockKey, lockID)

@@ -64,10 +64,15 @@ func validateArrayField(item map[string]interface{}, field models.Field) error {
 }
 
 func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag string) error {
-    fieldValue := item[fieldName]
-
-    // Extracting the rules and custom messages
     rules := extractValidationRules(tag)
+
+    // If the field is marked as auto, skip required check.
+    if auto, ok := rules["auto"].(bool); ok && auto {
+        // Optionally, remove "required" so that further validation doesn’t complain.
+        delete(rules, "required")
+    }
+    
+    fieldValue := item[fieldName]
 
     // Check for required field
     if required, ok := rules["required"].(bool); ok && required {
@@ -225,6 +230,9 @@ func extractValidationRules(tag string) map[string]interface{} {
         if strings.Contains(part, "email") {
 			rules["email"] = true
 		}
+        if strings.Contains(part, "auto") {
+            rules["auto"] = true
+        }
 	}
 	return rules
 }
