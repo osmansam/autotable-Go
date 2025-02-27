@@ -176,6 +176,19 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
+	// Generate auto-increment id if defined and not provided
+	for _, field := range container.Fields {
+		if field.Type == "autoIncrementId" {
+			if _, exists := itemMap[field.Name]; !exists {
+				seq, err := getNextSequence(ctx, schemaName)
+				if err != nil {
+					log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", schemaName, err)
+					return utils.SendErrorResponse(c, err, "Failed to generate autoIncrement id")
+				}
+				itemMap[field.Name] = seq
+			}
+		}
+	}
     // Save the validated item into its associated collection
     result, err := currentCollection.InsertOne(ctx, itemMap)
     if err != nil {
@@ -2438,62 +2451,75 @@ func populateItems(ctx context.Context, container *models.ContainerModel, items 
 			continue
 		}
 
-		// Only perform population if the field type is "objectId".
-		if targetField.Type == "objectId" {
-			// Iterate over each item to perform the population.
-			// Look for the ObjectID stored under the local field name.
-			for i, item := range items {
-				if idVal, exists := item[targetField.Name]; exists && idVal != nil {
+	if targetField.Type == "objectId" || targetField.Type == "autoIncrementId" {
+		for i, item := range items {
+			if idVal, exists := item[targetField.Name]; exists && idVal != nil {
+				// Depending on the field type, prepare the id accordingly.
+				var populatedDoc map[string]interface{}
+				var err error
+				if targetField.Type == "objectId" {
 					var objectId primitive.ObjectID
 					switch v := idVal.(type) {
 					case primitive.ObjectID:
 						objectId = v
 					case string:
-						var err error
 						objectId, err = primitive.ObjectIDFromHex(v)
 						if err != nil {
-							// Skip population if conversion fails.
 							continue
 						}
 					default:
-						// Skip if the value is not in an expected format.
 						continue
 					}
-
-					// Fetch the populated document.
-					// Use targetField.ObjectSchemaName as the collection name.
-					populatedDoc, err := getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
-					if err != nil {
-						log.Printf("Failed to populate field %s for objectId %s: %v", targetField.Name, objectId.Hex(), err)
-						continue
-					}
-					// Replace the ObjectID with the populated document under the local field name.
-					items[i][targetField.Name] = populatedDoc
+					populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
+				} else { // autoIncrementId
+                populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
+            	}
+				log.Printf("populatedDoc: %v", populatedDoc)
+				if err != nil {
+					log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
+					continue
 				}
+				items[i][targetField.Name] = populatedDoc
 			}
 		}
+	}
+
 		// If the field type is not "objectId", no changes are made.
 	}
 	return items, nil
 }
 
-func getPopulatedDocument(ctx context.Context, collectionName string, objectID primitive.ObjectID, fields []string) (map[string]interface{}, error) {
-	// Retrieve the collection (assumes you have a function configs.GetCollection)
-	coll := configs.GetCollection(collectionName)
+func getPopulatedDocument(ctx context.Context, collectionName string, id interface{}, fields []string) (map[string]interface{}, error) {
+    coll := configs.GetCollection(collectionName)
 
-	// Build the projection document.
-	projection := bson.M{}
-	for _, field := range fields {
-		projection[field] = 1
-	}
+    projection := bson.M{}
+    for _, field := range fields {
+        projection[field] = 1
+    }
 
-	// Find the document using the filter and projection.
-	var result bson.M
-	err := coll.FindOne(ctx, bson.M{"_id": objectID}, options.FindOne().SetProjection(projection)).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+    filter := bson.M{}
+    switch v := id.(type) {
+    case primitive.ObjectID:
+        filter["_id"] = v
+    case int, int64, float64:
+        filter["_id"] = id
+    case string:
+        // Attempt to convert the string to an integer.
+        intVal, err := strconv.Atoi(v)
+        if err != nil {
+            return nil, fmt.Errorf("autoIncrementId value %v is not a valid integer", v)
+        }
+        filter["_id"] = intVal
+    default:
+        return nil, fmt.Errorf("unsupported id type for population")
+    }
+
+    var result bson.M
+    err := coll.FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&result)
+    if err != nil {
+        return nil, err
+    }
+    return result, nil
 }
 // Helper function to check if a slice contains a given string.
 func contains(slice []string, item string) bool {
@@ -2503,4 +2529,22 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func getNextSequence(ctx context.Context, schemaName string) (int64, error) {
+    // Reference to your counters collection (ensure you’ve initialized this in your app)
+    countersColl := configs.DB.Database(os.Getenv("COLLECTION_NAME")).Collection("counters")
+    
+    filter := bson.M{"_id": schemaName}
+    update := bson.M{"$inc": bson.M{"seq": 1}}
+    opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
+    
+    var result struct {
+        Seq int64 `bson:"seq"`
+    }
+    err := countersColl.FindOneAndUpdate(ctx, filter, update, opts).Decode(&result)
+    if err != nil {
+        return 0, err
+    }
+    return result.Seq, nil
 }

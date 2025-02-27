@@ -99,7 +99,22 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
         if len(val) != 24 || !isValidHex(val) {
             return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
         }
-
+    case "autoIncrementId":
+        // If provided, the value should be an integer (or a numeric string that can be parsed as int)
+        switch v := fieldValue.(type) {
+        case int:
+            // valid
+        case float64:
+            if v != float64(int(v)) {
+                return fmt.Errorf("Field %s should be an integer", fieldName)
+            }
+        case string:
+            if _, err := strconv.Atoi(v); err != nil {
+                return fmt.Errorf("Field %s should be an integer", fieldName)
+            }
+        default:
+            return fmt.Errorf("Field %s should be of type autoIncrementId (integer)", fieldName)
+        }
     case "string":
         val, ok := fieldValue.(string)
         if !ok {
@@ -283,8 +298,6 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
 
     return nil
 }
-
-
 // extractValidationRules parses the tag and extracts validation rules and custom messages
 func extractValidationRules(tag string) map[string]interface{} {
 	rules := make(map[string]interface{})
