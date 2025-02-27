@@ -2,6 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -121,7 +123,97 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
             }
             return fmt.Errorf("Field %s should have a string length less than or equal to %d", fieldName, maxLength)
         }
+	case "float", "decimal":
+		var val float64
+		switch v := fieldValue.(type) {
+		case float64:
+			val = v
+		case int:
+			val = float64(v)
+		case string:
+			parsed, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return fmt.Errorf("Field %s should be a valid float", fieldName)
+			}
+			val = parsed
+		default:
+			return fmt.Errorf("Field %s should be of type float/decimal", fieldName)
+		}
+		// Validate min and max if provided
+		if min, ok := rules["min"].(int); ok && val < float64(min) {
+			if msg, ok := rules["minMessage"].(string); ok && msg != "" {
+				return fmt.Errorf(msg)
+			}
+			return fmt.Errorf("Field %s should have a value greater than or equal to %d", fieldName, min)
+		}
+		if max, ok := rules["max"].(int); ok && val > float64(max) {
+			if msg, ok := rules["maxMessage"].(string); ok && msg != "" {
+				return fmt.Errorf(msg)
+			}
+			return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
+		}
 
+	// UUID
+	case "uuid":
+		val, ok := fieldValue.(string)
+		if !ok {
+			return fmt.Errorf("Field %s should be a valid UUID string", fieldName)
+		}
+		re := regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+		if !re.MatchString(val) {
+			return fmt.Errorf("Field %s should be a valid UUID", fieldName)
+		}
+
+	// URL
+	case "url":
+		val, ok := fieldValue.(string)
+		if !ok {
+			return fmt.Errorf("Field %s should be a valid URL string", fieldName)
+		}
+		parsedUrl, err := url.ParseRequestURI(val)
+		if err != nil || parsedUrl.Scheme == "" || parsedUrl.Host == "" {
+			return fmt.Errorf("Field %s should be a valid URL", fieldName)
+		}
+
+	// IP Address
+	case "ip", "ipaddress":
+		val, ok := fieldValue.(string)
+		if !ok {
+			return fmt.Errorf("Field %s should be a valid IP address string", fieldName)
+		}
+		if net.ParseIP(val) == nil {
+			return fmt.Errorf("Field %s should be a valid IP address", fieldName)
+		}
+
+	// Enum: assumes the tag provides allowed values (e.g., enum="red|green|blue")
+	case "enum":
+		val, ok := fieldValue.(string)
+		if !ok {
+			return fmt.Errorf("Field %s should be a string for enum validation", fieldName)
+		}
+		allowed, ok := rules["enum"].([]string)
+		if !ok {
+			// Fallback if stored as []interface{}
+			if list, ok := rules["enum"].([]interface{}); ok {
+				var enumList []string
+				for _, item := range list {
+					if str, ok := item.(string); ok {
+						enumList = append(enumList, str)
+					}
+				}
+				allowed = enumList
+			}
+		}
+		found := false
+		for _, option := range allowed {
+			if option == val {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("Field %s must be one of the allowed values: %v", fieldName, allowed)
+		}
     case "int":
         var val int
         switch v := fieldValue.(type) {
@@ -211,6 +303,16 @@ func extractValidationRules(tag string) map[string]interface{} {
 			rules["maxlength"] = maxLength
 			rules["maxlengthMessage"] = message
 		}
+        if strings.Contains(part, "enum=") {
+            enumStr := strings.SplitN(part, "enum=", 2)[1]
+            // Remove backslashes so that \" becomes "
+            enumStr = strings.ReplaceAll(enumStr, "\\", "")
+            // Then trim the surrounding quotes
+            enumStr = strings.Trim(enumStr, "\"")
+            allowed := strings.Split(enumStr, "|")
+            rules["enum"] = allowed
+            fmt.Printf("DEBUG: Allowed enum values: %v\n", allowed)
+        }
 		if strings.Contains(part, "min=") {
 			min, message := extractRuleAndMessage(part, "min", "minMessage")
 			rules["min"] = min
