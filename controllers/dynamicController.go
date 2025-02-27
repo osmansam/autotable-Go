@@ -301,14 +301,14 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 				// Loop over the files so that each item gets its corresponding image.
 				for _, file := range files {
-                    tempFilePath := "./temp/" + file.Filename
-                    if err := c.SaveFile(file, tempFilePath); err != nil {
-                        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-                            Status:  http.StatusInternalServerError,
-                            Message: "Error saving temp file.",
-                            Data:    err.Error(),
-                        })
-                    }
+					tempFilePath := "./temp/" + file.Filename
+					if err := c.SaveFile(file, tempFilePath); err != nil {
+						return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+							Status:  http.StatusInternalServerError,
+							Message: "Error saving temp file.",
+							Data:    err.Error(),
+						})
+					}
 					imageURL, err := utils.UploadToCloudinary(tempFilePath)
 					os.Remove(tempFilePath) // Clean up the temp file.
 					if err != nil {
@@ -348,6 +348,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 		items[i] = item
 	}
+
 	// Automatically set createdAt and updatedAt for each item, if defined in the container schema.
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i, item := range items {
@@ -363,6 +364,8 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 		items[i] = item
 	}
+
+
 	// Validate each item against the container model.
 	for i, item := range items {
 		if err := utils.ValidateContainerModel(item, *container); err != nil {
@@ -380,6 +383,24 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 					if err == nil {
 						item[field.Name] = objId
 					}
+				}
+			}
+		}
+		items[i] = item
+	}
+
+	// Generate auto-increment id for each item if defined and not provided or empty.
+	for i, item := range items {
+		for _, field := range container.Fields {
+			if field.Type == "autoIncrementId" {
+				// Check if the field is missing or its value is empty.
+				if val, exists := item[field.Name]; !exists || fmt.Sprintf("%v", val) == "" {
+					seq, err := getNextSequence(ctx, schemaName)
+					if err != nil {
+						log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", schemaName, err)
+						return utils.SendErrorResponse(c, err, "Failed to generate autoIncrement id")
+					}
+					item[field.Name] = seq
 				}
 			}
 		}
@@ -473,6 +494,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		Data:    result,
 	})
 }
+
 // GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2474,7 +2496,6 @@ func populateItems(ctx context.Context, container *models.ContainerModel, items 
 				} else { // autoIncrementId
                 populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
             	}
-				log.Printf("populatedDoc: %v", populatedDoc)
 				if err != nil {
 					log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
 					continue

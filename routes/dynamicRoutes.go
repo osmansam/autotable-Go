@@ -10,6 +10,7 @@ import (
 func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup := app.Group(baseUrl)
 	dynamicGroup.Post("/", middlewares.ConditionalAuthentication("CreateDynamicModelItem"), controllers.CreateDynamicModelItem)
+	dynamicGroup.Post("/multiple", middlewares.ConditionalAuthentication("CreateMultipleDynamicModelItem"), controllers.CreateMultipleDynamicModelItem)
 	dynamicGroup.Get("/", middlewares.ConditionalAuthentication("GetAllDynamicModelItems"), controllers.GetAllDynamicModelItems)
 	dynamicGroup.Get("/page",middlewares.ConditionalAuthentication("GetAllDynamicModelItemsWithPagination"),controllers.GetAllDynamicModelItemsWithPagination)
 	dynamicGroup.Get("testPipeline",middlewares.ConditionalAuthentication("TestPipeline"),controllers.TestPipeline)
@@ -18,6 +19,8 @@ func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup.Get("/filter", middlewares.ConditionalAuthentication("HandleFilterDynamicModelItem"), controllers.HandleFilterDynamicModelItem)
 	dynamicGroup.Get("/execute",middlewares.ConditionalAuthentication("ExecuteDynamicCode"),controllers.ExecuteDynamicCode)
 	dynamicGroup.Get("/api", middlewares.ConditionalAuthentication("ExecuteDynamicAPI"),controllers.ExecuteDynamicAPI)
+	dynamicGroup.Patch("/multiple", middlewares.ConditionalAuthentication("UpdateMultipleDynamicModelItem"), controllers.UpdateMultipleDynamicModelItem)
+	dynamicGroup.Delete("/multiple", middlewares.ConditionalAuthentication("DeleteMultipleDynamicModelItem"), controllers.DeleteMultipleDynamicModelItem)
 	dynamicGroup.Delete("/:id", middlewares.ConditionalAuthentication("DeleteDynamicModelItem"), controllers.DeleteDynamicModelItem)
 	dynamicGroup.Patch("/:id", middlewares.ConditionalAuthentication("UpdateDynamicModelItem"), controllers.UpdateDynamicModelItem)
 	dynamicGroup.Get("/:id", middlewares.ConditionalAuthentication("GetDynamicModelItem"), controllers.GetDynamicModelItem)
