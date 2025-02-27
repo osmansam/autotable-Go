@@ -1298,7 +1298,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		for key, value := range item {
 			existingItem[key] = value
 		}
-		
+
 		// Automatically update updatedAt for each updated document.
 		now := time.Now().UTC().Format(time.RFC3339)
 		for _, field := range container.Fields {
@@ -1535,7 +1535,6 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 		Source:  utils.PointerToString("database"),
 	})
 }
-
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	// Create a context with a timeout for database operations.
@@ -1734,7 +1733,6 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	log.Printf("Search results successfully fetched for schema: %s", schemaName)
 	return utils.SendResponse(c, http.StatusOK, "Search results fetched successfully", items)
 }
-
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 	// Create a context with a timeout for database operations.
@@ -1908,7 +1906,6 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
 	return utils.SendResponse(c, http.StatusOK, "Filter results fetched successfully", items)
 }
-
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2131,7 +2128,6 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	// Return paginated result
 	return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", result)
 }
-
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2294,7 +2290,6 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to execute function")
     }
 }
-
 func TestPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
@@ -2322,7 +2317,6 @@ func TestPipeline(c *fiber.Ctx) error {
         "data":    items,
     })
 }
-
 // TODO:redis generate key and delete key will added into this function and then the route will be added and tested again
 func ExecuteDynamicAPI(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
