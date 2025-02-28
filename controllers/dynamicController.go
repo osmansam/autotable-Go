@@ -947,7 +947,6 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		Data:    responseData,
 	})
 }
-
 //update an item in the collection
 func UpdateDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2473,38 +2472,39 @@ func populateItems(ctx context.Context, container *models.ContainerModel, items 
 			continue
 		}
 
-	if targetField.Type == "objectId" || targetField.Type == "autoIncrementId" {
-		for i, item := range items {
-			if idVal, exists := item[targetField.Name]; exists && idVal != nil {
-				// Depending on the field type, prepare the id accordingly.
-				var populatedDoc map[string]interface{}
-				var err error
-				if targetField.Type == "objectId" {
-					var objectId primitive.ObjectID
-					switch v := idVal.(type) {
-					case primitive.ObjectID:
-						objectId = v
-					case string:
-						objectId, err = primitive.ObjectIDFromHex(v)
-						if err != nil {
+		if targetField.Type == "objectId" ||
+		targetField.Type == "autoIncrementId" ||
+		(targetField.Type == "string" && targetField.ObjectSchemaName != "") {
+			for i, item := range items {
+				if idVal, exists := item[targetField.Name]; exists && idVal != nil {
+					var populatedDoc map[string]interface{}
+					var err error
+					if targetField.Type == "objectId" {
+						var objectId primitive.ObjectID
+						switch v := idVal.(type) {
+						case primitive.ObjectID:
+							objectId = v
+						case string:
+							objectId, err = primitive.ObjectIDFromHex(v)
+							if err != nil {
+								continue
+							}
+						default:
 							continue
 						}
-					default:
+						populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
+					} else {
+						// For autoIncrementId and string types, just pass idVal
+						populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
+					}
+					if err != nil {
+						log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
 						continue
 					}
-					populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
-				} else { // autoIncrementId
-                populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
-            	}
-				if err != nil {
-					log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
-					continue
+					items[i][targetField.Name] = populatedDoc
 				}
-				items[i][targetField.Name] = populatedDoc
 			}
 		}
-	}
-
 		// If the field type is not "objectId", no changes are made.
 	}
 	return items, nil
@@ -2525,12 +2525,13 @@ func getPopulatedDocument(ctx context.Context, collectionName string, id interfa
     case int, int64, float64:
         filter["_id"] = id
     case string:
-        // Attempt to convert the string to an integer.
-        intVal, err := strconv.Atoi(v)
-        if err != nil {
-            return nil, fmt.Errorf("autoIncrementId value %v is not a valid integer", v)
+        // First, try to convert the string to an integer.
+        if intVal, err := strconv.Atoi(v); err == nil {
+            filter["_id"] = intVal
+        } else {
+            // If conversion fails, use the string directly.
+            filter["_id"] = v
         }
-        filter["_id"] = intVal
     default:
         return nil, fmt.Errorf("unsupported id type for population")
     }
@@ -2542,6 +2543,7 @@ func getPopulatedDocument(ctx context.Context, collectionName string, id interfa
     }
     return result, nil
 }
+
 // Helper function to check if a slice contains a given string.
 func contains(slice []string, item string) bool {
 	for _, s := range slice {
