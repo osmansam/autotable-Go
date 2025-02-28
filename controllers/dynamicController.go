@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"plugin"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -180,7 +181,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	for _, field := range container.Fields {
 		if field.Type == "autoIncrementId" {
 			if _, exists := itemMap[field.Name]; !exists {
-				seq, err := getNextSequence(ctx, schemaName)
+				seq, err := utils.GetNextSequence(ctx, schemaName)
 				if err != nil {
 					log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", schemaName, err)
 					return utils.SendErrorResponse(c, err, "Failed to generate autoIncrement id")
@@ -395,7 +396,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			if field.Type == "autoIncrementId" {
 				// Check if the field is missing or its value is empty.
 				if val, exists := item[field.Name]; !exists || fmt.Sprintf("%v", val) == "" {
-					seq, err := getNextSequence(ctx, schemaName)
+					seq, err := utils.GetNextSequence(ctx, schemaName)
 					if err != nil {
 						log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", schemaName, err)
 						return utils.SendErrorResponse(c, err, "Failed to generate autoIncrement id")
@@ -556,7 +557,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 		// ----- Population logic begins -----
 		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
-			items, err = populateItems(ctx, container, items)
+			items, err = utils.PopulateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
 				return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -602,7 +603,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 	// ----- Population logic begins -----
 	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
-		items, err = populateItems(ctx, container, items)
+		items, err = utils.PopulateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -1501,8 +1502,8 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 				}
 				// ----- Population logic begins -----
 				if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
-					// Wrap the item in a slice to reuse the populateItems helper.
-					items, err := populateItems(ctx, container, []map[string]interface{}{item})
+					// Wrap the item in a slice to reuse the utils.PopulateItems helper.
+					items, err := utils.PopulateItems(ctx, container, []map[string]interface{}{item})
 					if err != nil {
 						log.Printf("Population error on cached item: %v", err)
 					} else if len(items) > 0 {
@@ -1537,8 +1538,8 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 
 	// ----- Population logic begins -----
 	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
-		// Wrap the result in a slice to reuse the populateItems helper.
-		items, err := populateItems(ctx, container, []map[string]interface{}{result})
+		// Wrap the result in a slice to reuse the utils.PopulateItems helper.
+		items, err := utils.PopulateItems(ctx, container, []map[string]interface{}{result})
 		if err != nil {
 			log.Printf("Failed to populate item for schema: %s, error: %v", schemaName, err)
 			return utils.SendErrorResponse(c, err, "Failed to populate item")
@@ -1592,36 +1593,59 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
-	// Build the query filter using the container's fields, skipping hashed fields.
-	var orQueries []bson.M
-	for _, field := range container.Fields {
-		// Skip fields that are marked as hashed.
-		if field.IsHashed {
-			continue
-		}
-		switch field.Type {
-		case "string":
-			pattern := ".*" + searchKey + ".*"
-			regex := primitive.Regex{Pattern: pattern, Options: "i"} // Case-insensitive search.
-			orQueries = append(orQueries, bson.M{field.Name: regex})
-		case "int", "float":
-			if num, err := strconv.ParseFloat(searchKey, 64); err == nil {
-				orQueries = append(orQueries, bson.M{field.Name: num})
-			}
-		case "boolean":
-			if boolVal, err := strconv.ParseBool(searchKey); err == nil {
-				orQueries = append(orQueries, bson.M{field.Name: boolVal})
-			}
-		case "date":
-			if dateVal, err := time.Parse(time.RFC3339, searchKey); err == nil {
-				orQueries = append(orQueries, bson.M{field.Name: dateVal})
-			}
-		case "objectId":
-			if objId, err := primitive.ObjectIDFromHex(searchKey); err == nil {
-				orQueries = append(orQueries, bson.M{field.Name: objId})
-			}
-		}
+// Build the query filter using the container's fields, skipping hashed fields.
+var orQueries []bson.M
+for _, field := range container.Fields {
+	// Skip fields that are marked as hashed.
+	if field.IsHashed {
+		continue
 	}
+	switch field.Type {
+	case "string":
+		pattern := ".*" + searchKey + ".*"
+		regex := primitive.Regex{Pattern: pattern, Options: "i"} // Case-insensitive search.
+		orQueries = append(orQueries, bson.M{field.Name: regex})
+	case "int", "autoIncrementId":
+		if num, err := strconv.ParseFloat(searchKey, 64); err == nil {
+			// For integer and autoIncrementId, convert to an int.
+			orQueries = append(orQueries, bson.M{field.Name: int(num)})
+		}
+	case "float", "decimal":
+		if num, err := strconv.ParseFloat(searchKey, 64); err == nil {
+			orQueries = append(orQueries, bson.M{field.Name: num})
+		}
+	case "boolean", "bool":
+		if boolVal, err := strconv.ParseBool(searchKey); err == nil {
+			orQueries = append(orQueries, bson.M{field.Name: boolVal})
+		}
+	case "date":
+		if dateVal, err := time.Parse(time.RFC3339, searchKey); err == nil {
+			orQueries = append(orQueries, bson.M{field.Name: dateVal})
+		}
+	case "objectId":
+		if objId, err := primitive.ObjectIDFromHex(searchKey); err == nil {
+			orQueries = append(orQueries, bson.M{field.Name: objId})
+		}
+	case "uuid":
+		// Validate the UUID format with a regex.
+		re := regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+		if re.MatchString(searchKey) {
+			orQueries = append(orQueries, bson.M{field.Name: searchKey})
+		}
+	case "url":
+		// Use regex for URL matching (escape the searchKey to avoid regex meta-characters issues).
+		pattern := ".*" + regexp.QuoteMeta(searchKey) + ".*"
+		regex := primitive.Regex{Pattern: pattern, Options: "i"}
+		orQueries = append(orQueries, bson.M{field.Name: regex})
+	case "ip", "ipaddress":
+		// For IP addresses, an exact match is usually appropriate.
+		orQueries = append(orQueries, bson.M{field.Name: searchKey})
+	case "enum":
+		// For enum fields, we assume an exact match.
+		orQueries = append(orQueries, bson.M{field.Name: searchKey})
+	}
+}
+
 
 	if len(orQueries) == 0 {
 		log.Printf("No valid search queries could be constructed for schema: %s with search key: %s", schemaName, searchKey)
@@ -1701,7 +1725,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 		// ----- Population logic begins -----
 		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
-			items, err = populateItems(ctx, container, items)
+			items, err = utils.PopulateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
 				return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -1756,7 +1780,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 	// ----- Population logic begins -----
 	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
-		items, err = populateItems(ctx, container, items)
+		items, err = utils.PopulateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -1879,7 +1903,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
 		// ----- Population logic begins -----
 		if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
-			items, err = populateItems(ctx, container, items)
+			items, err = utils.PopulateItems(ctx, container, items)
 			if err != nil {
 				log.Printf("Failed to populate items: %v", err)
 				return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -1930,7 +1954,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
 	// ----- Population logic begins -----
 	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
-		items, err = populateItems(ctx, container, items)
+		items, err = utils.PopulateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -2131,7 +2155,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
 	// ----- Population logic begins -----
 	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetAllDynamicModelItemsWithPagination") {
-		items, err = populateItems(ctx, container, items)
+		items, err = utils.PopulateItems(ctx, container, items)
 		if err != nil {
 			log.Printf("Failed to populate items for schema: %s, error: %v", schemaName, err)
 			return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -2456,93 +2480,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
         Source:  utils.PointerToString("API call"),
     })
 }
-func populateItems(ctx context.Context, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
-	for _, pop := range container.PopulationArray {
-		// Locate the field definition by matching the local field name.
-		var targetField *models.Field
-		for _, f := range container.Fields {
-			// Here we assume that the PopulationArray's FieldName matches the local field name.
-			if f.Name == pop.FieldName {
-				targetField = &f
-				break
-			}
-		}
-		if targetField == nil {
-			// Skip if the field definition is not found.
-			continue
-		}
 
-		if targetField.Type == "objectId" ||
-		targetField.Type == "autoIncrementId" ||
-		(targetField.Type == "string" && targetField.ObjectSchemaName != "") {
-			for i, item := range items {
-				if idVal, exists := item[targetField.Name]; exists && idVal != nil {
-					var populatedDoc map[string]interface{}
-					var err error
-					if targetField.Type == "objectId" {
-						var objectId primitive.ObjectID
-						switch v := idVal.(type) {
-						case primitive.ObjectID:
-							objectId = v
-						case string:
-							objectId, err = primitive.ObjectIDFromHex(v)
-							if err != nil {
-								continue
-							}
-						default:
-							continue
-						}
-						populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
-					} else {
-						// For autoIncrementId and string types, just pass idVal
-						populatedDoc, err = getPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
-					}
-					if err != nil {
-						log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
-						continue
-					}
-					items[i][targetField.Name] = populatedDoc
-				}
-			}
-		}
-		// If the field type is not "objectId", no changes are made.
-	}
-	return items, nil
-}
-
-func getPopulatedDocument(ctx context.Context, collectionName string, id interface{}, fields []string) (map[string]interface{}, error) {
-    coll := configs.GetCollection(collectionName)
-
-    projection := bson.M{}
-    for _, field := range fields {
-        projection[field] = 1
-    }
-
-    filter := bson.M{}
-    switch v := id.(type) {
-    case primitive.ObjectID:
-        filter["_id"] = v
-    case int, int64, float64:
-        filter["_id"] = id
-    case string:
-        // First, try to convert the string to an integer.
-        if intVal, err := strconv.Atoi(v); err == nil {
-            filter["_id"] = intVal
-        } else {
-            // If conversion fails, use the string directly.
-            filter["_id"] = v
-        }
-    default:
-        return nil, fmt.Errorf("unsupported id type for population")
-    }
-
-    var result bson.M
-    err := coll.FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&result)
-    if err != nil {
-        return nil, err
-    }
-    return result, nil
-}
 
 // Helper function to check if a slice contains a given string.
 func contains(slice []string, item string) bool {
@@ -2554,20 +2492,4 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func getNextSequence(ctx context.Context, schemaName string) (int64, error) {
-    // Reference to your counters collection (ensure you’ve initialized this in your app)
-    countersColl := configs.DB.Database(os.Getenv("COLLECTION_NAME")).Collection("counters")
-    
-    filter := bson.M{"_id": schemaName}
-    update := bson.M{"$inc": bson.M{"seq": 1}}
-    opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
-    
-    var result struct {
-        Seq int64 `bson:"seq"`
-    }
-    err := countersColl.FindOneAndUpdate(ctx, filter, update, opts).Decode(&result)
-    if err != nil {
-        return 0, err
-    }
-    return result.Seq, nil
-}
+
