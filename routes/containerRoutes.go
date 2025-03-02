@@ -20,6 +20,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 	containerGroup.Post("/", controllers.CreateContainer)
 	containerGroup.Post("/reset-redis", controllers.ResetRedis)
 	containerGroup.Get("/", controllers.GetAllContainers)
+	containerGroup.Get("/types", controllers.GetAllContainerTypes)
 	containerGroup.Patch("/dynamicFunctions/:id", controllers.UpdateDynamicFunctions)
 	containerGroup.Patch("/pipelines/:id", controllers.UpdatePipelines)
 	containerGroup.Get("/:id", controllers.GetContainer)

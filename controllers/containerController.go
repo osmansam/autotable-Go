@@ -393,6 +393,52 @@ func GetContainer(c *fiber.Ctx) error {
 	})
 }
 
+// GetAllContainerTypes retrieves all containers and returns their dynamic field type definitions.
+func GetAllContainerTypes(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // Retrieve all container documents from the collection.
+    cursor, err := containerCollection.Find(ctx, bson.M{})
+    if err != nil {
+        log.Printf("Failed to retrieve containers: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to retrieve containers from the database.")
+    }
+    defer cursor.Close(ctx)
+
+    var containerTypes []models.ContainerTypes
+
+    // Iterate over each container document.
+    for cursor.Next(ctx) {
+        var container models.ContainerModel
+        if err = cursor.Decode(&container); err != nil {
+            log.Printf("Error decoding container: %v", err)
+            return utils.SendErrorResponse(c, err, "An error occurred while processing containers.")
+        }
+
+        // Build a map of field names to their type definitions.
+        fieldTypes := make(map[string]string)
+        for _, field := range container.Fields {
+            fieldTypes[field.Name] = field.Type
+        }
+
+        containerTypes = append(containerTypes, models.ContainerTypes{
+            ID:         container.ID.Hex(),
+            SchemaName: container.SchemaName,
+            FieldTypes: fieldTypes,
+        })
+    }
+
+    // Check for any errors encountered during iteration.
+    if err = cursor.Err(); err != nil {
+        log.Printf("Cursor error: %v", err)
+        return utils.SendErrorResponse(c, err, "An error occurred while iterating over containers.")
+    }
+
+    log.Println("Successfully retrieved container types")
+    return utils.SendResponse(c, http.StatusOK, "Container types successfully retrieved.", containerTypes)
+}
+
 // ResetRedis resets the entire Redis cache
 func ResetRedis(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

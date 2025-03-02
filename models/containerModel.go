@@ -94,6 +94,13 @@ type ContainerModel struct {
 
 }
 
+type ContainerTypes struct {
+    ID         string            `json:"id"`
+    SchemaName string            `json:"schemaName"`
+    FieldTypes map[string]string `json:"fieldTypes"` // key: field name, value: declared type
+}
+
+
 var RestrictedSchemaNames = []string{
     "containers",
 }//this is needed so that user container is not created by mistake and get all the data.
