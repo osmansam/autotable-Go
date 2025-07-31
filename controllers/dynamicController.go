@@ -1570,176 +1570,61 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
-	// Create a context with a timeout for database operations.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    // 1) Context + load containerModel (ensures schemaName is present)
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
-	log.Printf("Filtering items for schema: %s", schemaName)
+    container, err := utils.FetchContainerModel(c)
+    if err != nil {
+        if err == utils.ErrNoSchemaName {
+            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+        }
+        return utils.SendErrorResponse(c, err, "Failed to load container model")
+    }
 
-	// Fetch or retrieve the container model.
-	var container *models.ContainerModel
-	var err error
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(schemaName)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
-	}
+    // 2) Build the filter from query parameters
+    filter, err := utils.BuildFilterFromQuery(c, container)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+    }
 
-	// Build the MongoDB filter from the container's fields.
-	// Skip any field that is marked as hashed.
-	filter := bson.M{}
-	for _, field := range container.Fields {
-		// Skip hashed fields for filtering.
-		if field.IsHashed {
-			continue
-		}
-		queryValue := c.Query(field.Name)
-		if queryValue == "" {
-			continue
-		}
+    // 3) Parse sort & pagination
+    sortDoc, err := utils.ParseSort(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+    }
+    pager, err := utils.ParsePager(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+    }
 
-		convertedValue, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, queryValue)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, err.Error())
-		}
+    // 4) Execute the query
+    opts := utils.BuildFindOptions(sortDoc, pager)
+    items, err := utils.QueryAndDecode(ctx, container.SchemaName, filter, opts, &pager)
+    if err != nil {
+        log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
+        return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
+    }
 
-		// Merge condition if converted value is a map.
-		if convertedMap, ok := convertedValue.(bson.M); ok {
-			if existingCondition, exists := filter[field.Name]; exists {
-				if existingMap, ok := existingCondition.(bson.M); ok {
-					for key, val := range convertedMap {
-						existingMap[key] = val
-					}
-					continue
-				}
-			}
-		}
-		filter[field.Name] = convertedValue
-	}
+    // 5) Strip out hashed fields
+    utils.StripHashed(container.Fields, items)
 
-	currentCollection := configs.GetCollection(schemaName)
+    // 6) Populate references if configured
+    items, err = utils.PopulateIfNeeded(ctx, container, "HandleFilterDynamicModelItem", items)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Failed to populate items")
+    }
 
-	// Always create find options to support sorting even without pagination.
-	findOptions := options.Find()
-
-	// Apply sorting if both "sort" and "asc" are provided.
-	sortField := c.Query("sort")
-	ascStr := c.Query("asc")
-	if sortField != "" && ascStr != "" {
-		asc, err := strconv.ParseBool(ascStr)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Invalid asc parameter; must be true or false")
-		}
-		order := 1
-		if !asc {
-			order = -1
-		}
-		findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
-	}
-
-	// Check if pagination parameters are provided.
-	pageStr := c.Query("page")
-	limitStr := c.Query("limit")
-	if pageStr != "" && limitStr != "" {
-		// Validate and parse pagination parameters.
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			return utils.SendErrorResponse(c, err, "Invalid page number")
-		}
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 1 {
-			return utils.SendErrorResponse(c, err, "Invalid limit")
-		}
-		skip := (page - 1) * limit
-		findOptions.SetSkip(int64(skip)).SetLimit(int64(limit))
-
-		cursor, err := currentCollection.Find(ctx, filter, findOptions)
-		if err != nil {
-			log.Printf("Error fetching paginated filter results for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error fetching paginated filter results")
-		}
-		defer cursor.Close(ctx)
-
-		items, err := utils.DecodeCursor(cursor, ctx)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Error decoding paginated filter results")
-		}
-
-		// Remove hashed fields from the items.
-		for _, field := range container.Fields {
-			if field.IsHashed {
-				for i := range items {
-					delete(items[i], field.Name)
-				}
-			}
-		}
-
-		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
-			items, err = utils.PopulateItems(ctx, container, items)
-			if err != nil {
-				log.Printf("Failed to populate items: %v", err)
-				return utils.SendErrorResponse(c, err, "Failed to populate items")
-			}
-		}
-		// ----- Population logic ends -----
-
-		// Retrieve the total number of documents for pagination metadata.
-		totalItems, err := currentCollection.CountDocuments(ctx, filter)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Error counting filtered documents")
-		}
-
-		totalPages := int(totalItems) / limit
-		if int(totalItems)%limit > 0 {
-			totalPages++
-		}
-
-		return utils.SendResponse(c, http.StatusOK, "Paginated filter results fetched successfully", fiber.Map{
-			"items":       items,
-			"totalItems":  totalItems,
-			"totalPages":  totalPages,
-			"currentPage": page,
-		})
-	}
-
-	// If pagination parameters are not provided, fetch all filtered (and sorted) results.
-	cursor, err := currentCollection.Find(ctx, filter, findOptions)
-	if err != nil {
-		log.Printf("Error fetching filter results for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Error fetching filter results")
-	}
-	defer cursor.Close(ctx)
-
-	items, err := utils.DecodeCursor(cursor, ctx)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Error decoding filter results")
-	}
-
-	// Remove hashed fields from the returned items.
-	for _, field := range container.Fields {
-		if field.IsHashed {
-			for i := range items {
-				delete(items[i], field.Name)
-			}
-		}
-	}
-
-	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleFilterDynamicModelItem") {
-		items, err = utils.PopulateItems(ctx, container, items)
-		if err != nil {
-			log.Printf("Failed to populate items: %v", err)
-			return utils.SendErrorResponse(c, err, "Failed to populate items")
-		}
-	}
-	// ----- Population logic ends -----
-
-	return utils.SendResponse(c, http.StatusOK, "Filter results fetched successfully", items)
+    // 7) Send response (with pagination metadata if applicable)
+    if pager.Enabled {
+        return utils.SendResponse(c, http.StatusOK, "Paginated filter results fetched successfully", fiber.Map{
+            "items":       items,
+            "totalItems":  pager.TotalItems,
+            "totalPages":  pager.TotalPages,
+            "currentPage": pager.Page,
+        })
+    }
+    return utils.SendResponse(c, http.StatusOK, "Filter results fetched successfully", items)
 }
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
