@@ -5,7 +5,7 @@ import (
 )
 
 // GenerateRedisKey generates a Redis key for caching based on route, schema names, and an optional ID.
-func GenerateRedisKey(routeName, schemaName string, container *models.ContainerModel) (string, bool) {
+func GenerateRedisKey(routeName, schemaName string, container *models.ContainerModel, id ...string) (string, bool) {
 	var redisKey string
 	var shouldCache bool
 
@@ -14,12 +14,14 @@ func GenerateRedisKey(routeName, schemaName string, container *models.ContainerM
 	case "GetAllDynamicModelItems":
 		shouldCache = container.Redis.IsRedisCached
 	case "GetDynamicModelItem":
-		shouldCache = container.Redis.IsRedisCached
+			shouldCache = container.Redis.IsRedisCached
 	}
-
 	if shouldCache {
-		redisKey = "route_" + routeName + "_schema_" + schemaName
-		
+		if len(id) > 0 && id[0] != "" {
+			redisKey = "item_" + id[0] + "_schema_" + schemaName + "_route_" + routeName
+		} else {
+			redisKey = "schema_" + schemaName + "_route_" + routeName
+		}
 	}
 
 	return redisKey, shouldCache

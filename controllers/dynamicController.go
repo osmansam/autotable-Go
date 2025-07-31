@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -497,122 +498,68 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 // GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    // 1. Context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
-	log.Printf("Fetching all items for schema: %s", schemaName)
-	if schemaName == "" {
-		return utils.SendResponse(c, fiber.StatusBadRequest, "Schema name is required", nil)
-	}
+    // 2. Load container model (requires schemaName)
+    container, err := utils.FetchContainerModel(c)
+    if err != nil {
+        if err == utils.ErrNoSchemaName {
+            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+        }
+        return utils.SendErrorResponse(c, err, "Failed to load container model")
+    }
+    schema := container.SchemaName
 
-	var container *models.ContainerModel
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		// Use the container model from the context if available.
-		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		var err error
-		container, err = utils.GetContainerModel(schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
-	}
+    // 3. Determine caching
+    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", schema, container)
+    if shouldCache {
+        if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+            var items []map[string]interface{}
+            if json.Unmarshal([]byte(data), &items) == nil {
+                log.Printf("Fetched items from cache for schema: %s", schema)
+                source := "cache"
+                return utils.SendResponse(c, http.StatusOK, "Items successfully fetched.", fiber.Map{
+                    "items":  items,
+                    "source": &source,
+                })
+            }
+        }
+    }
 
-	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", schemaName, container)
-	if shouldCache {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var items []map[string]interface{}
-			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
-				log.Printf("Items successfully fetched from cache for schema: %s", schemaName)
-				source := "cache"
-				return utils.SendResponse(c, fiber.StatusOK, "Items successfully fetched.", fiber.Map{
-					"items": items, "source": &source,
-				})
-			}
-		}
-		// Not found in cache: fetch from database.
-		currentCollection := configs.GetCollection(schemaName)
-		results, err := currentCollection.Find(ctx, bson.M{})
-		if err != nil {
-			log.Printf("Failed to fetch items from database for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch items")
-		}
-		defer results.Close(ctx)
-		items, err := utils.DecodeCursor(results, ctx)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to decode items")
-		}
+    // 4. Query database (no pagination)
+    pager := utils.Pager{Enabled: false}
+    opts := options.Find() // no skip/limit
+    items, err := utils.QueryAndDecode(ctx, schema, bson.M{}, opts, &pager)
+    if err != nil {
+        log.Printf("DB query failed for schema %q: %v", schema, err)
+        return utils.SendErrorResponse(c, err, "Failed to fetch items")
+    }
 
-		// Remove hashed fields from the items.
-		for _, field := range container.Fields {
-			if field.IsHashed {
-				for i := range items {
-					delete(items[i], field.Name)
-				}
-			}
-		}
+    // 5. Strip hashed fields
+    utils.StripHashed(container.Fields, items)
 
-		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
-			items, err = utils.PopulateItems(ctx, container, items)
-			if err != nil {
-				log.Printf("Failed to populate items: %v", err)
-				return utils.SendErrorResponse(c, err, "Failed to populate items")
-			}
-		}
-		// ----- Population logic ends -----
+    // 6. Populate if needed
+    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItems", items)
+    if err != nil {
+        log.Printf("Population failed for schema %q: %v", schema, err)
+        return utils.SendErrorResponse(c, err, "Failed to populate items")
+    }
 
-		// Cache the populated data.
-		dataToCache, _ := json.Marshal(items)
-		var expiration time.Duration
-		if container.Redis.CacheTime > 0 {
-			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-		} else {
-			expiration = 0 // key will never expire.
-		}
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+    // 7. Cache the result if enabled
+    if shouldCache {
+        if payload, err := json.Marshal(items); err == nil {
+            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+            configs.RedisClient.Set(ctx, redisKey, payload, ttl)
+        }
+    }
 
-		log.Printf("Items successfully fetched from database for schema: %s", schemaName)
-		return utils.SendResponse(c, fiber.StatusOK, "Items successfully fetched.", items)
-	}
-
-	// If caching is not enabled, fetch directly from the database.
-	currentCollection := configs.GetCollection(schemaName)
-	results, err := currentCollection.Find(ctx, bson.M{})
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to fetch items from the database")
-	}
-	defer results.Close(ctx)
-
-	items, err := utils.DecodeCursor(results, ctx)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to decode an item")
-	}
-
-	// Remove hashed fields from the items.
-	for _, field := range container.Fields {
-		if field.IsHashed {
-			for i := range items {
-				delete(items[i], field.Name)
-			}
-		}
-	}
-
-	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "GetAllDynamicModelItems") {
-		items, err = utils.PopulateItems(ctx, container, items)
-		if err != nil {
-			log.Printf("Failed to populate items: %v", err)
-			return utils.SendErrorResponse(c, err, "Failed to populate items")
-		}
-	}
-	// ----- Population logic ends -----
-
-	log.Printf("Items successfully fetched from database for schema: %s", schemaName)
-	return utils.SendResponse(c, fiber.StatusOK, "Items successfully fetched.", items)
+    // 8. Return final response
+    log.Printf("Fetched items from DB for schema: %s", schema)
+    return utils.SendResponse(c, http.StatusOK, "Items successfully fetched.", items)
 }
+
 // TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
 
 //delete an item from the collection
@@ -1451,264 +1398,175 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 }
 
 func GetDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	schemaName := c.Query("schemaName")
-	log.Printf("Fetching item for schema: %s", schemaName)
-	if schemaName == "" {
-		log.Printf("Schema name is required")
-		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "Schema name is required",
-			Data:    nil,
-		})
-	}
-
-	getIdStr := c.Params("id")
-	getId, err := primitive.ObjectIDFromHex(getIdStr)
-	if err != nil {
-		log.Printf("Invalid ID for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Invalid ID")
-	}
-
-	var container *models.ContainerModel
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		// Use the container model from the context if available
-		container, _ = storedContainer.(*models.ContainerModel)
-		log.Printf("Using container model from context for schema: %s", schemaName)
-	} else {
-		// Fetch container model if not available in context
-		container, err = utils.GetContainerModel(schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
-		log.Printf("Fetched container model for schema: %s", schemaName)
-	}
-
-	redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schemaName, container)
-	if shouldCache {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var item bson.M
-			if err := json.Unmarshal([]byte(cachedData), &item); err == nil {
-				// Remove any fields marked as hashed.
-				for _, field := range container.Fields {
-					if field.IsHashed {
-						delete(item, field.Name)
-					}
-				}
-				// ----- Population logic begins -----
-				if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
-					// Wrap the item in a slice to reuse the utils.PopulateItems helper.
-					items, err := utils.PopulateItems(ctx, container, []map[string]interface{}{item})
-					if err != nil {
-						log.Printf("Population error on cached item: %v", err)
-					} else if len(items) > 0 {
-						item = items[0]
-					}
-				}
-				// ----- Population logic ends -----
-				log.Printf("Item successfully fetched from cache for schema: %s", schemaName)
-				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-					Status:  http.StatusOK,
-					Message: "Item found",
-					Data:    item,
-					Source:  utils.PointerToString("cache"),
-				})
-			}
-		}
-	}
-
-	currentCollection := configs.GetCollection(schemaName)
-	var result bson.M
-	if err := currentCollection.FindOne(ctx, bson.M{"_id": getId}).Decode(&result); err != nil {
-		log.Printf("Item not found for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Item not found")
-	}
-
-	// Remove hashed fields from the retrieved result.
-	for _, field := range container.Fields {
-		if field.IsHashed {
-			delete(result, field.Name)
-		}
-	}
-
-	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetDynamicModelItem") {
-		// Wrap the result in a slice to reuse the utils.PopulateItems helper.
-		items, err := utils.PopulateItems(ctx, container, []map[string]interface{}{result})
-		if err != nil {
-			log.Printf("Failed to populate item for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to populate item")
-		}
-		if len(items) > 0 {
-			result = items[0]
-		}
-	}
-	// ----- Population logic ends -----
-
-	if shouldCache {
-		dataToCache, _ := json.Marshal(result)
-		var expiration time.Duration
-		if container.Redis.CacheTime > 0 {
-			expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-		} else {
-			expiration = 0 // the key will never expire.
-		}
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-		log.Printf("Item cached for schema: %s with key: %s", schemaName, redisKey)
-	}
-
-	log.Printf("Item successfully fetched from database for schema: %s", schemaName)
-	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Item found",
-		Data:    result,
-		Source:  utils.PointerToString("database"),
-	})
-}
-// handleSearch for a given collection
-func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
-    // 1. Timeout context for DB ops
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
-    // 2. Read query params
-    schemaName := c.Query("schemaName")
-    searchKey := c.Query("searchKey")
-    log.Printf("Searching items for schema: %s with search key: %s", schemaName, searchKey)
-
-    // 3. Load container model (from locals cache or DB)
-    var container *models.ContainerModel
-    var err error
-    if stored := c.Locals("containerModel"); stored != nil {
-        container, _ = stored.(*models.ContainerModel)
-    } else {
-        container, err = utils.GetContainerModel(schemaName)
-        if err != nil {
-            log.Printf("Failed to fetch container model for schema %q: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-        }
-    }
-
-    // 4. Delegate $or filter construction
-    orQueries, err := utils.BuildSearch(container, searchKey)
+    // 1) Load and validate schemaName
+    container, err := utils.FetchContainerModel(c)
     if err != nil {
-        log.Printf("Error building search filter: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to construct search filter")
+        if err == utils.ErrNoSchemaName {
+            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+        }
+        return utils.SendErrorResponse(c, err, "Failed to load container model")
     }
-    if len(orQueries) == 0 {
-        log.Printf("No valid search queries for schema %q, key %q", schemaName, searchKey)
-        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
-            Message: "No valid search queries could be constructed from the provided input.",
-            Data:    nil,
-        })
-    }
+    schema := container.SchemaName
 
-    filter := bson.M{"$or": orQueries}
-    findOptions := options.Find()
+    // 2) Build the filter based on :id param
+    idParam := c.Params("id")
+    var filter bson.M
 
-    // 5. Optional sorting
-    if sortField, ascStr := c.Query("sort"), c.Query("asc"); sortField != "" && ascStr != "" {
-        asc, err := strconv.ParseBool(ascStr)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Invalid asc parameter; must be true or false")
-        }
-        order := int32(1)
-        if !asc {
-            order = -1
-        }
-        findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
-    }
-
-    // 6. Execute query with or without pagination
-    coll := configs.GetCollection(schemaName)
-    var items []map[string]interface{}
-
-    pageStr, limitStr := c.Query("page"), c.Query("limit")
-    if pageStr != "" && limitStr != "" {
-        page, err1 := strconv.Atoi(pageStr)
-        limit, err2 := strconv.Atoi(limitStr)
-        if err1 != nil || page < 1 || err2 != nil || limit < 1 {
-            return utils.SendErrorResponse(c, err1, "Invalid pagination parameters")
-        }
-        skip := int64((page - 1) * limit)
-        findOptions.SetSkip(skip).SetLimit(int64(limit))
-
-        cursor, err := coll.Find(ctx, filter, findOptions)
-        if err != nil {
-            log.Printf("Error fetching paginated search results for schema %q: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Error fetching paginated search results")
-        }
-        defer cursor.Close(ctx)
-
-        for cursor.Next(ctx) {
-            var doc map[string]interface{}
-            if err := cursor.Decode(&doc); err != nil {
-                log.Printf("Error decoding paginated result: %v", err)
-                return utils.SendErrorResponse(c, err, "Error decoding search result")
-            }
-            items = append(items, doc)
-        }
-
-        total, err := coll.CountDocuments(ctx, filter)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Error counting search results")
-        }
-        totalPages := int(total)/limit
-        if int(total)%limit > 0 {
-            totalPages++
-        }
-
-        return utils.SendResponse(c, http.StatusOK, "Paginated search results fetched successfully", fiber.Map{
-            "items":       items,
-            "totalItems":  total,
-            "totalPages":  totalPages,
-            "currentPage": page,
-        })
-    }
-
-    // No pagination: fetch all
-    cursor, err := coll.Find(ctx, filter, findOptions)
-    if err != nil {
-        log.Printf("Error fetching search results for schema %q: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Error fetching search results")
-    }
-    defer cursor.Close(ctx)
-
-    for cursor.Next(ctx) {
-        var doc map[string]interface{}
-        if err := cursor.Decode(&doc); err != nil {
-            log.Printf("Error decoding result: %v", err)
-            return utils.SendErrorResponse(c, err, "Error decoding search result")
-        }
-        items = append(items, doc)
-    }
-
-    // 7. Strip out hashed fields
+    // Check if there's an autoIncrementId field in this container
+    var autoIncField string
     for _, f := range container.Fields {
-        if f.IsHashed {
-            for i := range items {
-                delete(items[i], f.Name)
+        if f.Type == "autoIncrementId" {
+            autoIncField = f.Name
+            break
+        }
+    }
+
+    if autoIncField != "" {
+        // Try parse as integer first
+        if idInt, parseErr := strconv.Atoi(idParam); parseErr == nil {
+            filter = bson.M{autoIncField: idInt}
+        } else if objID, parseErr := primitive.ObjectIDFromHex(idParam); parseErr == nil {
+            // Fallback: valid ObjectID
+            filter = bson.M{"_id": objID}
+        } else {
+            // Neither integer nor ObjectID
+            return utils.SendErrorResponse(c, errors.New("invalid id format"), "Invalid ID")
+        }
+    } else {
+        // No autoIncrementId → must be a Mongo ObjectID
+        objID, parseErr := primitive.ObjectIDFromHex(idParam)
+        if parseErr != nil {
+            return utils.SendErrorResponse(c, parseErr, "Invalid ID")
+        }
+        filter = bson.M{"_id": objID}
+    }
+
+    // 3) Try cache
+    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schema, container, idParam)
+    if shouldCache {
+        if raw, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+            var item map[string]interface{}
+            if json.Unmarshal([]byte(raw), &item) == nil {
+                // strip hashed & populate
+                utils.StripHashed(container.Fields, []map[string]interface{}{item})
+                pop, _ := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+                if len(pop) > 0 {
+                    item = pop[0]
+                }
+                source := "cache"
+                return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
+                    "item":   item,
+                    "source": &source,
+                })
             }
         }
     }
 
-    // 8. Populate references if configured
-    if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
-        items, err = utils.PopulateItems(ctx, container, items)
-        if err != nil {
-            log.Printf("Failed to populate items: %v", err)
-            return utils.SendErrorResponse(c, err, "Failed to populate items")
+    // 4) Fetch from Mongo
+    coll := configs.GetCollection(schema)
+    var rawDoc bson.M
+    if err := coll.FindOne(ctx, filter).Decode(&rawDoc); err != nil {
+        return utils.SendErrorResponse(c, err, "Item not found")
+    }
+
+    // convert to map[string]interface{}
+    item := make(map[string]interface{}, len(rawDoc))
+    for k, v := range rawDoc {
+        item[k] = v
+    }
+
+    // 5) Strip hashed fields
+    utils.StripHashed(container.Fields, []map[string]interface{}{item})
+
+    // 6) Populate if needed
+    pop, err := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Failed to populate item")
+    }
+    if len(pop) > 0 {
+        item = pop[0]
+    }
+    // 7) Cache the result
+    if shouldCache {
+        if blob, err := json.Marshal(item); err == nil {
+            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+            configs.RedisClient.Set(ctx, redisKey, blob, ttl)
         }
     }
 
-    log.Printf("Search results successfully fetched for schema: %s", schemaName)
-    return utils.SendResponse(c, http.StatusOK, "Search results fetched successfully", items)
+    // 8) Return
+    source := "database"
+    return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
+        "item":   item,
+        "source": &source,
+    })
 }
+// handleSearch for a given collection
+func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // 1) load container
+    container, err := utils.FetchContainerModel(c)
+    if err != nil {
+        if err == utils.ErrNoSchemaName {
+            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+        }
+        return utils.SendErrorResponse(c, err, "failed to load container")
+    }
+
+    // 2) build your filter
+    orClauses, err := utils.BuildSearch(container, c.Query("searchKey"))
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "failed to build search filter")
+    }
+    if len(orClauses) == 0 {
+        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+            "status":  fiber.StatusBadRequest,
+            "message": "no valid search clauses",
+        })
+    }
+    filter := bson.M{"$or": orClauses}
+
+    // 3) parse sort + pagination
+    sortDoc, err := utils.ParseSort(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "invalid sort params")
+    }
+    pager, err := utils.ParsePager(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "invalid pagination params")
+    }
+
+    // 4) run query
+    opts := utils.BuildFindOptions(sortDoc, pager)
+    items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "query failed")
+    }
+
+    // 5) strip hashed, populate
+    utils.StripHashed(container.Fields, items)
+    items, err = utils.PopulateIfNeeded(ctx, container, "HandleSearchDynamicModelItem", items)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "population failed")
+    }
+
+    // 6) final response
+    if pager.Enabled {
+        return utils.SendResponse(c, http.StatusOK, "search results", fiber.Map{
+            "items":       items,
+            "totalItems":  pager.TotalItems,
+            "totalPages":  pager.TotalPages,
+            "currentPage": pager.Page,
+        })
+    }
+    return utils.SendResponse(c, http.StatusOK, "search results", items)
+}
+
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
@@ -1993,117 +1851,61 @@ func GetPipeline(c *fiber.Ctx) error {
 }
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    // 1. Context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
-	log.Printf("Fetching all items with pagination for schema: %s", schemaName)
-	if schemaName == "" {
-		return utils.SendResponse(c, fiber.StatusBadRequest, "schemaName is required", nil)
-	}
-    
-	var container *models.ContainerModel
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		// Use the container model from the context if available.
-		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		var err error
-		container, err = utils.GetContainerModel(schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
-	}
-	// Parse pagination query parameters.
-	pageStr := c.Query("page", "1")  // Default to page 1
-	limitStr := c.Query("limit", "10") // Default to 10 items per page
+    // 2. Load container (ensures schemaName present & fetches model)
+    container, err := utils.FetchContainerModel(c)
+    if err != nil {
+        if err == utils.ErrNoSchemaName {
+            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+        }
+        return utils.SendErrorResponse(c, err, "Failed to load container model")
+    }
 
-	page, err := strconv.Atoi(pageStr)
-	if err != nil || page < 1 {
-		return utils.SendErrorResponse(c, err, "Invalid page number")
-	}
+    // 3. Build an empty filter (get all)
+    filter := bson.M{}
 
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit < 1 {
-		return utils.SendErrorResponse(c, err, "Invalid limit")
-	}
+    // 4. Parse sort & pagination
+    sortDoc, err := utils.ParseSort(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+    }
+    pager, err := utils.ParsePager(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+    }
 
-	// Calculate the number of documents to skip
-	skip := (page - 1) * limit
+    // 5. Query and decode results
+    opts := utils.BuildFindOptions(sortDoc, pager)
+    items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
+    if err != nil {
+        log.Printf("Query failed for schema %q: %v", c.Query("schemaName"), err)
+        return utils.SendErrorResponse(c, err, "Failed to fetch items")
+    }
 
-	// Define find options for pagination
-	findOptions := options.Find().SetSkip(int64(skip)).SetLimit(int64(limit))
+    // 6. Strip hashed fields
+    utils.StripHashed(container.Fields, items)
 
-	// Check for sorting parameters. Only apply sorting if both "sort" and "asc" are provided.
-	sortField := c.Query("sort")
-	ascStr := c.Query("asc")
-	if sortField != "" && ascStr != "" {
-		asc, err := strconv.ParseBool(ascStr)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Invalid asc parameter; must be true or false")
-		}
-		order := 1
-		if !asc {
-			order = -1
-		}
-		findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
-	}
+    // 7. Populate if configured
+    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItemsWithPagination", items)
+    if err != nil {
+        log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
+        return utils.SendErrorResponse(c, err, "Failed to populate items")
+    }
 
-	currentCollection := configs.GetCollection(schemaName)
-	cursor, err := currentCollection.Find(ctx, bson.M{}, findOptions)
-	if err != nil {
-		log.Printf("Failed to fetch items with pagination for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to fetch items")
-	}
-	defer cursor.Close(ctx)
-
-	items, err := utils.DecodeCursor(cursor, ctx)
-	if err != nil {
-		log.Printf("Failed to decode items for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to decode items")
-	}
-
-	// Remove hashed fields from the items.
-	for _, field := range container.Fields {
-		if field.IsHashed {
-			for i := range items {
-				delete(items[i], field.Name)
-			}
-		}
-	}
-
-	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "GetAllDynamicModelItemsWithPagination") {
-		items, err = utils.PopulateItems(ctx, container, items)
-		if err != nil {
-			log.Printf("Failed to populate items for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to populate items")
-		}
-	}
-	// ----- Population logic ends -----
-
-	// Get total count of documents in the collection
-	totalItems, err := currentCollection.CountDocuments(ctx, bson.M{})
-	if err != nil {
-		log.Printf("Failed to fetch total items for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to fetch total items")
-	}
-
-	// Calculate total pages
-	totalPages := int(totalItems) / limit
-	if int(totalItems)%limit > 0 {
-		totalPages++
-	}
-
-	result := map[string]interface{}{
-		"items":       items,
-		"totalPages":  totalPages,
-		"totalItems":  totalItems,
-		"currentPage": page,
-	}
-
-	// Return paginated result
-	return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", result)
+    // 8. Build response
+    if pager.Enabled {
+        return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", fiber.Map{
+            "items":       items,
+            "totalItems":  pager.TotalItems,
+            "totalPages":  pager.TotalPages,
+            "currentPage": pager.Page,
+        })
+    }
+    // no pagination metadata
+    return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", items)
 }
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
