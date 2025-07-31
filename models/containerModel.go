@@ -11,6 +11,7 @@ type Field struct {
     Unique            bool    `bson:"unique,omitempty"`
     IsHashed          bool    `bson:"isHashed,omitempty"`          
     IsLoginCredential bool    `bson:"isLoginCredential,omitempty"` 
+     IsSearchable      bool    `bson:"isSearchable,omitempty"`  
     Children          []Field `bson:"children,omitempty"`
 }
 type RouteSpec struct {

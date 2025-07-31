@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"plugin"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1572,225 +1571,145 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 }
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
-	// Create a context with a timeout for database operations.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    // 1. Timeout context for DB ops
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	schemaName := c.Query("schemaName")
-	searchKey := c.Query("searchKey")
-	log.Printf("Searching items for schema: %s with search key: %s", schemaName, searchKey)
+    // 2. Read query params
+    schemaName := c.Query("schemaName")
+    searchKey := c.Query("searchKey")
+    log.Printf("Searching items for schema: %s with search key: %s", schemaName, searchKey)
 
-	// Fetch the associated container model.
-	var container *models.ContainerModel
-	var err error
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
-	}
+    // 3. Load container model (from locals cache or DB)
+    var container *models.ContainerModel
+    var err error
+    if stored := c.Locals("containerModel"); stored != nil {
+        container, _ = stored.(*models.ContainerModel)
+    } else {
+        container, err = utils.GetContainerModel(schemaName)
+        if err != nil {
+            log.Printf("Failed to fetch container model for schema %q: %v", schemaName, err)
+            return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+        }
+    }
 
-// Build the query filter using the container's fields, skipping hashed fields.
-var orQueries []bson.M
-for _, field := range container.Fields {
-	// Skip fields that are marked as hashed.
-	if field.IsHashed {
-		continue
-	}
-	switch field.Type {
-	case "string":
-		pattern := ".*" + searchKey + ".*"
-		regex := primitive.Regex{Pattern: pattern, Options: "i"} // Case-insensitive search.
-		orQueries = append(orQueries, bson.M{field.Name: regex})
-	case "int", "autoIncrementId":
-		if num, err := strconv.ParseFloat(searchKey, 64); err == nil {
-			// For integer and autoIncrementId, convert to an int.
-			orQueries = append(orQueries, bson.M{field.Name: int(num)})
-		}
-	case "float", "decimal":
-		if num, err := strconv.ParseFloat(searchKey, 64); err == nil {
-			orQueries = append(orQueries, bson.M{field.Name: num})
-		}
-	case "boolean", "bool":
-		if boolVal, err := strconv.ParseBool(searchKey); err == nil {
-			orQueries = append(orQueries, bson.M{field.Name: boolVal})
-		}
-	case "date":
-		if dateVal, err := time.Parse(time.RFC3339, searchKey); err == nil {
-			orQueries = append(orQueries, bson.M{field.Name: dateVal})
-		}
-	case "objectId":
-		if objId, err := primitive.ObjectIDFromHex(searchKey); err == nil {
-			orQueries = append(orQueries, bson.M{field.Name: objId})
-		}
-	case "uuid":
-		// Validate the UUID format with a regex.
-		re := regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-		if re.MatchString(searchKey) {
-			orQueries = append(orQueries, bson.M{field.Name: searchKey})
-		}
-	case "url":
-		// Use regex for URL matching (escape the searchKey to avoid regex meta-characters issues).
-		pattern := ".*" + regexp.QuoteMeta(searchKey) + ".*"
-		regex := primitive.Regex{Pattern: pattern, Options: "i"}
-		orQueries = append(orQueries, bson.M{field.Name: regex})
-	case "ip", "ipaddress":
-		// For IP addresses, an exact match is usually appropriate.
-		orQueries = append(orQueries, bson.M{field.Name: searchKey})
-	case "enum":
-		// For enum fields, we assume an exact match.
-		orQueries = append(orQueries, bson.M{field.Name: searchKey})
-	}
+    // 4. Delegate $or filter construction
+    orQueries, err := utils.BuildSearch(container, searchKey)
+    if err != nil {
+        log.Printf("Error building search filter: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to construct search filter")
+    }
+    if len(orQueries) == 0 {
+        log.Printf("No valid search queries for schema %q, key %q", schemaName, searchKey)
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status:  http.StatusBadRequest,
+            Message: "No valid search queries could be constructed from the provided input.",
+            Data:    nil,
+        })
+    }
+
+    filter := bson.M{"$or": orQueries}
+    findOptions := options.Find()
+
+    // 5. Optional sorting
+    if sortField, ascStr := c.Query("sort"), c.Query("asc"); sortField != "" && ascStr != "" {
+        asc, err := strconv.ParseBool(ascStr)
+        if err != nil {
+            return utils.SendErrorResponse(c, err, "Invalid asc parameter; must be true or false")
+        }
+        order := int32(1)
+        if !asc {
+            order = -1
+        }
+        findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
+    }
+
+    // 6. Execute query with or without pagination
+    coll := configs.GetCollection(schemaName)
+    var items []map[string]interface{}
+
+    pageStr, limitStr := c.Query("page"), c.Query("limit")
+    if pageStr != "" && limitStr != "" {
+        page, err1 := strconv.Atoi(pageStr)
+        limit, err2 := strconv.Atoi(limitStr)
+        if err1 != nil || page < 1 || err2 != nil || limit < 1 {
+            return utils.SendErrorResponse(c, err1, "Invalid pagination parameters")
+        }
+        skip := int64((page - 1) * limit)
+        findOptions.SetSkip(skip).SetLimit(int64(limit))
+
+        cursor, err := coll.Find(ctx, filter, findOptions)
+        if err != nil {
+            log.Printf("Error fetching paginated search results for schema %q: %v", schemaName, err)
+            return utils.SendErrorResponse(c, err, "Error fetching paginated search results")
+        }
+        defer cursor.Close(ctx)
+
+        for cursor.Next(ctx) {
+            var doc map[string]interface{}
+            if err := cursor.Decode(&doc); err != nil {
+                log.Printf("Error decoding paginated result: %v", err)
+                return utils.SendErrorResponse(c, err, "Error decoding search result")
+            }
+            items = append(items, doc)
+        }
+
+        total, err := coll.CountDocuments(ctx, filter)
+        if err != nil {
+            return utils.SendErrorResponse(c, err, "Error counting search results")
+        }
+        totalPages := int(total)/limit
+        if int(total)%limit > 0 {
+            totalPages++
+        }
+
+        return utils.SendResponse(c, http.StatusOK, "Paginated search results fetched successfully", fiber.Map{
+            "items":       items,
+            "totalItems":  total,
+            "totalPages":  totalPages,
+            "currentPage": page,
+        })
+    }
+
+    // No pagination: fetch all
+    cursor, err := coll.Find(ctx, filter, findOptions)
+    if err != nil {
+        log.Printf("Error fetching search results for schema %q: %v", schemaName, err)
+        return utils.SendErrorResponse(c, err, "Error fetching search results")
+    }
+    defer cursor.Close(ctx)
+
+    for cursor.Next(ctx) {
+        var doc map[string]interface{}
+        if err := cursor.Decode(&doc); err != nil {
+            log.Printf("Error decoding result: %v", err)
+            return utils.SendErrorResponse(c, err, "Error decoding search result")
+        }
+        items = append(items, doc)
+    }
+
+    // 7. Strip out hashed fields
+    for _, f := range container.Fields {
+        if f.IsHashed {
+            for i := range items {
+                delete(items[i], f.Name)
+            }
+        }
+    }
+
+    // 8. Populate references if configured
+    if len(container.PopulationArray) > 0 && contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
+        items, err = utils.PopulateItems(ctx, container, items)
+        if err != nil {
+            log.Printf("Failed to populate items: %v", err)
+            return utils.SendErrorResponse(c, err, "Failed to populate items")
+        }
+    }
+
+    log.Printf("Search results successfully fetched for schema: %s", schemaName)
+    return utils.SendResponse(c, http.StatusOK, "Search results fetched successfully", items)
 }
 
-
-	if len(orQueries) == 0 {
-		log.Printf("No valid search queries could be constructed for schema: %s with search key: %s", schemaName, searchKey)
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "No valid search queries could be constructed from the provided input.",
-			Data:    nil,
-		})
-	}
-
-	// Build the final filter using a $or operator.
-	filter := bson.M{"$or": orQueries}
-
-	// Prepare find options.
-	findOptions := options.Find()
-
-	// Apply sorting if both "sort" and "asc" are provided.
-	sortField := c.Query("sort")
-	ascStr := c.Query("asc")
-	if sortField != "" && ascStr != "" {
-		asc, err := strconv.ParseBool(ascStr)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Invalid asc parameter; must be true or false")
-		}
-		order := 1
-		if !asc {
-			order = -1
-		}
-		findOptions.SetSort(bson.D{{Key: sortField, Value: order}})
-	}
-
-	// Get the current collection.
-	currentCollection := configs.GetCollection(schemaName)
-
-	// Check if pagination parameters are provided.
-	pageStr := c.Query("page")
-	limitStr := c.Query("limit")
-	if pageStr != "" && limitStr != "" {
-		// Parse and validate pagination parameters.
-		page, err := strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			return utils.SendErrorResponse(c, err, "Invalid page number")
-		}
-		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 1 {
-			return utils.SendErrorResponse(c, err, "Invalid limit")
-		}
-		skip := (page - 1) * limit
-		findOptions.SetSkip(int64(skip)).SetLimit(int64(limit))
-
-		// Fetch the paginated and sorted search results.
-		cursor, err := currentCollection.Find(ctx, filter, findOptions)
-		if err != nil {
-			log.Printf("Error fetching paginated search results for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error fetching paginated search results")
-		}
-		defer cursor.Close(ctx)
-
-		var items []map[string]interface{}
-		for cursor.Next(ctx) {
-			var item map[string]interface{}
-			if err = cursor.Decode(&item); err != nil {
-				log.Printf("Error decoding search result for schema: %s, error: %v", schemaName, err)
-				return utils.SendErrorResponse(c, err, "Error decoding search result")
-			}
-			items = append(items, item)
-		}
-
-		// Remove hashed fields from the items.
-		for _, field := range container.Fields {
-			if field.IsHashed {
-				for i := range items {
-					delete(items[i], field.Name)
-				}
-			}
-		}
-
-		// ----- Population logic begins -----
-		if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
-			items, err = utils.PopulateItems(ctx, container, items)
-			if err != nil {
-				log.Printf("Failed to populate items: %v", err)
-				return utils.SendErrorResponse(c, err, "Failed to populate items")
-			}
-		}
-		// ----- Population logic ends -----
-
-		// Retrieve total count of matching documents for pagination metadata.
-		totalItems, err := currentCollection.CountDocuments(ctx, filter)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Error counting search results")
-		}
-		totalPages := int(totalItems) / limit
-		if int(totalItems)%limit > 0 {
-			totalPages++
-		}
-
-		return utils.SendResponse(c, http.StatusOK, "Paginated search results fetched successfully", fiber.Map{
-			"items":       items,
-			"totalItems":  totalItems,
-			"totalPages":  totalPages,
-			"currentPage": page,
-		})
-	}
-
-	// If pagination parameters are not provided, fetch all matching (and sorted) results.
-	cursor, err := currentCollection.Find(ctx, filter, findOptions)
-	if err != nil {
-		log.Printf("Error fetching search results for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Error fetching search results")
-	}
-	defer cursor.Close(ctx)
-
-	var items []map[string]interface{}
-	for cursor.Next(ctx) {
-		var item map[string]interface{}
-		if err = cursor.Decode(&item); err != nil {
-			log.Printf("Error decoding search result for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error decoding search result")
-		}
-		items = append(items, item)
-	}
-
-	// Remove hashed fields from the items.
-	for _, field := range container.Fields {
-		if field.IsHashed {
-			for i := range items {
-				delete(items[i], field.Name)
-			}
-		}
-	}
-
-	// ----- Population logic begins -----
-	if len(container.PopulationArray) > 0&& contains(container.PopulatedRoutes, "HandleSearchDynamicModelItem") {
-		items, err = utils.PopulateItems(ctx, container, items)
-		if err != nil {
-			log.Printf("Failed to populate items: %v", err)
-			return utils.SendErrorResponse(c, err, "Failed to populate items")
-		}
-	}
-	// ----- Population logic ends -----
-
-	log.Printf("Search results successfully fetched for schema: %s", schemaName)
-	return utils.SendResponse(c, http.StatusOK, "Search results fetched successfully", items)
-}
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 	// Create a context with a timeout for database operations.
