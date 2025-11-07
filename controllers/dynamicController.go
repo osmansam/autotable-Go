@@ -1506,67 +1506,74 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 }
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // 1) load container
-    container, err := utils.FetchContainerModel(c)
-    if err != nil {
-        if err == utils.ErrNoSchemaName {
-            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-        }
-        return utils.SendErrorResponse(c, err, "failed to load container")
-    }
+	// 1) load container (your original local-or-fetch logic is fine)
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "failed to load container")
+	}
 
-    // 2) build your filter
-    orClauses, err := utils.BuildSearch(container, c.Query("searchKey"))
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "failed to build search filter")
-    }
-    if len(orClauses) == 0 {
-        return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-            "status":  fiber.StatusBadRequest,
-            "message": "no valid search clauses",
-        })
-    }
-    filter := bson.M{"$or": orClauses}
+	searchKey := c.Query("searchKey")
+	schemaName := c.Query("schemaName")
 
-    // 3) parse sort + pagination
-    sortDoc, err := utils.ParseSort(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "invalid sort params")
-    }
-    pager, err := utils.ParsePager(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "invalid pagination params")
-    }
+	// 2) build OR clauses
+	orClauses, err := utils.BuildSearch(container, searchKey)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "failed to build search filter")
+	}
 
-    // 4) run query
-    opts := utils.BuildFindOptions(sortDoc, pager)
-    items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "query failed")
-    }
+	// 3) finalize filter
+	var filter bson.M
+	if searchKey == "" {
+		// behavior choice A: return all docs when search is empty
+		filter = bson.M{}
+	} else if len(orClauses) == 0 {
+		// behavior choice B: no valid clauses from a non-empty key → 400
+		return utils.SendResponse(c, fiber.StatusBadRequest, "no valid search clauses", nil)
+	} else {
+		filter = bson.M{"$or": orClauses}
+	}
 
-    // 5) strip hashed, populate
-    utils.StripHashed(container.Fields, items)
-    items, err = utils.PopulateIfNeeded(ctx, container, "HandleSearchDynamicModelItem", items)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "population failed")
-    }
+	// 4) sort + pagination
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "invalid sort params")
+	}
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "invalid pagination params")
+	}
 
-    // 6) final response
-    if pager.Enabled {
-        return utils.SendResponse(c, http.StatusOK, "search results", fiber.Map{
-            "items":       items,
-            "totalItems":  pager.TotalItems,
-            "totalPages":  pager.TotalPages,
-            "currentPage": pager.Page,
-        })
-    }
-    return utils.SendResponse(c, http.StatusOK, "search results", items)
+	// 5) query
+	opts := utils.BuildFindOptions(sortDoc, pager)
+	items, err := utils.QueryAndDecode(ctx, schemaName, filter, opts, &pager)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "query failed")
+	}
+
+	// 6) strip hashed, populate
+	utils.StripHashed(container.Fields, items)
+	items, err = utils.PopulateIfNeeded(ctx, container, "HandleSearchDynamicModelItem", items)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "population failed")
+	}
+
+	// 7) response
+	if pager.Enabled {
+		return utils.SendResponse(c, http.StatusOK, "search results", fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		})
+	}
+	return utils.SendResponse(c, http.StatusOK, "search results", items)
 }
-
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {

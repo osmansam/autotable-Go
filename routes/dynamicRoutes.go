@@ -17,7 +17,7 @@ func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup.Get("/pipeline", middlewares.ConditionalAuthentication("GetPipeline"), controllers.GetPipeline)
 	dynamicGroup.Get("/search", middlewares.ConditionalAuthentication("HandleSearchDynamicModelItem"), controllers.HandleSearchDynamicModelItem)
 	dynamicGroup.Get("/filter", middlewares.ConditionalAuthentication("HandleFilterDynamicModelItem"), controllers.HandleFilterDynamicModelItem)
-	dynamicGroup.Get("/execute",middlewares.ConditionalAuthentication("ExecuteDynamicCode"),controllers.ExecuteDynamicCode)
+	dynamicGroup.Get("/execute",controllers.ExecuteDynamicCode)
 	dynamicGroup.Get("/api", middlewares.ConditionalAuthentication("ExecuteDynamicAPI"),controllers.ExecuteDynamicAPI)
 	dynamicGroup.Patch("/multiple", middlewares.ConditionalAuthentication("UpdateMultipleDynamicModelItem"), controllers.UpdateMultipleDynamicModelItem)
 	dynamicGroup.Delete("/multiple", middlewares.ConditionalAuthentication("DeleteMultipleDynamicModelItem"), controllers.DeleteMultipleDynamicModelItem)
