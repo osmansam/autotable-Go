@@ -8,8 +8,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/websocket/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/routes"
+	"github.com/osmansam/autotableGo/ws"
 )
 
 func main() {
@@ -37,6 +39,17 @@ func main() {
 	//run database
 	configs.ConnectDB()
 	configs.ConnectRedis()
+
+//websocket wiring
+	app.Use("/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	// WS endpoint
+	app.Get("/ws", websocket.New(ws.HandleWS))
+	go ws.RunBroadcaster()
 	//routes
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)

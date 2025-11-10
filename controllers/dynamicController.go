@@ -20,6 +20,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
+	"github.com/osmansam/autotableGo/ws"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -214,6 +215,9 @@ if container.Redis.IsRedisCached {
     }
     }
 }
+    // Emit WebSocket invalidate event for this schema
+    ws.EmitInvalidate(schemaName)
+    
     // Successfully saved the item
     log.Printf("Item successfully created for schema: %s", schemaName)
     return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -488,6 +492,9 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
+	// Emit WebSocket invalidate event for this schema
+	ws.EmitInvalidate(schemaName)
+	
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
@@ -519,11 +526,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
             var items []map[string]interface{}
             if json.Unmarshal([]byte(data), &items) == nil {
                 log.Printf("Fetched items from cache for schema: %s", schema)
-                source := "cache"
-                return utils.SendResponse(c, http.StatusOK, "Items successfully fetched.", fiber.Map{
-                    "items":  items,
-                    "source": &source,
-                })
+                return c.JSON(items)
             }
         }
     }
@@ -557,7 +560,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
     // 8. Return final response
     log.Printf("Fetched items from DB for schema: %s", schema)
-    return utils.SendResponse(c, http.StatusOK, "Items successfully fetched.", items)
+    return c.JSON(items)
 }
 
 // TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
@@ -679,6 +682,9 @@ if container.Redis.IsRedisCached {
     }
     }
 }
+	// Emit WebSocket invalidate event for this schema
+	ws.EmitInvalidate(schemaName)
+	
 	// Successfully deleted the item
 	log.Printf("Item successfully deleted for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -887,6 +893,11 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		"successful": successfulDeletes,
 		"failed":     failedDeletes,
 	}
+	// Emit WebSocket invalidate event for this schema if there were any successful deletions
+	if len(successfulDeletes) > 0 {
+		ws.EmitInvalidate(schemaName)
+	}
+	
 	log.Printf("Multiple deletion process completed for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -1078,6 +1089,9 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		}
 		}
 	}
+
+	// Emit WebSocket invalidate event for this schema
+	ws.EmitInvalidate(schemaName)
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
     return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: updateResult})
@@ -1389,6 +1403,11 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		"failed":     failedUpdates,
 	}
 
+	// Emit WebSocket invalidate event for this schema if there were any successful updates
+	if len(successfulUpdates) > 0 {
+		ws.EmitInvalidate(schemaName)
+	}
+	
 	log.Printf("Multiple items update completed for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -1498,11 +1517,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // 8) Return
-    source := "database"
-    return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
-        "item":   item,
-        "source": &source,
-    })
+    return c.JSON(item)
 }
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
@@ -1518,7 +1533,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "failed to load container")
 	}
 
-	searchKey := c.Query("searchKey")
+	searchKey := c.Query("search")
 	schemaName := c.Query("schemaName")
 
 	// 2) build OR clauses
@@ -1565,14 +1580,14 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 	// 7) response
 	if pager.Enabled {
-		return utils.SendResponse(c, http.StatusOK, "search results", fiber.Map{
+		return c.JSON(fiber.Map{
 			"items":       items,
 			"totalItems":  pager.TotalItems,
 			"totalPages":  pager.TotalPages,
 			"currentPage": pager.Page,
 		})
 	}
-	return utils.SendResponse(c, http.StatusOK, "search results", items)
+	return c.JSON(items)
 }
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
@@ -1624,14 +1639,14 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
     // 7) Send response (with pagination metadata if applicable)
     if pager.Enabled {
-        return utils.SendResponse(c, http.StatusOK, "Paginated filter results fetched successfully", fiber.Map{
+        return c.JSON(fiber.Map{
             "items":       items,
             "totalItems":  pager.TotalItems,
             "totalPages":  pager.TotalPages,
             "currentPage": pager.Page,
         })
     }
-    return utils.SendResponse(c, http.StatusOK, "Filter results fetched successfully", items)
+    return c.JSON(items)
 }
 //get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
@@ -1704,12 +1719,7 @@ func GetPipeline(c *fiber.Ctx) error {
         if err == nil {
             var items []bson.M
             if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
-                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-                    Status:  http.StatusOK,
-                    Message: "Pipeline results fetched successfully",
-                    Data:    items,
-                    Source: utils.PointerToString("cache"),
-                })
+                return c.JSON(items)
             }
         }
     }
@@ -1735,11 +1745,7 @@ func GetPipeline(c *fiber.Ctx) error {
 
     // Return the results
 	log.Printf("Pipeline results successfully fetched for schema: %s with pipeline name: %s", schemaName, pipelineName)
-    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-        Status:  http.StatusOK,
-        Message: "Successfully fetched items using dynamic pipeline",
-        Data:    items,
-    })
+    return c.JSON(items)
 }
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
@@ -1756,8 +1762,27 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to load container model")
     }
 
-    // 3. Build an empty filter (get all)
-    filter := bson.M{}
+    // 3. Build filter (with optional search)
+    var filter bson.M
+    searchKey := c.Query("search")
+    
+    if searchKey != "" {
+        // Build search filter using the same logic as HandleSearchDynamicModelItem
+        orClauses, err := utils.BuildSearch(container, searchKey)
+        if err != nil {
+            return utils.SendErrorResponse(c, err, "Failed to build search filter")
+        }
+        
+        if len(orClauses) == 0 {
+            // No valid search clauses, return empty result
+            filter = bson.M{"_id": bson.M{"$exists": false}} // This will match no documents
+        } else {
+            filter = bson.M{"$or": orClauses}
+        }
+    } else {
+        // No search, get all items
+        filter = bson.M{}
+    }
 
     // 4. Parse sort & pagination
     sortDoc, err := utils.ParseSort(c)
@@ -1789,7 +1814,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
     // 8. Build response
     if pager.Enabled {
-        return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", fiber.Map{
+        return c.JSON(fiber.Map{
             "items":       items,
             "totalItems":  pager.TotalItems,
             "totalPages":  pager.TotalPages,
@@ -1797,7 +1822,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         })
     }
     // no pagination metadata
-    return utils.SendResponse(c, http.StatusOK, "Successfully fetched items", items)
+    return c.JSON(items)
 }
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
