@@ -1040,7 +1040,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
                 continue 
             }
 
-            count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
+            // Exclude the current document from the uniqueness check
+            filter := bson.M{
+                field.Name: fieldValue,
+                "_id": bson.M{"$ne": updateId}, // Exclude current document
+            }
+            count, err := currentCollection.CountDocuments(ctx, filter)
             if err != nil {
 				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
                 return utils.SendErrorResponse(c, err, "Error checking existing field value.")

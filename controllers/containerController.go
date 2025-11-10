@@ -140,7 +140,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 	}
 
 	log.Println("Containers successfully retrieved")
-	return utils.SendResponse(c, http.StatusOK, "Containers successfully retrieved.", containers)
+	return c.JSON(containers)
 }
 
 // Delete a container
