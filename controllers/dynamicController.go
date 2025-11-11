@@ -1615,7 +1615,32 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Invalid filter parameter")
     }
 
-    // 3) Parse sort & pagination
+    // 3) Add search functionality if search parameter is provided
+    searchKey := c.Query("search")
+    if searchKey != "" {
+        // Build search OR clauses
+        orClauses, err := utils.BuildSearch(container, searchKey)
+        if err != nil {
+            return utils.SendErrorResponse(c, err, "Failed to build search filter")
+        }
+        
+        if len(orClauses) > 0 {
+            // Combine existing filter with search using $and
+            if len(filter) > 0 {
+                filter = bson.M{
+                    "$and": []bson.M{
+                        filter,
+                        {"$or": orClauses},
+                    },
+                }
+            } else {
+                // No existing filter, just use search
+                filter = bson.M{"$or": orClauses}
+            }
+        }
+    }
+
+    // 4) Parse sort & pagination
     sortDoc, err := utils.ParseSort(c)
     if err != nil {
         return utils.SendErrorResponse(c, err, "Invalid sort parameters")
@@ -1625,7 +1650,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
     }
 
-    // 4) Execute the query
+    // 5) Execute the query
     opts := utils.BuildFindOptions(sortDoc, pager)
     items, err := utils.QueryAndDecode(ctx, container.SchemaName, filter, opts, &pager)
     if err != nil {
@@ -1633,16 +1658,16 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
     }
 
-    // 5) Strip out hashed fields
+    // 6) Strip out hashed fields
     utils.StripHashed(container.Fields, items)
 
-    // 6) Populate references if configured
+    // 7) Populate references if configured
     items, err = utils.PopulateIfNeeded(ctx, container, "HandleFilterDynamicModelItem", items)
     if err != nil {
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
 
-    // 7) Send response (with pagination metadata if applicable)
+    // 8) Send response (with pagination metadata if applicable)
     if pager.Enabled {
         return c.JSON(fiber.Map{
             "items":       items,
