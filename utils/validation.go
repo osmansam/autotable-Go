@@ -30,6 +30,31 @@ func ValidateContainerModel(item map[string]interface{}, containerModel models.C
     return nil
 }
 
+// ValidatePartialUpdate validates only the fields that are being updated (partial validation for updates)
+func ValidatePartialUpdate(updatedFields map[string]interface{}, containerModel models.ContainerModel) error {
+    // First, enforce that login credential fields exist if they are being updated
+    for _, field := range containerModel.Fields {
+        if field.IsLoginCredential {
+            if val, exists := updatedFields[field.Name]; exists {
+                if fmt.Sprintf("%v", val) == "" {
+                    return fmt.Errorf("Field %s is required as a login credential", field.Name)
+                }
+            }
+        }
+    }
+    
+    // Only validate fields that are present in updatedFields
+    for _, field := range containerModel.Fields {
+        // Check if this field is in the update map
+        if _, exists := updatedFields[field.Name]; exists {
+            if err := validateField(updatedFields, field); err != nil {
+                return err
+            }
+        }
+    }
+    return nil
+}
+
 func validateField(item map[string]interface{}, field models.Field) error {
     // Base validation
     if err := validateFieldBase(item, field.Name, field.Type, field.Tag); err != nil {
@@ -70,7 +95,7 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
 
     // If the field is marked as auto, skip required check.
     if auto, ok := rules["auto"].(bool); ok && auto {
-        // Optionally, remove "required" so that further validation doesn’t complain.
+        // Optionally, remove "required" so that further validation doesn't complain.
         delete(rules, "required")
     }
     

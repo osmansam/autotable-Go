@@ -27,6 +27,84 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// convertFormFieldTypes converts string values from multipart forms to their appropriate types
+func convertFormFieldTypes(itemMap map[string]interface{}, container *models.ContainerModel) {
+	for _, field := range container.Fields {
+		value, exists := itemMap[field.Name]
+		if !exists {
+			continue
+		}
+		
+		// Only convert if the value is a string
+		strValue, isString := value.(string)
+		if !isString {
+			// Handle array fields with nested objects
+			if field.Type == "array" && field.Children != nil {
+				if arrayValue, isArray := value.([]interface{}); isArray {
+					for _, item := range arrayValue {
+						if objMap, isMap := item.(map[string]interface{}); isMap {
+							convertNestedFields(objMap, field.Children)
+						}
+					}
+				}
+			}
+			continue
+		}
+		
+		switch field.Type {
+		case "bool", "boolean":
+			// Convert "true"/"false" strings to boolean
+			if strValue == "true" {
+				itemMap[field.Name] = true
+			} else if strValue == "false" {
+				itemMap[field.Name] = false
+			}
+		case "int":
+			// Convert string to int
+			if intValue, err := strconv.Atoi(strValue); err == nil {
+				itemMap[field.Name] = intValue
+			}
+		case "float", "decimal":
+			// Convert string to float64
+			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
+				itemMap[field.Name] = floatValue
+			}
+		}
+	}
+}
+
+// convertNestedFields converts string values in nested objects (for array fields)
+func convertNestedFields(objMap map[string]interface{}, fields []models.Field) {
+	for _, field := range fields {
+		value, exists := objMap[field.Name]
+		if !exists {
+			continue
+		}
+		
+		strValue, isString := value.(string)
+		if !isString {
+			continue
+		}
+		
+		switch field.Type {
+		case "bool", "boolean":
+			if strValue == "true" {
+				objMap[field.Name] = true
+			} else if strValue == "false" {
+				objMap[field.Name] = false
+			}
+		case "int":
+			if intValue, err := strconv.Atoi(strValue); err == nil {
+				objMap[field.Name] = intValue
+			}
+		case "float", "decimal":
+			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
+				objMap[field.Name] = floatValue
+			}
+		}
+	}
+}
+
 // create an item for a given collection
 func CreateDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -67,14 +145,19 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     var itemMap map[string]interface{}
     fileURLs := make(map[string]string)
 
-    if hasImageField {
-        // Parse multipart form for image fields
+    // Check if request is multipart form
+    contentType := c.Get("Content-Type")
+    if hasImageField || strings.Contains(contentType, "multipart/form-data") {
+        // Parse multipart form for image fields or when explicitly sent as multipart
         form, err := c.MultipartForm()
         if err != nil {
             log.Printf("Error parsing form for schema: %s, error: %v", schemaName, err)
             return utils.SendErrorResponse(c, err, "Error parsing form.")
         }
         itemMap = utils.ProcessFormFields(form.Value)
+
+        // Convert form field types (string to bool, int, float) based on schema
+        convertFormFieldTypes(itemMap, container)
 
         // Process image fields
         for fieldName, files := range form.File {
@@ -959,7 +1042,9 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     var updatedItemMap map[string]interface{}
     fileURLs := make(map[string]string)
 
-    if hasImageField  {
+    // Check if request is multipart form
+    contentType := c.Get("Content-Type")
+    if hasImageField || strings.Contains(contentType, "multipart/form-data") {
         // Handle multipart form data
         form, err := c.MultipartForm()
         if err != nil {
@@ -967,6 +1052,9 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
             return utils.SendErrorResponse(c, err, "Error in multipart form")
         }
         updatedItemMap = utils.ProcessFormFields(form.Value)
+
+        // Convert form field types (string to bool, int, float) based on schema
+        convertFormFieldTypes(updatedItemMap, container)
 
         // Process image fields
         for fieldName, files := range form.File {
@@ -1007,6 +1095,22 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     for fieldName, url := range fileURLs {
         updatedItemMap[fieldName] = url
     }
+    
+    // Automatically update the updatedAt field if defined in the container schema.
+    now := time.Now().UTC().Format(time.RFC3339)
+    for _, field := range container.Fields {
+        if field.Name == "updatedAt" {
+            updatedItemMap["updatedAt"] = now
+        }
+    }
+    
+    // Validate only the fields being updated (partial validation)
+    err = utils.ValidatePartialUpdate(updatedItemMap, *container)
+    if err != nil {
+		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
+        return utils.SendErrorResponse(c, err, "Validation failed")
+    }
+    
     // Fetch the existing item
     var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
     var existingItem bson.M
@@ -1018,19 +1122,6 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     // Apply updates from updatedItemMap to existingItem
     for key, value := range updatedItemMap {
         existingItem[key] = value
-    }
-    // Automatically update the updatedAt field if defined in the container schema.
-    now := time.Now().UTC().Format(time.RFC3339)
-    for _, field := range container.Fields {
-        if field.Name == "updatedAt" {
-            existingItem["updatedAt"] = now
-        }
-    }
-    // Validation
-    err = utils.ValidateContainerModel(existingItem, *container)
-    if err != nil {
-		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Validation failed")
     }
         // Checking for Unique fields
     for _, field := range container.Fields {
@@ -1281,6 +1372,25 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			}
 		}
 
+		// Automatically update updatedAt for the update data.
+		now := time.Now().UTC().Format(time.RFC3339)
+		for _, field := range container.Fields {
+			if field.Name == "updatedAt" {
+				item["updatedAt"] = now
+			}
+		}
+
+		// Validate only the fields being updated (partial validation)
+		if err = utils.ValidatePartialUpdate(item, *container); err != nil {
+			utils.ReleaseLock(lockKey, lockID)
+			failedUpdates = append(failedUpdates, map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "Validation failed: " + err.Error(),
+			})
+			continue
+		}
+
 		// Fetch the existing item from the database.
 		var existingItem bson.M
 		err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
@@ -1297,24 +1407,6 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		// Merge update fields into the existing document.
 		for key, value := range item {
 			existingItem[key] = value
-		}
-
-		// Automatically update updatedAt for each updated document.
-		now := time.Now().UTC().Format(time.RFC3339)
-		for _, field := range container.Fields {
-			if field.Name == "updatedAt" {
-				existingItem["updatedAt"] = now
-			}
-		}
-		// Validate the merged document.
-		if err = utils.ValidateContainerModel(existingItem, *container); err != nil {
-			utils.ReleaseLock(lockKey, lockID)
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Validation failed: " + err.Error(),
-			})
-			continue
 		}
 
 		// Check unique constraints for updated fields.
@@ -1792,29 +1884,38 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to load container model")
     }
 
-    // 3. Build filter (with optional search)
-    var filter bson.M
+    // 3. Build filter from query parameters (field-based filtering)
+    filter, err := utils.BuildFilterFromQuery(c, container)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+    }
+
+    // 4. Add search functionality if search parameter is provided
     searchKey := c.Query("search")
-    
     if searchKey != "" {
-        // Build search filter using the same logic as HandleSearchDynamicModelItem
+        // Build search OR clauses
         orClauses, err := utils.BuildSearch(container, searchKey)
         if err != nil {
             return utils.SendErrorResponse(c, err, "Failed to build search filter")
         }
         
-        if len(orClauses) == 0 {
-            // No valid search clauses, return empty result
-            filter = bson.M{"_id": bson.M{"$exists": false}} // This will match no documents
-        } else {
-            filter = bson.M{"$or": orClauses}
+        if len(orClauses) > 0 {
+            // Combine existing filter with search using $and
+            if len(filter) > 0 {
+                filter = bson.M{
+                    "$and": []bson.M{
+                        filter,
+                        {"$or": orClauses},
+                    },
+                }
+            } else {
+                // No existing filter, just use search
+                filter = bson.M{"$or": orClauses}
+            }
         }
-    } else {
-        // No search, get all items
-        filter = bson.M{}
     }
 
-    // 4. Parse sort & pagination
+    // 5. Parse sort & pagination
     sortDoc, err := utils.ParseSort(c)
     if err != nil {
         return utils.SendErrorResponse(c, err, "Invalid sort parameters")
@@ -1824,7 +1925,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
     }
 
-    // 5. Query and decode results
+    // 6. Query and decode results
     opts := utils.BuildFindOptions(sortDoc, pager)
     items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
     if err != nil {
@@ -1832,17 +1933,17 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to fetch items")
     }
 
-    // 6. Strip hashed fields
+    // 7. Strip hashed fields
     utils.StripHashed(container.Fields, items)
 
-    // 7. Populate if configured
+    // 8. Populate if configured
     items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItemsWithPagination", items)
     if err != nil {
         log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
 
-    // 8. Build response
+    // 9. Build response
     if pager.Enabled {
         return c.JSON(fiber.Map{
             "items":       items,

@@ -2,8 +2,10 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/osmansam/autotableGo/models"
@@ -13,20 +15,47 @@ import (
 
 var uuidRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
-var dateLayouts = []string{
-	time.RFC3339,
-	"2006-01-02",          // ISO date
-	"2006-01-02 15:04:05", // common ts
-	"2006/01/02",
-}
+var (
+	reYMDDash = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)      // YYYY-MM-DD
+	reYMDSlsh = regexp.MustCompile(`^\d{4}/\d{2}/\d{2}$`)      // YYYY/MM/DD
+	reMDYDash = regexp.MustCompile(`^\d{2}-\d{2}-\d{4}$`)      // MM-DD-YYYY
+	reMDYSlsh = regexp.MustCompile(`^\d{2}/\d{2}/\d{4}$`)      // MM/DD/YYYY
+)
 
-func parseDateFlexible(s string) (t time.Time, layout string, err error) {
-	for _, layout = range dateLayouts {
-		if tt, e := time.Parse(layout, s); e == nil {
-			return tt, layout, nil
+// parseDateFlexible tries several layouts and also tells you if the input was
+// a date-only value (no time). Date-only is parsed in UTC for consistency with MongoDB.
+func parseDateFlexible(s string) (t time.Time, isDateOnly bool, err error) {
+	// RFC3339 first (has timezone or Z)
+	if tt, e := time.Parse(time.RFC3339, s); e == nil {
+		return tt, false, nil
+	}
+
+	// "2006-01-02 15:04:05" - try as UTC first
+	if tt, e := time.Parse("2006-01-02 15:04:05", s); e == nil {
+		return tt, false, nil
+	}
+
+	// Date-only formats - parse in UTC
+	switch {
+	case reYMDDash.MatchString(s): // YYYY-MM-DD
+		if tt, e := time.Parse("2006-01-02", s); e == nil {
+			return tt, true, nil
+		}
+	case reYMDSlsh.MatchString(s): // YYYY/MM/DD
+		if tt, e := time.Parse("2006/01/02", s); e == nil {
+			return tt, true, nil
+		}
+	case reMDYDash.MatchString(s): // MM-DD-YYYY
+		if tt, e := time.Parse("01-02-2006", s); e == nil {
+			return tt, true, nil
+		}
+	case reMDYSlsh.MatchString(s): // MM/DD/YYYY
+		if tt, e := time.Parse("01/02/2006", s); e == nil {
+			return tt, true, nil
 		}
 	}
-	return time.Time{}, "", errors.New("no date layout matched")
+
+	return time.Time{}, false, errors.New("no date layout matched")
 }
 
 func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error) {
@@ -34,46 +63,48 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 		return nil, errors.New("container is nil")
 	}
 	if key == "" {
-		// caller decides whether to return all docs or 400
 		return nil, nil
 	}
+
+	// Debug logging
+	fmt.Printf("BuildSearch called with key: %q\n", key)
 
 	km := regexp.QuoteMeta(key)
 
 	intVal, intErr := strconv.Atoi(key)
 	floatVal, floatErr := strconv.ParseFloat(key, 64)
 	boolVal, boolErr := strconv.ParseBool(key)
-	dateVal, matchedLayout, dateErr := parseDateFlexible(key)
+	dateVal, dateOnly, dateErr := parseDateFlexible(key)
 
 	var ors []bson.M
 
 	for _, f := range container.Fields {
-		// skip hashed; respect IsSearchable only when explicitly false (backward-compat)
-		if f.IsHashed || (f.IsSearchable == false && f.Type != "string") {
-			// strings are commonly expected to search unless explicitly hashed
-			if f.Type != "string" {
+		ft := strings.ToLower(strings.TrimSpace(f.Type))
+
+		// Skip hashed. Respect IsSearchable=false for non-strings.
+		if f.IsHashed || (!f.IsSearchable && ft != "string") {
+			if ft != "string" {
 				continue
 			}
 		}
 
-		switch f.Type {
+		switch ft {
 		case "string", "url":
 			ors = append(ors, bson.M{
 				f.Name: primitive.Regex{Pattern: ".*" + km + ".*", Options: "i"},
 			})
 
-		case "int", "autoIncrementId":
+		case "int", "autoincrementid":
 			if intErr == nil {
 				ors = append(ors, bson.M{f.Name: intVal})
 			}
 
-		case "float":
+		case "float", "double", "number":
 			if floatErr == nil {
 				ors = append(ors, bson.M{f.Name: floatVal})
 			}
 
 		case "decimal":
-			// Try Decimal128 and also float64 to be robust against stored type differences
 			if d128, err := primitive.ParseDecimal128(key); err == nil {
 				ors = append(ors, bson.M{f.Name: d128})
 			}
@@ -86,19 +117,35 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 				ors = append(ors, bson.M{f.Name: boolVal})
 			}
 
-		case "date":
+		case "date", "datetime", "timestamp":
+			// Always try a simple string match first (for partial searches like "11-12")
+			fmt.Printf("Date field %q: trying string match for key=%q\n", f.Name, key)
+			ors = append(ors, bson.M{
+				f.Name: bson.M{
+					"$regex":   regexp.QuoteMeta(key),
+					"$options": "i",
+				},
+			})
+			
+			// If we can parse it as a full date, add normalized pattern too
 			if dateErr == nil {
-				// If layout is date-only, search the whole day range; otherwise exact timestamp
-				if matchedLayout == "2006-01-02" || matchedLayout == "2006/01/02" {
-					start := time.Date(dateVal.Year(), dateVal.Month(), dateVal.Day(), 0, 0, 0, 0, time.UTC)
-					end := start.Add(24 * time.Hour)
-					ors = append(ors, bson.M{f.Name: bson.M{"$gte": start, "$lt": end}})
-				} else {
-					ors = append(ors, bson.M{f.Name: dateVal})
+				// Debug logging
+				fmt.Printf("Date field %q: also parsed as date=%v, dateOnly=%v\n", f.Name, dateVal, dateOnly)
+				
+				// Add the normalized YYYY-MM-DD format pattern
+				datePattern := fmt.Sprintf("%04d-%02d-%02d", dateVal.Year(), int(dateVal.Month()), dateVal.Day())
+				if datePattern != key {
+					fmt.Printf("  Adding normalized pattern: %q for field %q\n", datePattern, f.Name)
+					ors = append(ors, bson.M{
+						f.Name: bson.M{
+							"$regex":   datePattern,
+							"$options": "i",
+						},
+					})
 				}
 			}
 
-		case "objectId":
+		case "objectid", "objectId":
 			if id, err := primitive.ObjectIDFromHex(key); err == nil {
 				ors = append(ors, bson.M{f.Name: id})
 			}

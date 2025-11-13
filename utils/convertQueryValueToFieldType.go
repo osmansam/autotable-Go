@@ -95,6 +95,16 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 				strValues = append(strValues, strings.TrimSpace(v))
 			}
 			return bson.M{"$in": strValues}, nil
+		case "bool", "boolean":
+			var boolValues []bool
+			for _, v := range values {
+				boolValue, err := strconv.ParseBool(strings.TrimSpace(v))
+				if err != nil {
+					return nil, fmt.Errorf("invalid boolean value in list for field %s: %w", fieldName, err)
+				}
+				boolValues = append(boolValues, boolValue)
+			}
+			return bson.M{"$in": boolValues}, nil
 		default:
 			return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 		}
@@ -110,7 +120,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			return nil, fmt.Errorf("invalid integer value for field %s: %w", fieldName, err)
 		}
 		return intValue, nil
-	case "bool":
+	case "bool", "boolean":
 		boolValue, err := strconv.ParseBool(queryValue)
 		if err != nil {
 			return nil, fmt.Errorf("invalid boolean value for field %s: %w", fieldName, err)
@@ -120,7 +130,6 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 	}
 }
-
 // parseDate ensures the date is parsed correctly and normalized to UTC
 func parseDate(dateStr string) (time.Time, error) {
 	formats := []string{
