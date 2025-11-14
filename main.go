@@ -54,6 +54,7 @@ func main() {
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)
 	routes.AuthRoutes("api/v1/auth", app)
+	routes.PageRoutes("api/v1/page", app)
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	app.Listen(portNumber)

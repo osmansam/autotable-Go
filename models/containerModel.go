@@ -2,6 +2,10 @@ package models
 
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
+type Frontend struct {
+    DisplayName string `bson:"displayName,omitempty"`
+}
+
 type Field struct {
     Name              string  `bson:"name"`
     Type              string  `bson:"type"`
@@ -13,6 +17,7 @@ type Field struct {
     IsLoginCredential bool    `bson:"isLoginCredential,omitempty"` 
     IsSearchable      bool    `bson:"isSearchable,omitempty"`  
     Children          []Field `bson:"children,omitempty"`
+    Frontend          *Frontend `bson:"frontend,omitempty"`
 }
 type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" ` 
@@ -80,6 +85,7 @@ type Population struct {
     FieldName          string   `bson:"fieldName"`
     PopulatedVariables []string `bson:"populatedVariables"`
 }
+
 type ContainerModel struct {
     ID             primitive.ObjectID `bson:"_id,omitempty"`
     SchemaName     string             `bson:"schemaName"`

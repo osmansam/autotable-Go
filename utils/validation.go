@@ -67,6 +67,29 @@ func validateField(item map[string]interface{}, field models.Field) error {
             return err
         }
     }
+    
+    // Validate nested fields if the field is an object
+    if field.Type == "object" {
+        if err := validateObjectField(item, field); err != nil {
+            return err
+        }
+    }
+    
+    return nil
+}
+
+func validateObjectField(item map[string]interface{}, field models.Field) error {
+    objValue, ok := item[field.Name].(map[string]interface{})
+    if !ok {
+        return fmt.Errorf("Field %s should be of type object", field.Name)
+    }
+
+    // Validate each child field within the object
+    for _, childField := range field.Children {
+        if err := validateField(objValue, childField); err != nil {
+            return err
+        }
+    }
     return nil
 }
 
@@ -116,6 +139,20 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
 
     // Perform specific field type validations
     switch fieldType {
+    case "object":
+        // Object type validation - just check if it's a map
+        _, ok := fieldValue.(map[string]interface{})
+        if !ok {
+            return fmt.Errorf("Field %s should be of type object", fieldName)
+        }
+        // Nested validation is handled in validateObjectField
+    case "array":
+        // Array type validation - just check if it's a slice
+        _, ok := fieldValue.([]interface{})
+        if !ok {
+            return fmt.Errorf("Field %s should be of type array", fieldName)
+        }
+        // Nested validation is handled in validateArrayField
     case "objectId":
         val, ok := fieldValue.(string)
         if !ok {

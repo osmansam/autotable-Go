@@ -48,6 +48,12 @@ func convertFormFieldTypes(itemMap map[string]interface{}, container *models.Con
 					}
 				}
 			}
+			// Handle object fields with nested children
+			if field.Type == "object" && field.Children != nil {
+				if objValue, isMap := value.(map[string]interface{}); isMap {
+					convertNestedFields(objValue, field.Children)
+				}
+			}
 			continue
 		}
 		
