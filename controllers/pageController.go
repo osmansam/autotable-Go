@@ -11,6 +11,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
+	"github.com/osmansam/autotableGo/ws"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -43,6 +44,9 @@ func CreatePage(c *fiber.Ctx) error {
 		log.Printf("Failed to insert page: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to insert the page into the database. Please try again later.")
 	}
+
+	// Emit WebSocket event for page change
+	ws.EmitPageChanged()
 
 	log.Println("Page successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -164,6 +168,9 @@ func UpdatePage(c *fiber.Ctx) error {
 		})
 	}
 
+	// Emit WebSocket event for page change
+	ws.EmitPageChanged()
+
 	log.Println("Page successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -199,6 +206,9 @@ func DeletePage(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+
+	// Emit WebSocket event for page change
+	ws.EmitPageChanged()
 
 	log.Println("Page successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{

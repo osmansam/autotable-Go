@@ -12,6 +12,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
+	"github.com/osmansam/autotableGo/ws"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -102,6 +103,9 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
 	}
 
+	// Emit WebSocket event for container change
+	ws.EmitContainerChanged()
+
 	log.Println("Container successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
@@ -188,6 +192,9 @@ func DeleteContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Container deleted but failed to drop the corresponding collection.")
 	}
 
+	// Emit WebSocket event for container change
+	ws.EmitContainerChanged()
+
 	log.Println("Container and its corresponding collection successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -257,6 +264,9 @@ func UpdateContainer(c *fiber.Ctx) error {
 		})
 	}
 
+	// Emit WebSocket event for container change
+	ws.EmitContainerChanged()
+
 	log.Println("Container successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -303,6 +313,9 @@ func UpdatePipelines(c *fiber.Ctx) error {
         })
     }
 
+    // Emit WebSocket event for container change
+    ws.EmitContainerChanged()
+
     log.Println("Pipelines successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
         "status":  http.StatusOK,
@@ -348,6 +361,9 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
             "message": "No container found with the specified ID",
         })
     }
+
+    // Emit WebSocket event for container change
+    ws.EmitContainerChanged()
 
     log.Println("DynamicFunctions successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{

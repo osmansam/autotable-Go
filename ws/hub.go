@@ -69,3 +69,21 @@ func EmitInvalidate(schema string) {
 		Timestamp: time.Now().Unix(),
 	}
 }
+
+// EmitPageChanged pushes a pageChanged event to all clients.
+func EmitPageChanged() {
+	Broadcast <- Event{
+		Type:      "pageChanged",
+		Schema:    "pages",
+		Timestamp: time.Now().Unix(),
+	}
+}
+
+// EmitContainerChanged pushes a containerChanged event to all clients.
+func EmitContainerChanged() {
+	Broadcast <- Event{
+		Type:      "containerChanged",
+		Schema:    "containers",
+		Timestamp: time.Now().Unix(),
+	}
+}
