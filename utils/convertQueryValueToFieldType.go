@@ -126,6 +126,44 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			return nil, fmt.Errorf("invalid boolean value for field %s: %w", fieldName, err)
 		}
 		return boolValue, nil
+	case "stringArray":
+		// For string arrays, support $in queries with comma-separated values
+		if strings.Contains(queryValue, ",") {
+			values := strings.Split(queryValue, ",")
+			var strValues []string
+			for _, v := range values {
+				strValues = append(strValues, strings.TrimSpace(v))
+			}
+			// Use $in to match documents where the array contains any of these values
+			return bson.M{"$in": strValues}, nil
+		}
+		// Single value - match documents where array contains this value
+		return queryValue, nil
+	case "numberArray", "intArray":
+		// For number arrays, support $in queries with comma-separated values
+		if strings.Contains(queryValue, ",") {
+			values := strings.Split(queryValue, ",")
+			var numValues []interface{}
+			for _, v := range values {
+				v = strings.TrimSpace(v)
+				// Try int first, then float
+				if intValue, err := strconv.Atoi(v); err == nil {
+					numValues = append(numValues, intValue)
+				} else if floatValue, err := strconv.ParseFloat(v, 64); err == nil {
+					numValues = append(numValues, floatValue)
+				} else {
+					return nil, fmt.Errorf("invalid number value in list for field %s: %w", fieldName, err)
+				}
+			}
+			return bson.M{"$in": numValues}, nil
+		}
+		// Single value - try to parse as int or float
+		if intValue, err := strconv.Atoi(queryValue); err == nil {
+			return intValue, nil
+		} else if floatValue, err := strconv.ParseFloat(queryValue, 64); err == nil {
+			return floatValue, nil
+		}
+		return nil, fmt.Errorf("invalid number value for field %s", fieldName)
 	default:
 		return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 	}

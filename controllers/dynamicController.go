@@ -75,6 +75,37 @@ func convertFormFieldTypes(itemMap map[string]interface{}, container *models.Con
 			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
 				itemMap[field.Name] = floatValue
 			}
+		case "stringArray":
+			// Convert comma-separated string to string array
+			if strValue != "" {
+				parts := strings.Split(strValue, ",")
+				strArray := make([]interface{}, len(parts))
+				for i, part := range parts {
+					strArray[i] = strings.TrimSpace(part)
+				}
+				itemMap[field.Name] = strArray
+			} else {
+				itemMap[field.Name] = []interface{}{}
+			}
+		case "numberArray", "intArray":
+			// Convert comma-separated string to number array
+			if strValue != "" {
+				parts := strings.Split(strValue, ",")
+				numArray := make([]interface{}, 0, len(parts))
+				for _, part := range parts {
+					part = strings.TrimSpace(part)
+					// Try to parse as int first
+					if intValue, err := strconv.Atoi(part); err == nil {
+						numArray = append(numArray, intValue)
+					} else if floatValue, err := strconv.ParseFloat(part, 64); err == nil {
+						// If not an int, try as float
+						numArray = append(numArray, floatValue)
+					}
+				}
+				itemMap[field.Name] = numArray
+			} else {
+				itemMap[field.Name] = []interface{}{}
+			}
 		}
 	}
 }
@@ -106,6 +137,33 @@ func convertNestedFields(objMap map[string]interface{}, fields []models.Field) {
 		case "float", "decimal":
 			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
 				objMap[field.Name] = floatValue
+			}
+		case "stringArray":
+			if strValue != "" {
+				parts := strings.Split(strValue, ",")
+				strArray := make([]interface{}, len(parts))
+				for i, part := range parts {
+					strArray[i] = strings.TrimSpace(part)
+				}
+				objMap[field.Name] = strArray
+			} else {
+				objMap[field.Name] = []interface{}{}
+			}
+		case "numberArray", "intArray":
+			if strValue != "" {
+				parts := strings.Split(strValue, ",")
+				numArray := make([]interface{}, 0, len(parts))
+				for _, part := range parts {
+					part = strings.TrimSpace(part)
+					if intValue, err := strconv.Atoi(part); err == nil {
+						numArray = append(numArray, intValue)
+					} else if floatValue, err := strconv.ParseFloat(part, 64); err == nil {
+						numArray = append(numArray, floatValue)
+					}
+				}
+				objMap[field.Name] = numArray
+			} else {
+				objMap[field.Name] = []interface{}{}
 			}
 		}
 	}

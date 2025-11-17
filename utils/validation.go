@@ -57,7 +57,7 @@ func ValidatePartialUpdate(updatedFields map[string]interface{}, containerModel 
 
 func validateField(item map[string]interface{}, field models.Field) error {
     // Base validation
-    if err := validateFieldBase(item, field.Name, field.Type, field.Tag); err != nil {
+    if err := validateFieldBase(item, field); err != nil {
         return err
     }
 
@@ -71,6 +71,20 @@ func validateField(item map[string]interface{}, field models.Field) error {
     // Validate nested fields if the field is an object
     if field.Type == "object" {
         if err := validateObjectField(item, field); err != nil {
+            return err
+        }
+    }
+    
+    // Validate enum list for stringArray and numberArray/intArray
+    if (field.Type == "stringArray" || field.Type == "numberArray" || field.Type == "intArray") && len(field.EnumList) > 0 {
+        if err := validateArrayEnumList(item, field); err != nil {
+            return err
+        }
+    }
+    
+    // Validate enum list for regular string, int, float/decimal types
+    if (field.Type == "string" || field.Type == "int" || field.Type == "float" || field.Type == "decimal") && len(field.EnumList) > 0 {
+        if err := validateEnumList(item, field); err != nil {
             return err
         }
     }
@@ -113,7 +127,147 @@ func validateArrayField(item map[string]interface{}, field models.Field) error {
     return nil
 }
 
-func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag string) error {
+func validateArrayEnumList(item map[string]interface{}, field models.Field) error {
+    arrayValue, ok := item[field.Name].([]interface{})
+    if !ok {
+        // Field is not an array, skip enum validation
+        return nil
+    }
+
+    // Check if enumList is provided
+    if len(field.EnumList) == 0 {
+        return nil
+    }
+
+    // Validate each element in the array against the enum list
+    for i, element := range arrayValue {
+        found := false
+        
+        // For stringArray, compare as strings
+        if field.Type == "stringArray" {
+            elementStr, ok := element.(string)
+            if !ok {
+                return fmt.Errorf("Field %s: element at index %d is not a string", field.Name, i)
+            }
+            
+            for _, allowedValue := range field.EnumList {
+                if allowedStr, ok := allowedValue.(string); ok && allowedStr == elementStr {
+                    found = true
+                    break
+                }
+            }
+        } else if field.Type == "numberArray" || field.Type == "intArray" {
+            // For numberArray/intArray, compare as numbers
+            var elementNum float64
+            switch v := element.(type) {
+            case int:
+                elementNum = float64(v)
+            case float64:
+                elementNum = v
+            default:
+                return fmt.Errorf("Field %s: element at index %d is not a number", field.Name, i)
+            }
+            
+            for _, allowedValue := range field.EnumList {
+                var allowedNum float64
+                switch v := allowedValue.(type) {
+                case int:
+                    allowedNum = float64(v)
+                case float64:
+                    allowedNum = v
+                default:
+                    continue
+                }
+                
+                if allowedNum == elementNum {
+                    found = true
+                    break
+                }
+            }
+        }
+        
+        if !found {
+            return fmt.Errorf("Field %s: element at index %d (%v) is not in the allowed enum list: %v", field.Name, i, element, field.EnumList)
+        }
+    }
+    
+    return nil
+}
+
+func validateEnumList(item map[string]interface{}, field models.Field) error {
+    fieldValue := item[field.Name]
+    
+    // Skip if field value is nil or empty
+    if fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "" {
+        return nil
+    }
+    
+    // Check if enumList is provided
+    if len(field.EnumList) == 0 {
+        return nil
+    }
+    
+    found := false
+    
+    // For string type, compare as strings
+    if field.Type == "string" {
+        valueStr, ok := fieldValue.(string)
+        if !ok {
+            return fmt.Errorf("Field %s should be a string", field.Name)
+        }
+        
+        for _, allowedValue := range field.EnumList {
+            if allowedStr, ok := allowedValue.(string); ok && allowedStr == valueStr {
+                found = true
+                break
+            }
+        }
+        
+        if !found {
+            return fmt.Errorf("Field %s value (%v) is not in the allowed enum list: %v", field.Name, valueStr, field.EnumList)
+        }
+    } else if field.Type == "int" || field.Type == "float" || field.Type == "decimal" {
+        // For numeric types, compare as numbers
+        var valueNum float64
+        switch v := fieldValue.(type) {
+        case int:
+            valueNum = float64(v)
+        case float64:
+            valueNum = v
+        default:
+            return fmt.Errorf("Field %s should be a number", field.Name)
+        }
+        
+        for _, allowedValue := range field.EnumList {
+            var allowedNum float64
+            switch v := allowedValue.(type) {
+            case int:
+                allowedNum = float64(v)
+            case float64:
+                allowedNum = v
+            default:
+                continue
+            }
+            
+            if allowedNum == valueNum {
+                found = true
+                break
+            }
+        }
+        
+        if !found {
+            return fmt.Errorf("Field %s value (%v) is not in the allowed enum list: %v", field.Name, valueNum, field.EnumList)
+        }
+    }
+    
+    return nil
+}
+
+func validateFieldBase(item map[string]interface{}, field models.Field) error {
+    fieldName := field.Name
+    fieldType := field.Type
+    tag := field.Tag
+    
     rules := extractValidationRules(tag)
 
     // If the field is marked as auto, skip required check.
@@ -318,6 +472,55 @@ func validateFieldBase(item map[string]interface{}, fieldName, fieldType, tag st
     if _, ok := fieldValue.(bool); !ok {
         return fmt.Errorf("Field %s should be of type boolean", fieldName)
     }
+    case "stringArray":
+        arrayValue, ok := fieldValue.([]interface{})
+        if !ok {
+            return fmt.Errorf("Field %s should be an array", fieldName)
+        }
+        for i, item := range arrayValue {
+            if _, ok := item.(string); !ok {
+                return fmt.Errorf("Field %s: element at index %d should be a string", fieldName, i)
+            }
+        }
+        // Validate array length constraints
+        if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
+            if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
+        }
+        if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
+            if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
+        }
+    case "numberArray", "intArray":
+        arrayValue, ok := fieldValue.([]interface{})
+        if !ok {
+            return fmt.Errorf("Field %s should be an array", fieldName)
+        }
+        for i, item := range arrayValue {
+            switch item.(type) {
+            case int, float64:
+                // Valid number type
+            default:
+                return fmt.Errorf("Field %s: element at index %d should be a number", fieldName, i)
+            }
+        }
+        // Validate array length constraints
+        if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
+            if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
+        }
+        if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
+            if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
+        }
    case "date":
     var dateVal time.Time
     var err error
