@@ -1749,8 +1749,8 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	searchKey := c.Query("search")
 	schemaName := c.Query("schemaName")
 
-	// 2) build OR clauses
-	orClauses, err := utils.BuildSearch(container, searchKey)
+	// 2) build OR clauses with references
+	orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "failed to build search filter")
 	}
@@ -1826,8 +1826,8 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     // 3) Add search functionality if search parameter is provided
     searchKey := c.Query("search")
     if searchKey != "" {
-        // Build search OR clauses
-        orClauses, err := utils.BuildSearch(container, searchKey)
+        // Build search OR clauses with references
+        orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
         if err != nil {
             return utils.SendErrorResponse(c, err, "Failed to build search filter")
         }
@@ -2009,8 +2009,8 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     // 4. Add search functionality if search parameter is provided
     searchKey := c.Query("search")
     if searchKey != "" {
-        // Build search OR clauses
-        orClauses, err := utils.BuildSearch(container, searchKey)
+        // Build search OR clauses with references
+        orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
         if err != nil {
             return utils.SendErrorResponse(c, err, "Failed to build search filter")
         }

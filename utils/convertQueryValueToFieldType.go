@@ -40,13 +40,11 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
             }
         }
 
-        // If no operator was found, try to parse the plain date string as an exact match
+        // If no operator was found, match string representations using regex
         if !conditionsFound {
-            parsedDate, err := parseDate(queryValue)
-            if err != nil {
-                return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
-            }
-            filter["$eq"] = parsedDate
+            // For dates stored as strings, use regex to match the date pattern
+            // This will match "2025-11-01", "2025-11-01T10:30:00", etc.
+            return primitive.Regex{Pattern: "^" + queryValue, Options: "i"}, nil
         }
         return filter, nil
     }

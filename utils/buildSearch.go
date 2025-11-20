@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -8,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var uuidRE = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -65,9 +68,6 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 	if key == "" {
 		return nil, nil
 	}
-
-	// Debug logging
-	fmt.Printf("BuildSearch called with key: %q\n", key)
 
 	km := regexp.QuoteMeta(key)
 
@@ -161,4 +161,90 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 	}
 
 	return ors, nil
+}
+
+// BuildSearchWithReferences creates a search filter that includes searching in populated fields
+// by querying referenced collections and adding matching IDs to the filter.
+func BuildSearchWithReferences(ctx context.Context, container *models.ContainerModel, key string) ([]bson.M, error) {
+	if container == nil {
+		return nil, errors.New("container is nil")
+	}
+	if key == "" {
+		return nil, nil
+	}
+
+	// Start with the standard search clauses for direct fields
+	orClauses, err := BuildSearch(container, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// For each objectId field with PopulationSettings, search in the referenced collection
+	km := regexp.QuoteMeta(key)
+	intVal, intErr := strconv.Atoi(key)
+	floatVal, floatErr := strconv.ParseFloat(key, 64)
+
+	for _, field := range container.Fields {
+		if (field.Type == "objectId" || field.Type == "objectid") && field.PopulationSettings != nil {
+			// Build search filter for the referenced collection
+			var refOrClauses []bson.M
+			
+			for _, popField := range field.PopulationSettings.PopulatedFields {
+				// String search
+				refOrClauses = append(refOrClauses, bson.M{
+					popField: primitive.Regex{Pattern: ".*" + km + ".*", Options: "i"},
+				})
+				
+				// Int search if applicable
+				if intErr == nil {
+					refOrClauses = append(refOrClauses, bson.M{popField: intVal})
+				}
+				
+				// Float search if applicable
+				if floatErr == nil {
+					refOrClauses = append(refOrClauses, bson.M{popField: floatVal})
+				}
+			}
+			
+			if len(refOrClauses) == 0 {
+				continue
+			}
+			
+			// Query the referenced collection to find matching IDs
+			refCollection := configs.GetCollection(field.ObjectSchemaName)
+			refFilter := bson.M{"$or": refOrClauses}
+			
+			cursor, err := refCollection.Find(ctx, refFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+			if err != nil {
+				// Log error but continue with other fields
+				fmt.Printf("Error querying referenced collection %s: %v\n", field.ObjectSchemaName, err)
+				continue
+			}
+			
+			var matchingIDs []primitive.ObjectID
+			for cursor.Next(ctx) {
+				var result bson.M
+				if err := cursor.Decode(&result); err != nil {
+					continue
+				}
+				if id, ok := result["_id"].(primitive.ObjectID); ok {
+					matchingIDs = append(matchingIDs, id)
+				}
+			}
+			cursor.Close(ctx)
+		
+			// Add the matching IDs to the main search filter
+			// Include both ObjectID and string representations to handle data inconsistencies
+			if len(matchingIDs) > 0 {
+				var idValues []interface{}
+				for _, id := range matchingIDs {
+					idValues = append(idValues, id)           // ObjectID
+					idValues = append(idValues, id.Hex())     // String representation
+				}
+				orClauses = append(orClauses, bson.M{field.Name: bson.M{"$in": idValues}})
+			}
+		}
+	}
+
+	return orClauses, nil
 }
