@@ -41,5 +41,6 @@ func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup.Delete("/multiple", controllers.DeleteMultipleDynamicModelItem)
 	dynamicGroup.Delete("/:id", controllers.DeleteDynamicModelItem)
 	dynamicGroup.Patch("/:id", controllers.UpdateDynamicModelItem)
+	dynamicGroup.Get("/selection", controllers.GetItemsForSelection)
 	dynamicGroup.Get("/:id", controllers.GetDynamicModelItem)
 }

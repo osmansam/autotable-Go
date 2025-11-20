@@ -636,6 +636,8 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				// Continue with next triggered schema.
 				continue
 			}
+			// Emit WebSocket invalidate event for triggered schema
+			ws.EmitInvalidate(triggeredSchema)
 		}
 	}
 
@@ -709,6 +711,50 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     log.Printf("Fetched items from DB for schema: %s", schema)
     return c.JSON(items)
 }
+
+// GetItemsForSelection retrieves items with only _id and the specified fieldName for a schema
+func GetItemsForSelection(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    // Get schema name and field name from query params
+    schemaName := c.Query("schemaName")
+    fieldName := c.Query("fieldName")
+
+    if schemaName == "" || fieldName == "" {
+        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+            Status:  http.StatusBadRequest,
+            Message: "schemaName and fieldName are required",
+            Data:    nil,
+        })
+    }
+
+    log.Printf("Getting items for selection: schema=%s, field=%s", schemaName, fieldName)
+
+    // Query the collection with projection for only _id and fieldName
+    collection := configs.GetCollection(schemaName)
+    projection := bson.M{
+        "_id":     1,
+        fieldName: 1,
+    }
+
+    cursor, err := collection.Find(ctx, bson.M{}, options.Find().SetProjection(projection))
+    if err != nil {
+        log.Printf("Failed to query collection %s: %v", schemaName, err)
+        return utils.SendErrorResponse(c, err, "Failed to fetch items")
+    }
+    defer cursor.Close(ctx)
+
+    var items []map[string]interface{}
+    if err = cursor.All(ctx, &items); err != nil {
+        log.Printf("Failed to decode items from collection %s: %v", schemaName, err)
+        return utils.SendErrorResponse(c, err, "Failed to decode items")
+    }
+
+    log.Printf("Successfully fetched %d items for selection", len(items))
+    return c.JSON(items)
+}
+
 
 // TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
 
@@ -1032,6 +1078,8 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 			if err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container); err != nil {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
+			// Emit WebSocket invalidate event for triggered schema
+			ws.EmitInvalidate(triggeredSchema)
 		}
 	}
 
@@ -1247,6 +1295,8 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 			log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			continue
 		}
+		// Emit WebSocket invalidate event for triggered schema
+		ws.EmitInvalidate(triggeredSchema)
 		}
 	}
 
@@ -1555,6 +1605,8 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			if err != nil {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
+			// Emit WebSocket invalidate event for triggered schema
+			ws.EmitInvalidate(triggeredSchema)
 		}
 	}
 

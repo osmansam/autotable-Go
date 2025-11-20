@@ -14,55 +14,43 @@ import (
 )
 
 func PopulateItems(ctx context.Context, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
-	for _, pop := range container.PopulationArray {
-		// Locate the field definition by matching the local field name.
-		var targetField *models.Field
-		for _, f := range container.Fields {
-			// Here we assume that the PopulationArray's FieldName matches the local field name.
-			if f.Name == pop.FieldName {
-				targetField = &f
-				break
-			}
-		}
-		if targetField == nil {
-			// Skip if the field definition is not found.
-			continue
-		}
-
-		if targetField.Type == "objectId" ||
-		targetField.Type == "autoIncrementId" ||
-		(targetField.Type == "string" && targetField.ObjectSchemaName != "") {
-			for i, item := range items {
-				if idVal, exists := item[targetField.Name]; exists && idVal != nil {
-					var populatedDoc map[string]interface{}
-					var err error
-					if targetField.Type == "objectId" {
-						var objectId primitive.ObjectID
-						switch v := idVal.(type) {
-						case primitive.ObjectID:
-							objectId = v
-						case string:
-							objectId, err = primitive.ObjectIDFromHex(v)
-							if err != nil {
+	for _, field := range container.Fields {
+		// Check if the field has population settings
+		if field.PopulationSettings != nil {
+			// Validation: only allow population if targetField.Type is "objectId", "autoIncrementId" or "string" (with ObjectSchemaName)
+			if field.Type == "objectId" || field.Type == "autoIncrementId" || (field.Type == "string" && field.ObjectSchemaName != "") {
+				pop := field.PopulationSettings
+				for i, item := range items {
+					if idVal, exists := item[field.Name]; exists && idVal != nil {
+						var populatedDoc map[string]interface{}
+						var err error
+						if field.Type == "objectId" {
+							var objectId primitive.ObjectID
+							switch v := idVal.(type) {
+							case primitive.ObjectID:
+								objectId = v
+							case string:
+								objectId, err = primitive.ObjectIDFromHex(v)
+								if err != nil {
+									continue
+								}
+							default:
 								continue
 							}
-						default:
+							populatedDoc, err = GetPopulatedDocument(ctx, field.ObjectSchemaName, objectId, pop.PopulatedFields)
+						} else {
+							// For autoIncrementId and string types, just pass idVal
+							populatedDoc, err = GetPopulatedDocument(ctx, field.ObjectSchemaName, idVal, pop.PopulatedFields)
+						}
+						if err != nil {
+							log.Printf("Failed to populate field %s for id %v: %v", field.Name, idVal, err)
 							continue
 						}
-						populatedDoc, err = GetPopulatedDocument(ctx, targetField.ObjectSchemaName, objectId, pop.PopulatedVariables)
-					} else {
-						// For autoIncrementId and string types, just pass idVal
-						populatedDoc, err = GetPopulatedDocument(ctx, targetField.ObjectSchemaName, idVal, pop.PopulatedVariables)
+						items[i][field.Name] = populatedDoc
 					}
-					if err != nil {
-						log.Printf("Failed to populate field %s for id %v: %v", targetField.Name, idVal, err)
-						continue
-					}
-					items[i][targetField.Name] = populatedDoc
 				}
 			}
 		}
-		// If the field type is not "objectId", no changes are made.
 	}
 	return items, nil
 }

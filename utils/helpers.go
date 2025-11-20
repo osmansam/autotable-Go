@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/osmansam/autotableGo/configs"
@@ -102,6 +103,44 @@ func QueryAndDecode(
     if err != nil {
         return nil, err
     }
+    
+    // Check if any documents were found
+    if !cur.Next(ctx) {
+        // Reset cursor
+        cur.Close(ctx)
+        
+        // Try querying with string ID if the filter contains an ObjectId
+        stringFilter := bson.M{}
+        for k, v := range filter {
+            if oid, ok := v.(primitive.ObjectID); ok {
+                stringFilter[k] = oid.Hex()
+            } else {
+                stringFilter[k] = v
+            }
+        }
+        
+        if len(stringFilter) > 0 {
+             cur, err = coll.Find(ctx, stringFilter, opts)
+             if err != nil {
+                 return nil, err
+             }
+        } else {
+             // Re-execute original query to get empty cursor back
+             cur, err = coll.Find(ctx, filter, opts)
+             if err != nil {
+                 return nil, err
+             }
+        }
+    } else {
+        // Reset cursor position since we consumed one item
+        // Unfortunately, we can't rewind a cursor easily. 
+        // We have to re-execute the query.
+        cur.Close(ctx)
+        cur, err = coll.Find(ctx, filter, opts)
+        if err != nil {
+            return nil, err
+        }
+    }
     defer cur.Close(ctx)
 
     items, err := DecodeCursor(cur, ctx)
@@ -139,7 +178,7 @@ func PopulateIfNeeded(
     items []map[string]interface{},
 ) ([]map[string]interface{}, error) {
     for _, r := range container.PopulatedRoutes {
-        if r == routeName && len(container.PopulationArray) > 0 {
+        if r == routeName {
             return PopulateItems(ctx, container, items)
         }
     }

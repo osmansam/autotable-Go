@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // ConvertQueryValueToFieldType converts query parameter values to the appropriate field type.
@@ -105,6 +106,16 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 				boolValues = append(boolValues, boolValue)
 			}
 			return bson.M{"$in": boolValues}, nil
+		case "objectId":
+			var objectIds []primitive.ObjectID
+			for _, v := range values {
+				oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
+				if err != nil {
+					return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+				}
+				objectIds = append(objectIds, oid)
+			}
+			return bson.M{"$in": objectIds}, nil
 		default:
 			return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 		}
@@ -164,6 +175,12 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			return floatValue, nil
 		}
 		return nil, fmt.Errorf("invalid number value for field %s", fieldName)
+	case "objectId":
+		oid, err := primitive.ObjectIDFromHex(queryValue)
+		if err != nil {
+			return nil, fmt.Errorf("invalid objectId value for field %s: %w", fieldName, err)
+		}
+		return oid, nil
 	default:
 		return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 	}

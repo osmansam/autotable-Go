@@ -19,6 +19,15 @@ type Field struct {
     IsSearchable      bool    `bson:"isSearchable,omitempty"`  
     Children          []Field `bson:"children,omitempty"`
     Frontend          *Frontend `bson:"frontend,omitempty"`
+    PopulationSettings *PopulationSettings `bson:"populationSettings,omitempty"`
+}
+
+type PopulationSettings struct {
+    FieldName           string   `bson:"fieldName"`
+    PopulatedFields     []string `bson:"populatedFields"`
+    DisplayFields       []string `bson:"displayFields"`
+    InputSelectionField string   `bson:"inputSelectionField"`
+    DisplayLabel        string   `bson:"displayLabel"`
 }
 type RouteSpec struct {
     IsAuthenticated bool   `bson:"isAuthenticated" ` 
@@ -82,10 +91,7 @@ type DynamicApiModel struct {
     CacheTime       int    `bson:"cacheTime"`
 }
 
-type Population struct {
-    FieldName          string   `bson:"fieldName"`
-    PopulatedVariables []string `bson:"populatedVariables"`
-}
+
 
 type ContainerModel struct {
     ID             primitive.ObjectID `bson:"_id,omitempty"`
@@ -97,7 +103,6 @@ type ContainerModel struct {
     DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
     DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
     IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
-    PopulationArray  []Population       `bson:"populationArray,omitempty"`
     PopulatedRoutes    []string `bson:"populatedRoutes"`
 
 }
