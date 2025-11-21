@@ -336,12 +336,91 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         if !ok {
             return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
         }
+        
+        // Email validation
         if emailRule, exists := rules["email"]; exists && emailRule == true {
             re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
             if !re.MatchString(val) {
                 return fmt.Errorf("Field %s should be a valid email address", fieldName)
             }
         }
+        
+        // Phone validation (international format)
+        if phoneRule, exists := rules["phone"]; exists && phoneRule == true {
+            // Matches formats like: +1234567890, +1-234-567-8900, (123) 456-7890, etc.
+            re := regexp.MustCompile(`^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$`)
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s should be a valid phone number", fieldName)
+            }
+        }
+        
+        // URL validation
+        if urlRule, exists := rules["url"]; exists && urlRule == true {
+            parsedUrl, err := url.ParseRequestURI(val)
+            if err != nil || parsedUrl.Scheme == "" || parsedUrl.Host == "" {
+                return fmt.Errorf("Field %s should be a valid URL", fieldName)
+            }
+        }
+        
+        // Credit card validation (Luhn algorithm)
+        if ccRule, exists := rules["creditcard"]; exists && ccRule == true {
+            // Remove spaces and dashes
+            cleaned := strings.ReplaceAll(strings.ReplaceAll(val, " ", ""), "-", "")
+            if !isValidCreditCard(cleaned) {
+                return fmt.Errorf("Field %s should be a valid credit card number", fieldName)
+            }
+        }
+        
+        // Alphanumeric validation
+        if alphanumRule, exists := rules["alphanumeric"]; exists && alphanumRule == true {
+            re := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s should contain only alphanumeric characters", fieldName)
+            }
+        }
+        
+        // Alpha validation (letters only)
+        if alphaRule, exists := rules["alpha"]; exists && alphaRule == true {
+            re := regexp.MustCompile(`^[a-zA-Z]+$`)
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s should contain only alphabetic characters", fieldName)
+            }
+        }
+        
+        // Numeric validation (digits only)
+        if numericRule, exists := rules["numeric"]; exists && numericRule == true {
+            re := regexp.MustCompile(`^[0-9]+$`)
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s should contain only numeric characters", fieldName)
+            }
+        }
+        
+        // Lowercase validation
+        if lowercaseRule, exists := rules["lowercase"]; exists && lowercaseRule == true {
+            if val != strings.ToLower(val) {
+                return fmt.Errorf("Field %s should be in lowercase", fieldName)
+            }
+        }
+        
+        // Uppercase validation
+        if uppercaseRule, exists := rules["uppercase"]; exists && uppercaseRule == true {
+            if val != strings.ToUpper(val) {
+                return fmt.Errorf("Field %s should be in uppercase", fieldName)
+            }
+        }
+        
+        // Pattern (regex) validation
+        if pattern, exists := rules["pattern"].(string); exists && pattern != "" {
+            re, err := regexp.Compile(pattern)
+            if err != nil {
+                return fmt.Errorf("Invalid regex pattern for field %s", fieldName)
+            }
+            if !re.MatchString(val) {
+                return fmt.Errorf("Field %s does not match the required pattern", fieldName)
+            }
+        }
+        
+        // Length constraints
         if minLength, ok := rules["minlength"].(int); ok && len(val) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
                 return fmt.Errorf(msg)
@@ -370,6 +449,21 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
 		default:
 			return fmt.Errorf("Field %s should be of type float/decimal", fieldName)
 		}
+		
+		// Positive validation
+		if positiveRule, exists := rules["positive"]; exists && positiveRule == true {
+			if val <= 0 {
+				return fmt.Errorf("Field %s should be a positive number", fieldName)
+			}
+		}
+		
+		// Negative validation
+		if negativeRule, exists := rules["negative"]; exists && negativeRule == true {
+			if val >= 0 {
+				return fmt.Errorf("Field %s should be a negative number", fieldName)
+			}
+		}
+		
 		// Validate min and max if provided
 		if min, ok := rules["min"].(int); ok && val < float64(min) {
 			if msg, ok := rules["minMessage"].(string); ok && msg != "" {
@@ -455,6 +549,22 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         default:
             return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
         }
+        
+        // Positive validation
+        if positiveRule, exists := rules["positive"]; exists && positiveRule == true {
+            if val <= 0 {
+                return fmt.Errorf("Field %s should be a positive number", fieldName)
+            }
+        }
+        
+        // Negative validation
+        if negativeRule, exists := rules["negative"]; exists && negativeRule == true {
+            if val >= 0 {
+                return fmt.Errorf("Field %s should be a negative number", fieldName)
+            }
+        }
+        
+        // Min/Max constraints
         if min, ok := rules["min"].(int); ok && val < min {
             if msg, ok := rules["minMessage"].(string); ok && msg != "" {
                 return fmt.Errorf(msg)
@@ -571,6 +681,8 @@ func extractValidationRules(tag string) map[string]interface{} {
 	parts := strings.Split(tag, ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
+		
+		// Length constraints
 		if strings.Contains(part, "minlength=") {
 			minLength, message := extractRuleAndMessage(part, "minlength", "minlengthMessage")
 			rules["minlength"] = minLength
@@ -581,16 +693,17 @@ func extractValidationRules(tag string) map[string]interface{} {
 			rules["maxlength"] = maxLength
 			rules["maxlengthMessage"] = message
 		}
+		
+		// Enum validation
         if strings.Contains(part, "enum=") {
             enumStr := strings.SplitN(part, "enum=", 2)[1]
-            // Remove backslashes so that \" becomes "
             enumStr = strings.ReplaceAll(enumStr, "\\", "")
-            // Then trim the surrounding quotes
             enumStr = strings.Trim(enumStr, "\"")
             allowed := strings.Split(enumStr, "|")
             rules["enum"] = allowed
-            fmt.Printf("DEBUG: Allowed enum values: %v\n", allowed)
         }
+        
+        // Numeric constraints
 		if strings.Contains(part, "min=") {
 			min, message := extractRuleAndMessage(part, "min", "minMessage")
 			rules["min"] = min
@@ -601,15 +714,90 @@ func extractValidationRules(tag string) map[string]interface{} {
 			rules["max"] = max
 			rules["maxMessage"] = message
 		}
+		
+		// Date constraints
+		if strings.Contains(part, "minDate=") {
+			if start := strings.Index(part, "minDate="); start != -1 {
+				dateStr := part[start+len("minDate="):]
+				if end := strings.Index(dateStr, "\""); end != -1 {
+					dateStr = dateStr[:end]
+				}
+				rules["minDate"] = dateStr
+			}
+		}
+		if strings.Contains(part, "maxDate=") {
+			if start := strings.Index(part, "maxDate="); start != -1 {
+				dateStr := part[start+len("maxDate="):]
+				if end := strings.Index(dateStr, "\""); end != -1 {
+					dateStr = dateStr[:end]
+				}
+				rules["maxDate"] = dateStr
+			}
+		}
+		
+		// Required field
 		if strings.Contains(part, "required") {
 			rules["required"] = true
-			// Extract custom message for required, if provided
 			_, message := extractRuleAndMessage(part, "required", "requiredMessage")
 			rules["requiredMessage"] = message
 		}
+		
+		// Format validations
         if strings.Contains(part, "email") {
 			rules["email"] = true
 		}
+		if strings.Contains(part, "phone") {
+			rules["phone"] = true
+		}
+		if strings.Contains(part, "url") {
+			rules["url"] = true
+		}
+		if strings.Contains(part, "creditcard") {
+			rules["creditcard"] = true
+		}
+		
+		// String format constraints
+		if strings.Contains(part, "alphanumeric") {
+			rules["alphanumeric"] = true
+		}
+		if strings.Contains(part, "alpha") {
+			rules["alpha"] = true
+		}
+		if strings.Contains(part, "numeric") {
+			rules["numeric"] = true
+		}
+		if strings.Contains(part, "lowercase") {
+			rules["lowercase"] = true
+		}
+		if strings.Contains(part, "uppercase") {
+			rules["uppercase"] = true
+		}
+		
+		// Numeric sign constraints
+		if strings.Contains(part, "positive") {
+			rules["positive"] = true
+		}
+		if strings.Contains(part, "negative") {
+			rules["negative"] = true
+		}
+		
+		// Pattern (regex) validation
+		if strings.Contains(part, "pattern=") {
+			if start := strings.Index(part, "pattern="); start != -1 {
+				patternStr := part[start+len("pattern="):]
+				if end := strings.Index(patternStr, "\""); end != -1 {
+					patternStr = patternStr[:end]
+				}
+				rules["pattern"] = patternStr
+			}
+		}
+		
+		// Unique constraint
+		if strings.Contains(part, "unique") {
+			rules["unique"] = true
+		}
+		
+		// Auto-increment
         if strings.Contains(part, "auto") {
             rules["auto"] = true
         }
@@ -625,18 +813,26 @@ func extractRuleAndMessage(part, ruleKey, messageKey string) (int, string) {
     // Extract rule value
     if start := strings.Index(part, ruleKey+"="); start != -1 {
         ruleStr := part[start+len(ruleKey+"="):]
-        if end := strings.Index(ruleStr, "\""); end != -1 {
+        // Remove surrounding quotes if present
+        ruleStr = strings.Trim(ruleStr, "\"")
+        // Find the end of the value (either comma or end of string)
+        if end := strings.Index(ruleStr, ","); end != -1 {
             ruleStr = ruleStr[:end]
-            ruleValue, _ = strconv.Atoi(ruleStr) // Error ignored as it is handled in the validation logic
         }
+        ruleStr = strings.TrimSpace(ruleStr)
+        ruleValue, _ = strconv.Atoi(ruleStr) // Error ignored as it is handled in the validation logic
     }
 
     // Extract custom message
     if start := strings.Index(part, messageKey+"="); start != -1 {
         messageStr := part[start+len(messageKey+"="):]
-        if end := strings.Index(messageStr, "\""); end != -1 {
-            message = messageStr[:end]
+        // Remove surrounding quotes if present
+        messageStr = strings.Trim(messageStr, "\"")
+        // Find the end of the message (either comma or end of string)
+        if end := strings.Index(messageStr, ","); end != -1 {
+            messageStr = messageStr[:end]
         }
+        message = strings.TrimSpace(messageStr)
     }
 
     return ruleValue, message
