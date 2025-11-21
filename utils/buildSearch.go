@@ -71,21 +71,23 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 
 	km := regexp.QuoteMeta(key)
 
-	intVal, intErr := strconv.Atoi(key)
-	floatVal, floatErr := strconv.ParseFloat(key, 64)
-	boolVal, boolErr := strconv.ParseBool(key)
-	dateVal, dateOnly, dateErr := parseDateFlexible(key)
+    // Clean key for numeric conversion
+    cleanKey := strings.TrimSpace(key)
+    cleanKey = strings.Trim(cleanKey, "\"'")
+
+	intVal, intErr := strconv.Atoi(cleanKey)
+	floatVal, floatErr := strconv.ParseFloat(cleanKey, 64)
+	boolVal, boolErr := strconv.ParseBool(cleanKey)
+	dateVal, dateOnly, dateErr := parseDateFlexible(cleanKey)
 
 	var ors []bson.M
 
 	for _, f := range container.Fields {
 		ft := strings.ToLower(strings.TrimSpace(f.Type))
 
-		// Skip hashed. Respect IsSearchable=false for non-strings.
-		if f.IsHashed || (!f.IsSearchable && ft != "string") {
-			if ft != "string" {
-				continue
-			}
+		// Skip hashed fields or fields with IsSearchable=false
+		if f.IsHashed || !f.IsSearchable {
+			continue
 		}
 
 		switch ft {
@@ -181,8 +183,13 @@ func BuildSearchWithReferences(ctx context.Context, container *models.ContainerM
 
 	// For each objectId field with PopulationSettings, search in the referenced collection
 	km := regexp.QuoteMeta(key)
-	intVal, intErr := strconv.Atoi(key)
-	floatVal, floatErr := strconv.ParseFloat(key, 64)
+
+    // Clean key for numeric conversion
+    cleanKey := strings.TrimSpace(key)
+    cleanKey = strings.Trim(cleanKey, "\"'")
+
+	intVal, intErr := strconv.Atoi(cleanKey)
+	floatVal, floatErr := strconv.ParseFloat(cleanKey, 64)
 
 	for _, field := range container.Fields {
 		if (field.Type == "objectId" || field.Type == "objectid") && field.PopulationSettings != nil {

@@ -12,6 +12,10 @@ import (
 
 // ConvertQueryValueToFieldType converts query parameter values to the appropriate field type.
 func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (interface{}, error) {
+	// Clean query value by trimming spaces and quotes
+	queryValue = strings.TrimSpace(queryValue)
+	queryValue = strings.Trim(queryValue, "\"'")
+
 	// Supported MongoDB operators
 	operators := map[string]string{
 		"gte-": "$gte",

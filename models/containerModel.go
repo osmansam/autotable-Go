@@ -20,6 +20,7 @@ type Field struct {
     Children          []Field `bson:"children,omitempty"`
     Frontend          *Frontend `bson:"frontend,omitempty"`
     PopulationSettings *PopulationSettings `bson:"populationSettings,omitempty"`
+    Equation          string              `bson:"equation,omitempty"`
 }
 
 type PopulationSettings struct {

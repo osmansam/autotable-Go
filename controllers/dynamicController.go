@@ -278,6 +278,22 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
+    // Calculate equation fields
+    for _, field := range container.Fields {
+        if field.Equation != "" {
+            val, err := utils.EvaluateEquation(field.Equation, itemMap)
+            if err != nil {
+                log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
+                return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+                    Status:  http.StatusBadRequest,
+                    Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
+                    Data:    err.Error(),
+                })
+            }
+            itemMap[field.Name] = val
+        }
+    }
+
     // Validation
    err = utils.ValidateContainerModel(itemMap, *container)
 	if err != nil {
@@ -517,6 +533,25 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		items[i] = item
 	}
 
+
+    // Calculate equation fields for each item
+    for i, item := range items {
+        for _, field := range container.Fields {
+            if field.Equation != "" {
+                val, err := utils.EvaluateEquation(field.Equation, item)
+                if err != nil {
+                    log.Printf("Error evaluating equation for field %s in item %d: %v", field.Name, i, err)
+                    return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+                        Status:  http.StatusBadRequest,
+                        Message: fmt.Sprintf("Error evaluating equation for field %s in item %d", field.Name, i),
+                        Data:    err.Error(),
+                    })
+                }
+                item[field.Name] = val
+            }
+        }
+        items[i] = item
+    }
 
 	// Validate each item against the container model.
 	for i, item := range items {
@@ -1235,6 +1270,24 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     for key, value := range updatedItemMap {
         existingItem[key] = value
     }
+
+    // Calculate equation fields based on the merged existingItem
+    for _, field := range container.Fields {
+        if field.Equation != "" {
+            // We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
+            // bson.M is map[string]interface{}, so it should be fine.
+            val, err := utils.EvaluateEquation(field.Equation, existingItem)
+            if err != nil {
+                log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
+                 return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+                    Status:  http.StatusBadRequest,
+                    Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
+                    Data:    err.Error(),
+                })
+            }
+            existingItem[field.Name] = val
+        }
+    }
         // Checking for Unique fields
     for _, field := range container.Fields {
         if field.Unique {
@@ -1523,6 +1576,28 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			existingItem[key] = value
 		}
 
+        // Calculate equation fields based on the merged existingItem
+        equationError := false
+        for _, field := range container.Fields {
+            if field.Equation != "" {
+                val, err := utils.EvaluateEquation(field.Equation, existingItem)
+                if err != nil {
+                    utils.ReleaseLock(lockKey, lockID)
+                    failedUpdates = append(failedUpdates, map[string]interface{}{
+                        "id":    idStr,
+                        "item":  item,
+                        "error": fmt.Sprintf("Error evaluating equation for field %s: %v", field.Name, err),
+                    })
+                    equationError = true
+                    break
+                }
+                existingItem[field.Name] = val
+            }
+        }
+        if equationError {
+            continue
+        }
+
 		// Check unique constraints for updated fields.
 		for _, field := range container.Fields {
 			if field.Unique {
@@ -1761,8 +1836,8 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		// behavior choice A: return all docs when search is empty
 		filter = bson.M{}
 	} else if len(orClauses) == 0 {
-		// behavior choice B: no valid clauses from a non-empty key → 400
-		return utils.SendResponse(c, fiber.StatusBadRequest, "no valid search clauses", nil)
+		// No searchable fields - return empty results
+		return c.JSON([]interface{}{})
 	} else {
 		filter = bson.M{"$or": orClauses}
 	}
@@ -2006,7 +2081,17 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Invalid filter parameter")
     }
 
-    // 4. Add search functionality if search parameter is provided
+    // 4. Parse sort & pagination (needed for empty search results)
+    sortDoc, err := utils.ParseSort(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+    }
+    pager, err := utils.ParsePager(c)
+    if err != nil {
+        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+    }
+
+    // 5. Add search functionality if search parameter is provided
     searchKey := c.Query("search")
     if searchKey != "" {
         // Build search OR clauses with references
@@ -2028,17 +2113,18 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
                 // No existing filter, just use search
                 filter = bson.M{"$or": orClauses}
             }
+        } else {
+            // No searchable fields - return empty results
+            if pager.Enabled {
+                return c.JSON(fiber.Map{
+                    "items":       []interface{}{},
+                    "totalItems":  0,
+                    "totalPages":  0,
+                    "currentPage": pager.Page,
+                })
+            }
+            return c.JSON([]interface{}{})
         }
-    }
-
-    // 5. Parse sort & pagination
-    sortDoc, err := utils.ParseSort(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
-    }
-    pager, err := utils.ParsePager(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
     }
 
     // 6. Query and decode results
