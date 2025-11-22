@@ -109,16 +109,27 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			}
 			return bson.M{"$in": boolValues}, nil
 		case "objectId":
-			var objectIds []primitive.ObjectID
-			for _, v := range values {
-				oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
-				if err != nil {
-					return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
-				}
-				objectIds = append(objectIds, oid)
+		var objectIds []primitive.ObjectID
+		for _, v := range values {
+			oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
+			if err != nil {
+				return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
 			}
-			return bson.M{"$in": objectIds}, nil
-		default:
+			objectIds = append(objectIds, oid)
+		}
+		return bson.M{"$in": objectIds}, nil
+	case "objectIdArray":
+		var objectIds []primitive.ObjectID
+		for _, v := range values {
+			oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
+			if err != nil {
+				return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+			}
+			objectIds = append(objectIds, oid)
+		}
+		// For array fields, use $in to match documents where the array contains any of these IDs
+		return bson.M{"$in": objectIds}, nil
+	default:
 			return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 		}
 	}
@@ -182,6 +193,13 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		if err != nil {
 			return nil, fmt.Errorf("invalid objectId value for field %s: %w", fieldName, err)
 		}
+		return oid, nil
+	case "objectIdArray":
+		oid, err := primitive.ObjectIDFromHex(queryValue)
+		if err != nil {
+			return nil, fmt.Errorf("invalid objectId value for field %s: %w", fieldName, err)
+		}
+		// For array fields, match documents where the array contains this ObjectID
 		return oid, nil
 	default:
 		return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)

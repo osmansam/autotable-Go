@@ -315,6 +315,33 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         if len(val) != 24 || !isValidHex(val) {
             return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
         }
+    case "objectIdArray":
+        arrayValue, ok := fieldValue.([]interface{})
+        if !ok {
+            return fmt.Errorf("Field %s should be an array", fieldName)
+        }
+        for i, item := range arrayValue {
+            val, ok := item.(string)
+            if !ok {
+                return fmt.Errorf("Field %s: element at index %d should be a string ObjectId", fieldName, i)
+            }
+            if len(val) != 24 || !isValidHex(val) {
+                return fmt.Errorf("Field %s: element at index %d should be a valid ObjectId", fieldName, i)
+            }
+        }
+        // Validate array length constraints
+        if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
+            if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
+        }
+        if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
+            if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
+                return fmt.Errorf(msg)
+            }
+            return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
+        }
     case "autoIncrementId":
         // If provided, the value should be an integer (or a numeric string that can be parsed as int)
         switch v := fieldValue.(type) {

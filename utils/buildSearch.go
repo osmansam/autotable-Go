@@ -152,6 +152,12 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 				ors = append(ors, bson.M{f.Name: id})
 			}
 
+		case "objectidarray", "objectIdArray":
+			if id, err := primitive.ObjectIDFromHex(key); err == nil {
+				// For array fields, match documents where the array contains this ObjectID
+				ors = append(ors, bson.M{f.Name: id})
+			}
+
 		case "uuid":
 			if uuidRE.MatchString(key) {
 				ors = append(ors, bson.M{f.Name: key})
@@ -242,6 +248,67 @@ func BuildSearchWithReferences(ctx context.Context, container *models.ContainerM
 		
 			// Add the matching IDs to the main search filter
 			// Include both ObjectID and string representations to handle data inconsistencies
+			if len(matchingIDs) > 0 {
+				var idValues []interface{}
+				for _, id := range matchingIDs {
+					idValues = append(idValues, id)           // ObjectID
+					idValues = append(idValues, id.Hex())     // String representation
+				}
+				orClauses = append(orClauses, bson.M{field.Name: bson.M{"$in": idValues}})
+			}
+		}
+		
+		// Handle objectIdArray fields with PopulationSettings
+		if (field.Type == "objectIdArray" || field.Type == "objectidarray") && field.PopulationSettings != nil {
+			// Build search filter for the referenced collection
+			var refOrClauses []bson.M
+			
+			for _, popField := range field.PopulationSettings.PopulatedFields {
+				// String search
+				refOrClauses = append(refOrClauses, bson.M{
+					popField: primitive.Regex{Pattern: ".*" + km + ".*", Options: "i"},
+				})
+				
+				// Int search if applicable
+				if intErr == nil {
+					refOrClauses = append(refOrClauses, bson.M{popField: intVal})
+				}
+				
+				// Float search if applicable
+				if floatErr == nil {
+					refOrClauses = append(refOrClauses, bson.M{popField: floatVal})
+				}
+			}
+			
+			if len(refOrClauses) == 0 {
+				continue
+			}
+			
+			// Query the referenced collection to find matching IDs
+			refCollection := configs.GetCollection(field.ObjectSchemaName)
+			refFilter := bson.M{"$or": refOrClauses}
+			
+			cursor, err := refCollection.Find(ctx, refFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+			if err != nil {
+				// Log error but continue with other fields
+				fmt.Printf("Error querying referenced collection %s: %v\n", field.ObjectSchemaName, err)
+				continue
+			}
+			
+			var matchingIDs []primitive.ObjectID
+			for cursor.Next(ctx) {
+				var result bson.M
+				if err := cursor.Decode(&result); err != nil {
+					continue
+				}
+				if id, ok := result["_id"].(primitive.ObjectID); ok {
+					matchingIDs = append(matchingIDs, id)
+				}
+			}
+			cursor.Close(ctx)
+		
+			// Add the matching IDs to the main search filter
+			// For array fields, match documents where the array contains any of the matching IDs
 			if len(matchingIDs) > 0 {
 				var idValues []interface{}
 				for _, id := range matchingIDs {
