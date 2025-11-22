@@ -2,8 +2,14 @@ package models
 
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
+type RowClassConfig struct {
+    Condition string `bson:"condition"`
+    ClassName string `bson:"className"`
+}
+
 type Frontend struct {
     DisplayName string `bson:"displayName,omitempty"`
+    RowClassName []RowClassConfig `bson:"rowClassName,omitempty"`
 }
 
 type Field struct {
