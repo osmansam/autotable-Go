@@ -165,6 +165,21 @@ func BuildSearch(container *models.ContainerModel, key string) ([]bson.M, error)
 
 		case "ip", "ipaddress", "enum":
 			ors = append(ors, bson.M{f.Name: key})
+
+		case "stringarray", "stringArray":
+			// MongoDB handles array search automatically - if any element matches the regex, the document matches
+			ors = append(ors, bson.M{
+				f.Name: primitive.Regex{Pattern: ".*" + km + ".*", Options: "i"},
+			})
+
+		case "intarray", "intArray", "numberarray", "numberArray":
+			if intErr == nil {
+				// Match if array contains the integer value
+				ors = append(ors, bson.M{f.Name: intVal})
+			}
+			if floatErr == nil {
+				ors = append(ors, bson.M{f.Name: floatVal})
+			}
 		}
 	}
 
