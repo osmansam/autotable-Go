@@ -10,6 +10,7 @@ type RowClassConfig struct {
 type Frontend struct {
     DisplayName string `bson:"displayName,omitempty"`
     RowClassName []RowClassConfig `bson:"rowClassName,omitempty"`
+    RowKeyClassName []RowClassConfig `bson:"rowKeyClassName,omitempty"`
 }
 
 type Field struct {
