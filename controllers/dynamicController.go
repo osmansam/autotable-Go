@@ -2506,6 +2506,8 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 		Fields     []string               `json:"fields"`
 		Filters    map[string]interface{} `json:"filters"`
 		Search     string                 `json:"search"`
+		Page       int                    `json:"page"`
+		Limit      int                    `json:"limit"`
 	}
 
 	var req ExportRequest
@@ -2569,12 +2571,18 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 		}
 	}
 
-	// 5. Query Data
-	// Using a large limit or no limit for export. Be careful with memory.
-	// For now, let's assume a reasonable limit or stream if possible, but excelize needs all data.
-	// We'll fetch all matching documents.
+	// 5. Query Data with optional pagination
 	currentCollection := configs.GetCollection(req.SchemaName)
-	cursor, err := currentCollection.Find(ctx, filter)
+	
+	// Build find options with pagination if page and limit are provided
+	findOpts := options.Find()
+	if req.Page > 0 && req.Limit > 0 {
+		skip := int64((req.Page - 1) * req.Limit)
+		findOpts.SetSkip(skip)
+		findOpts.SetLimit(int64(req.Limit))
+	}
+	
+	cursor, err := currentCollection.Find(ctx, filter, findOpts)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to fetch items")
 	}
