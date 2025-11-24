@@ -2075,6 +2075,20 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to load container model")
     }
 
+    // 2.6 Try Redis cache for paginated results
+    // Use query string for cache key to differentiate between different page/limit/search params
+    queryString := string(c.Request().URI().QueryString())
+    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString)
+    if shouldCache {
+        if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+            var response fiber.Map
+            if json.Unmarshal([]byte(cachedData), &response) == nil {
+                log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
+                return c.JSON(response)
+            }
+        }
+    }
+
     // 3. Build filter from query parameters (field-based filtering)
     filter, err := utils.BuildFilterFromQuery(c, container)
     if err != nil {
@@ -2146,15 +2160,31 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     }
 
     // 9. Build response
+    var response fiber.Map
     if pager.Enabled {
-        return c.JSON(fiber.Map{
+        response = fiber.Map{
             "items":       items,
             "totalItems":  pager.TotalItems,
             "totalPages":  pager.TotalPages,
             "currentPage": pager.Page,
-        })
+        }
+    } else {
+        response = fiber.Map{"items": items}
     }
-    // no pagination metadata
+
+    // 10. Cache the response if enabled
+    if shouldCache {
+        if payload, err := json.Marshal(response); err == nil {
+            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+            configs.RedisClient.Set(ctx, redisKey, payload, ttl)
+            log.Printf("Cached paginated items for schema: %s", container.SchemaName)
+        }
+    }
+
+    // 11. Return response
+    if pager.Enabled {
+        return c.JSON(response)
+    }
     return c.JSON(items)
 }
 // executeDynamicCode executes dynamic code from a request.

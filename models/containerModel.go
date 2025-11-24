@@ -60,11 +60,13 @@ type Routes struct {
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
     DeleteMultipleDynamicModelItem RouteSpec `bson:"deleteMultipleDynamicModelItem"`
 }
+
 type Redis struct {
     IsRedisCached bool `bson:"isRedisCached" `
     CacheTime int `bson:"cacheTime" `
     TriggeredRedisCaches []string `bson:"triggeredRedisCaches" `
 }
+
 type PipelineStage struct {
     Name            string `bson:"name"`
     PipelineJSON    string `bson:"pipelineJson"` 
@@ -99,19 +101,34 @@ type DynamicApiModel struct {
     CacheTime       int    `bson:"cacheTime"`
 }
 
+// IndexField represents a single field in an index
+type IndexField struct {
+    FieldName string `bson:"fieldName"` // Name of the field to index
+    Order     int    `bson:"order"`     // 1 for ascending, -1 for descending
+}
 
+// Index represents a MongoDB index configuration
+type Index struct {
+    Name       string       `bson:"name"`              // Index name (e.g., "idx_createdAt")
+    Fields     []IndexField `bson:"fields"`            // Fields to index (supports compound indexes)
+    Unique     bool         `bson:"unique,omitempty"`  // Whether index should enforce uniqueness
+    Sparse     bool         `bson:"sparse,omitempty"`  // Whether to index only documents with the field
+    TTL        int          `bson:"ttl,omitempty"`     // TTL in seconds (0 = no TTL)
+    Background bool         `bson:"background,omitempty"` // Build index in background
+}
 
 type ContainerModel struct {
-    ID             primitive.ObjectID `bson:"_id,omitempty"`
-    SchemaName     string             `bson:"schemaName"`
-    Fields         []Field            `bson:"fields"`
-    Routes         Routes             `bson:"routes"`
-    Redis          Redis              `bson:"redis"`
-    Pipelines      []PipelineStage `bson:"pipelines"` 
-    DynamicFunctions      []DynamicFunction `bson:"dynamicFunctions"` 
-    DynamicApis      []DynamicApiModel `bson:"dynamicApis"`
+    ID               primitive.ObjectID `bson:"_id,omitempty"`
+    SchemaName       string             `bson:"schemaName"`
+    Fields           []Field            `bson:"fields"`
+    Routes           Routes             `bson:"routes"`
+    Redis            Redis              `bson:"redis"`
+    Pipelines        []PipelineStage    `bson:"pipelines"` 
+    DynamicFunctions []DynamicFunction  `bson:"dynamicFunctions"` 
+    DynamicApis      []DynamicApiModel  `bson:"dynamicApis"`
     IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
-    PopulatedRoutes    []string `bson:"populatedRoutes"`
+    PopulatedRoutes  []string           `bson:"populatedRoutes"`
+    Indexes          []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
 
 }
 

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -103,6 +104,16 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
 	}
 
+	// Create indexes for the new container
+	if err := utils.EnsureIndexes(ctx, &newContainer); err != nil {
+		log.Printf("Warning: Failed to create indexes for schema %s: %v", newContainer.SchemaName, err)
+		// Don't fail the request, just log the warning
+	}
+
+	// Invalidate Redis cache for all containers
+	configs.RedisClient.Del(ctx, "containers:all")
+	log.Println("Invalidated containers cache after creation")
+
 	// Emit WebSocket event for container change
 	ws.EmitContainerChanged()
 
@@ -118,6 +129,16 @@ func CreateContainer(c *fiber.Ctx) error {
 func GetAllContainers(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Try to get from Redis cache first
+	redisKey := "containers:all"
+	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+		var containers []models.ContainerModel
+		if json.Unmarshal([]byte(cachedData), &containers) == nil {
+			log.Println("Fetched all containers from Redis cache")
+			return c.JSON(containers)
+		}
+	}
 
 	var containers []models.ContainerModel
 
@@ -143,7 +164,13 @@ func GetAllContainers(c *fiber.Ctx) error {
 		return utils.SendResponse(c, http.StatusInternalServerError, "An error occurred while processing the retrieved containers. Please try again later.", err.Error())
 	}
 
-	log.Println("Containers successfully retrieved")
+	// Cache the result in Redis (30 minutes TTL)
+	if payload, err := json.Marshal(containers); err == nil {
+		configs.RedisClient.Set(ctx, redisKey, payload, 30*time.Minute)
+		log.Println("Cached all containers in Redis")
+	}
+
+	log.Println("Containers successfully retrieved from database")
 	return c.JSON(containers)
 }
 
@@ -183,6 +210,11 @@ func DeleteContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to delete the container from the database. Please try again later.")
 	}
 
+	// Drop indexes for the container (before dropping collection)
+	if err := utils.DropIndexes(ctx, container.SchemaName); err != nil {
+		log.Printf("Warning: Failed to drop indexes for schema %s: %v", container.SchemaName, err)
+	}
+
 	// Drop the dynamic collection associated with the container.
 	collectionName := container.SchemaName
 	log.Printf("Dropping collection '%s' from the database", collectionName)
@@ -191,6 +223,11 @@ func DeleteContainer(c *fiber.Ctx) error {
 		log.Printf("Failed to drop collection '%s': %v", collectionName, err)
 		return utils.SendErrorResponse(c, err, "Container deleted but failed to drop the corresponding collection.")
 	}
+
+	// Invalidate Redis cache for all containers and this specific container
+	configs.RedisClient.Del(ctx, "containers:all")
+	configs.RedisClient.Del(ctx, "container:"+deleteIdStr)
+	log.Println("Invalidated containers cache after deletion")
 
 	// Emit WebSocket event for container change
 	ws.EmitContainerChanged()
@@ -264,6 +301,17 @@ func UpdateContainer(c *fiber.Ctx) error {
 		})
 	}
 
+	// Rebuild indexes for the updated container
+	if err := utils.RebuildIndexes(ctx, &updatedContainer); err != nil {
+		log.Printf("Warning: Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
+		// Don't fail the request, just log the warning
+	}
+
+	// Invalidate Redis cache for all containers and this specific container
+	configs.RedisClient.Del(ctx, "containers:all")
+	configs.RedisClient.Del(ctx, "container:"+updateIdStr)
+	log.Println("Invalidated containers cache after update")
+
 	// Emit WebSocket event for container change
 	ws.EmitContainerChanged()
 
@@ -312,6 +360,11 @@ func UpdatePipelines(c *fiber.Ctx) error {
             "message": "No container found with the specified ID",
         })
     }
+
+    // Invalidate Redis cache for all containers and this specific container
+    configs.RedisClient.Del(ctx, "containers:all")
+    configs.RedisClient.Del(ctx, "container:"+containerIdStr)
+    log.Println("Invalidated containers cache after pipeline update")
 
     // Emit WebSocket event for container change
     ws.EmitContainerChanged()
@@ -362,6 +415,11 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
         })
     }
 
+    // Invalidate Redis cache for all containers and this specific container
+    configs.RedisClient.Del(ctx, "containers:all")
+    configs.RedisClient.Del(ctx, "container:"+containerIdStr)
+    log.Println("Invalidated containers cache after dynamic functions update")
+
     // Emit WebSocket event for container change
     ws.EmitContainerChanged()
 
@@ -385,6 +443,20 @@ func GetContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
 
+	// Try to get from Redis cache first
+	redisKey := "container:" + containerIdStr
+	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+		var container models.ContainerModel
+		if json.Unmarshal([]byte(cachedData), &container) == nil {
+			log.Printf("Fetched container %s from Redis cache", containerIdStr)
+			return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+				Status:  http.StatusOK,
+				Message: "Container successfully retrieved.",
+				Data:    &fiber.Map{"data": container},
+			})
+		}
+	}
+
 	log.Println("Fetching container from the database")
 	var container models.ContainerModel
 	err = containerCollection.FindOne(ctx, bson.M{"_id": containerId}).Decode(&container)
@@ -401,7 +473,13 @@ func GetContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
 	}
 
-	log.Println("Container successfully retrieved")
+	// Cache the result in Redis (30 minutes TTL)
+	if payload, err := json.Marshal(container); err == nil {
+		configs.RedisClient.Set(ctx, redisKey, payload, 30*time.Minute)
+		log.Printf("Cached container %s in Redis", containerIdStr)
+	}
+
+	log.Println("Container successfully retrieved from database")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Container successfully retrieved.",

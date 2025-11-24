@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/osmansam/autotableGo/configs"
@@ -99,63 +99,52 @@ func QueryAndDecode(
     pager *Pager,
 ) ([]map[string]interface{}, error) {
     coll := configs.GetCollection(collName)
+    
+    // Execute query ONCE
     cur, err := coll.Find(ctx, filter, opts)
     if err != nil {
         return nil, err
     }
-    
-    // Check if any documents were found
-    if !cur.Next(ctx) {
-        // Reset cursor
-        cur.Close(ctx)
-        
-        // Try querying with string ID if the filter contains an ObjectId
-        stringFilter := bson.M{}
-        for k, v := range filter {
-            if oid, ok := v.(primitive.ObjectID); ok {
-                stringFilter[k] = oid.Hex()
-            } else {
-                stringFilter[k] = v
-            }
-        }
-        
-        if len(stringFilter) > 0 {
-             cur, err = coll.Find(ctx, stringFilter, opts)
-             if err != nil {
-                 return nil, err
-             }
-        } else {
-             // Re-execute original query to get empty cursor back
-             cur, err = coll.Find(ctx, filter, opts)
-             if err != nil {
-                 return nil, err
-             }
-        }
-    } else {
-        // Reset cursor position since we consumed one item
-        // Unfortunately, we can't rewind a cursor easily. 
-        // We have to re-execute the query.
-        cur.Close(ctx)
-        cur, err = coll.Find(ctx, filter, opts)
-        if err != nil {
-            return nil, err
-        }
-    }
     defer cur.Close(ctx)
 
+    // Decode all results
     items, err := DecodeCursor(cur, ctx)
     if err != nil {
         return nil, err
     }
 
+    // Count total if pagination is enabled
     if pager.Enabled {
-        total, err := coll.CountDocuments(ctx, filter)
-        if err != nil {
-            return nil, err
+        // Try to get count from Redis cache first
+        countKey := "count:" + collName
+        var total int64
+        
+        if cachedCount, err := configs.RedisClient.Get(ctx, countKey).Result(); err == nil {
+            if count, parseErr := strconv.ParseInt(cachedCount, 10, 64); parseErr == nil {
+                total = count
+            } else {
+                // Cache miss or parse error, count from DB
+                total, err = coll.CountDocuments(ctx, filter)
+                if err != nil {
+                    return nil, err
+                }
+                // Cache the count for 5 minutes
+                configs.RedisClient.Set(ctx, countKey, total, 5*time.Minute)
+            }
+        } else {
+            // Cache miss, count from DB
+            total, err = coll.CountDocuments(ctx, filter)
+            if err != nil {
+                return nil, err
+            }
+            // Cache the count for 5 minutes
+            configs.RedisClient.Set(ctx, countKey, total, 5*time.Minute)
         }
+        
         pager.TotalItems = total
         pager.TotalPages = int(total)/pager.Limit + boolToInt(total%int64(pager.Limit) > 0)
     }
+    
     return items, nil
 }
 

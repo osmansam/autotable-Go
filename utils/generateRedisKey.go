@@ -4,7 +4,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 )
 
-// GenerateRedisKey generates a Redis key for caching based on route, schema names, and an optional ID.
+// GenerateRedisKey generates a Redis key for caching based on route, schema names, and an optional ID or URL.
 func GenerateRedisKey(routeName, schemaName string, container *models.ContainerModel, id ...string) (string, bool) {
 	var redisKey string
 	var shouldCache bool
@@ -13,12 +13,17 @@ func GenerateRedisKey(routeName, schemaName string, container *models.ContainerM
 	switch routeName {
 	case "GetAllDynamicModelItems":
 		shouldCache = container.Redis.IsRedisCached
+	case "GetAllDynamicModelItemsWithPagination":
+		shouldCache = container.Redis.IsRedisCached
 	case "GetDynamicModelItem":
-			shouldCache = container.Redis.IsRedisCached
+		shouldCache = container.Redis.IsRedisCached
 	}
+	
 	if shouldCache {
 		if len(id) > 0 && id[0] != "" {
-			redisKey = "item_" + id[0] + "_schema_" + schemaName + "_route_" + routeName
+			// For pagination, id[0] contains the full URL with query params
+			// For single items, id[0] contains the item ID
+			redisKey = "schema_" + schemaName + "_route_" + routeName + "_" + id[0]
 		} else {
 			redisKey = "schema_" + schemaName + "_route_" + routeName
 		}
