@@ -21,6 +21,7 @@ import (
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
+	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -2494,3 +2495,180 @@ func contains(slice []string, item string) bool {
 }
 
 
+// ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.
+func ExportDynamicModelItems(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 1. Parse Request Body
+	type ExportRequest struct {
+		SchemaName string                 `json:"schemaName"`
+		Fields     []string               `json:"fields"`
+		Filters    map[string]interface{} `json:"filters"`
+		Search     string                 `json:"search"`
+	}
+
+	var req ExportRequest
+	if err := c.BodyParser(&req); err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+
+	if req.SchemaName == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName is required",
+			Data:    nil,
+		})
+	}
+
+	// 2. Load Container Model
+	container, err := utils.GetContainerModel(req.SchemaName)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+	}
+
+	// 3. Build Filter
+	// We need to adapt BuildFilterFromQuery to work with the map from the body
+	// Since BuildFilterFromQuery uses c.QueryParser, we'll manually build the filter here
+	// reusing logic similar to BuildFilterFromQuery but for the map.
+	filter := bson.M{}
+	
+	// Apply filters from request
+	if len(req.Filters) > 0 {
+		// This is a simplified version. For full compatibility with complex filters 
+		// (like ranges, etc.) we might need to replicate BuildFilterFromQuery logic fully.
+		// For now, assuming direct value matching or simple operators if passed in the map.
+		// If the frontend sends the same structure as query params, we can iterate and build.
+		for key, value := range req.Filters {
+			// Check if field exists in container
+			isValidField := false
+			for _, f := range container.Fields {
+				if f.Name == key {
+					isValidField = true
+					break
+				}
+			}
+			if isValidField {
+				filter[key] = value
+			}
+		}
+	}
+
+	// 4. Apply Search if provided
+	if req.Search != "" {
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, req.Search)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to build search filter")
+		}
+		if len(orClauses) > 0 {
+			if len(filter) > 0 {
+				filter = bson.M{"$and": []bson.M{filter, {"$or": orClauses}}}
+			} else {
+				filter = bson.M{"$or": orClauses}
+			}
+		}
+	}
+
+	// 5. Query Data
+	// Using a large limit or no limit for export. Be careful with memory.
+	// For now, let's assume a reasonable limit or stream if possible, but excelize needs all data.
+	// We'll fetch all matching documents.
+	currentCollection := configs.GetCollection(req.SchemaName)
+	cursor, err := currentCollection.Find(ctx, filter)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+	}
+	defer cursor.Close(ctx)
+
+	var items []map[string]interface{}
+	if err = cursor.All(ctx, &items); err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to decode items")
+	}
+
+	// 6. Populate and Strip Hashed
+	utils.StripHashed(container.Fields, items)
+	items, err = utils.PopulateIfNeeded(ctx, container, "ExportDynamicModelItems", items)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to populate items")
+	}
+
+	// 7. Generate Excel
+	f := excelize.NewFile()
+	sheetName := "Sheet1"
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+         return utils.SendErrorResponse(c, err, "Failed to create sheet")
+    }
+    f.SetActiveSheet(index)
+
+	// Determine columns to export
+	var exportFields []models.Field
+	if len(req.Fields) > 0 {
+		// Filter container fields based on requested fields
+		for _, reqField := range req.Fields {
+			for _, field := range container.Fields {
+				if field.Name == reqField {
+					exportFields = append(exportFields, field)
+					break
+				}
+			}
+		}
+	} else {
+		// Default to all fields if none specified
+		exportFields = container.Fields
+	}
+
+	// Write Headers
+	for i, field := range exportFields {
+		colName := field.Name
+		// Column Naming Logic
+		if field.Frontend != nil && field.Frontend.DisplayName != "" {
+			colName = field.Frontend.DisplayName
+		} else {
+			// Capitalize first letter
+			if len(colName) > 0 {
+				colName = strings.ToUpper(colName[:1]) + colName[1:]
+			}
+			// CamelCase to Camel Case
+			// A simple regex or loop to insert space before uppercase
+			// Using a loop for simplicity and no extra regex dependency overhead if not needed
+			var newColName strings.Builder
+			for j, r := range colName {
+				if j > 0 && r >= 'A' && r <= 'Z' {
+					newColName.WriteRune(' ')
+				}
+				newColName.WriteRune(r)
+			}
+			colName = newColName.String()
+		}
+
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetName, cell, colName)
+	}
+
+	// Write Data
+	for i, item := range items {
+		row := i + 2
+		for j, field := range exportFields {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			val, exists := item[field.Name]
+			if exists {
+				// Handle different types for string representation
+				f.SetCellValue(sheetName, cell, val)
+			}
+		}
+	}
+
+	// 8. Return File
+	// Save to buffer
+	buffer, err := f.WriteToBuffer()
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to write excel to buffer")
+	}
+
+	// Set headers for download
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_export.xlsx", req.SchemaName))
+
+	return c.Send(buffer.Bytes())
+}

@@ -28,6 +28,7 @@ import (
 func DynamicRoutes(baseUrl string, app *fiber.App) {
 	dynamicGroup := app.Group(baseUrl)
 	dynamicGroup.Post("/", controllers.CreateDynamicModelItem)
+	dynamicGroup.Post("/export", controllers.ExportDynamicModelItems)
 	dynamicGroup.Get("/", controllers.GetAllDynamicModelItems)
 	dynamicGroup.Post("/multiple", controllers.CreateMultipleDynamicModelItem)
 	dynamicGroup.Get("/page", controllers.GetAllDynamicModelItemsWithPagination)
