@@ -300,7 +300,7 @@ func GoogleLogin(c *fiber.Ctx) error {
 	state := uuid.New().String()
 	
 	// Store state in Redis with 5-minute expiration
-	redisClient := configs.GetRedisClient()
+	redisClient := configs.RedisClient
 	stateKey := "oauth:state:" + state
 	err := redisClient.Set(ctx, stateKey, "valid", 5*time.Minute).Err()
 	if err != nil {
@@ -331,7 +331,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	// Verify state exists in Redis
-	redisClient := configs.GetRedisClient()
+	redisClient := configs.RedisClient
 	stateKey := "oauth:state:" + state
 	val, err := redisClient.Get(ctx, stateKey).Result()
 	if err != nil || val != "valid" {

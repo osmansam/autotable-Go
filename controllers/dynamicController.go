@@ -2794,7 +2794,53 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 					f.SetCellValue(sheetName, cell, displayValue)
 				} else {
 					// Handle different types for string representation
-					f.SetCellValue(sheetName, cell, val)
+					// Check if field is stringArray or intArray
+					if field.Type == "stringArray" {
+						// Convert to []string and join with commas
+						if strArray, ok := val.([]interface{}); ok {
+							var strValues []string
+							for _, v := range strArray {
+								strValues = append(strValues, fmt.Sprintf("%v", v))
+							}
+							f.SetCellValue(sheetName, cell, strings.Join(strValues, ","))
+						} else if strArray, ok := val.([]string); ok {
+							f.SetCellValue(sheetName, cell, strings.Join(strArray, ","))
+						} else if strArray, ok := val.(primitive.A); ok {
+							var strValues []string
+							for _, v := range strArray {
+								strValues = append(strValues, fmt.Sprintf("%v", v))
+							}
+							f.SetCellValue(sheetName, cell, strings.Join(strValues, ","))
+						} else {
+							f.SetCellValue(sheetName, cell, val)
+						}
+					} else if field.Type == "intArray" {
+						// Convert to []int and join with commas
+						if intArray, ok := val.([]interface{}); ok {
+							var intValues []string
+							for _, v := range intArray {
+								intValues = append(intValues, fmt.Sprintf("%v", v))
+							}
+							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
+						} else if intArray, ok := val.([]int); ok {
+							var intValues []string
+							for _, v := range intArray {
+								intValues = append(intValues, fmt.Sprintf("%d", v))
+							}
+							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
+						} else if intArray, ok := val.(primitive.A); ok {
+							var intValues []string
+							for _, v := range intArray {
+								intValues = append(intValues, fmt.Sprintf("%v", v))
+							}
+							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
+						} else {
+							f.SetCellValue(sheetName, cell, val)
+						}
+					} else {
+						// For all other types, use default formatting
+						f.SetCellValue(sheetName, cell, val)
+					}
 				}
 			}
 		}
