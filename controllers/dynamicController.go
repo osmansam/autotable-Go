@@ -767,6 +767,25 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 
     log.Printf("Getting items for selection: schema=%s, field=%s", schemaName, fieldName)
 
+    // Load container model to check if field is hashed
+    container, err := utils.GetContainerModel(schemaName)
+    if err != nil {
+        log.Printf("Failed to get container model for schema %s: %v", schemaName, err)
+        return utils.SendErrorResponse(c, err, "Failed to load schema configuration")
+    }
+
+    // Check if the requested field is hashed
+    for _, field := range container.Fields {
+        if field.Name == fieldName && field.IsHashed {
+            log.Printf("Attempted to access hashed field %s in schema %s", fieldName, schemaName)
+            return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+                Status:  http.StatusForbidden,
+                Message: "Cannot access hashed fields",
+                Data:    nil,
+            })
+        }
+    }
+
     // Query the collection with projection for only _id and fieldName
     collection := configs.GetCollection(schemaName)
     projection := bson.M{
