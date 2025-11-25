@@ -2495,6 +2495,113 @@ func contains(slice []string, item string) bool {
 }
 
 
+// formatPopulatedValue extracts and formats display fields from a populated object or array
+func formatPopulatedValue(val interface{}, displayFields []string) string {
+	// Handle populated object (single objectId)
+	if populatedObj, ok := val.(map[string]interface{}); ok {
+		var parts []string
+		for _, displayField := range displayFields {
+			if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+				parts = append(parts, fmt.Sprintf("%v", fieldVal))
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	
+	// Handle bson.M (alternative map type from MongoDB) - single object
+	if populatedObj, ok := val.(bson.M); ok {
+		var parts []string
+		for _, displayField := range displayFields {
+			if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+				parts = append(parts, fmt.Sprintf("%v", fieldVal))
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	
+	// Handle []map[string]interface{} (what MongoDB actually returns for populated arrays)
+	if populatedArray, ok := val.([]map[string]interface{}); ok {
+		var arrayParts []string
+		for _, populatedObj := range populatedArray {
+			var parts []string
+			for _, displayField := range displayFields {
+				if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+					parts = append(parts, fmt.Sprintf("%v", fieldVal))
+				}
+			}
+			if len(parts) > 0 {
+				arrayParts = append(arrayParts, strings.Join(parts, " "))
+			}
+		}
+		return strings.Join(arrayParts, ", ")
+	}
+	
+	// Handle populated array (objectIdArray) - []interface{}
+	if populatedArray, ok := val.([]interface{}); ok {
+		var arrayParts []string
+		for _, item := range populatedArray {
+			// Try map[string]interface{}
+			if populatedObj, ok := item.(map[string]interface{}); ok {
+				var parts []string
+				for _, displayField := range displayFields {
+					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+						parts = append(parts, fmt.Sprintf("%v", fieldVal))
+					}
+				}
+				if len(parts) > 0 {
+					arrayParts = append(arrayParts, strings.Join(parts, " "))
+				}
+			} else if populatedObj, ok := item.(bson.M); ok {
+				// Try bson.M
+				var parts []string
+				for _, displayField := range displayFields {
+					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+						parts = append(parts, fmt.Sprintf("%v", fieldVal))
+					}
+				}
+				if len(parts) > 0 {
+					arrayParts = append(arrayParts, strings.Join(parts, " "))
+				}
+			}
+		}
+		return strings.Join(arrayParts, ", ")
+	}
+	
+	// Handle primitive.A (MongoDB array type)
+	if populatedArray, ok := val.(primitive.A); ok {
+		var arrayParts []string
+		for _, item := range populatedArray {
+			// Try map[string]interface{}
+			if populatedObj, ok := item.(map[string]interface{}); ok {
+				var parts []string
+				for _, displayField := range displayFields {
+					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+						parts = append(parts, fmt.Sprintf("%v", fieldVal))
+					}
+				}
+				if len(parts) > 0 {
+					arrayParts = append(arrayParts, strings.Join(parts, " "))
+				}
+			} else if populatedObj, ok := item.(bson.M); ok {
+				// Try bson.M
+				var parts []string
+				for _, displayField := range displayFields {
+					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+						parts = append(parts, fmt.Sprintf("%v", fieldVal))
+					}
+				}
+				if len(parts) > 0 {
+					arrayParts = append(arrayParts, strings.Join(parts, " "))
+				}
+			}
+		}
+		return strings.Join(arrayParts, ", ")
+	}
+	
+	// Fallback: return the value as-is
+	return fmt.Sprintf("%v", val)
+}
+
 // ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.
 func ExportDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2661,8 +2768,15 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 			cell, _ := excelize.CoordinatesToCellName(j+1, row)
 			val, exists := item[field.Name]
 			if exists {
-				// Handle different types for string representation
-				f.SetCellValue(sheetName, cell, val)
+				// Check if this field has population settings and displayFields
+				if field.PopulationSettings != nil && len(field.PopulationSettings.DisplayFields) > 0 {
+					// This is a populated objectId field
+					displayValue := formatPopulatedValue(val, field.PopulationSettings.DisplayFields)
+					f.SetCellValue(sheetName, cell, displayValue)
+				} else {
+					// Handle different types for string representation
+					f.SetCellValue(sheetName, cell, val)
+				}
 			}
 		}
 	}
