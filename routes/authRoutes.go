@@ -9,5 +9,8 @@ func AuthRoutes(baseUrl string, app *fiber.App) {
 	authGroup.Post("/register", controllers.Register)
 	authGroup.Post("/login", controllers.Login)
 	// authGroup.Post("/refresh", controllers.Refresh)
-
+	
+	// Google OAuth routes
+	authGroup.Get("/google/login", controllers.GoogleLogin)
+	authGroup.Get("/google/callback", controllers.GoogleCallback)
 }

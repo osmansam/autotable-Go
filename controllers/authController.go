@@ -3,17 +3,21 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/oauth2"
 )
 
 // Register a new user dynamically based on container configuration.
@@ -283,3 +287,241 @@ func Login(c *fiber.Ctx) error {
 		},
 	})
 }
+
+// GoogleLogin initiates the Google OAuth flow
+func GoogleLogin(c *fiber.Ctx) error {
+	log.Println("Google OAuth Login initiated")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	
+	oauthConfig := utils.GetGoogleOAuthConfig()
+	
+	// Generate a cryptographically secure random state for CSRF protection
+	state := uuid.New().String()
+	
+	// Store state in Redis with 5-minute expiration
+	redisClient := configs.GetRedisClient()
+	stateKey := "oauth:state:" + state
+	err := redisClient.Set(ctx, stateKey, "valid", 5*time.Minute).Err()
+	if err != nil {
+		log.Printf("Failed to store OAuth state: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to initiate OAuth flow",
+		})
+	}
+	
+	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return c.Redirect(url)
+}
+
+// GoogleCallback handles the OAuth callback from Google
+func GoogleCallback(c *fiber.Ctx) error {
+	log.Println("Google OAuth Callback received")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Validate state parameter for CSRF protection
+	state := c.Query("state")
+	if state == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid OAuth state",
+		})
+	}
+
+	// Verify state exists in Redis
+	redisClient := configs.GetRedisClient()
+	stateKey := "oauth:state:" + state
+	val, err := redisClient.Get(ctx, stateKey).Result()
+	if err != nil || val != "valid" {
+		log.Printf("Invalid or expired OAuth state: %v", err)
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid or expired OAuth state. Please try again.",
+		})
+	}
+
+	// Delete the state from Redis (one-time use)
+	redisClient.Del(ctx, stateKey)
+
+	// Get the authorization code from query params
+	code := c.Query("code")
+	if code == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Authorization code not found",
+		})
+	}
+
+	// Exchange code for token
+	oauthConfig := utils.GetGoogleOAuthConfig()
+	token, err := oauthConfig.Exchange(ctx, code)
+	if err != nil {
+		log.Printf("Failed to exchange token: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to exchange authorization code",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	// Get user info from Google
+	client := oauthConfig.Client(ctx, token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		log.Printf("Failed to get user info: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get user information from Google",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+	defer resp.Body.Close()
+
+	// Parse user info
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read response body: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to read user information",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	var googleUser map[string]interface{}
+	if err := json.Unmarshal(body, &googleUser); err != nil {
+		log.Printf("Failed to parse user info: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to parse user information",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	// Find the auth container (IsAuthContainer = true)
+	containersCollection := configs.GetCollection("containers")
+	var authContainer models.ContainerModel
+	err = containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&authContainer)
+	if err != nil {
+		log.Printf("Failed to find auth container: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Authentication container not configured",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	schemaName := authContainer.SchemaName
+	log.Printf("Using auth container schema: %s", schemaName)
+
+	// Find email field in the container schema
+	var emailFieldName string
+	for _, field := range authContainer.Fields {
+		if field.Type == "email" || field.Name == "email" {
+			emailFieldName = field.Name
+			break
+		}
+	}
+
+	if emailFieldName == "" {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Auth container must have an email field",
+		})
+	}
+
+	email, ok := googleUser["email"].(string)
+	if !ok || email == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Email not provided by Google",
+		})
+	}
+
+	// Check if user exists
+	collection := configs.GetCollection(schemaName)
+	var existingUser map[string]interface{}
+	err = collection.FindOne(ctx, bson.M{emailFieldName: email}).Decode(&existingUser)
+
+	var userID string
+	var role string
+
+	if err != nil {
+		// User doesn't exist, create new user
+		log.Printf("Creating new user with email: %s", email)
+		
+		newUser := map[string]interface{}{
+			emailFieldName: email,
+		}
+
+		// Add name if available
+		if name, ok := googleUser["name"].(string); ok {
+			newUser["name"] = name
+		}
+
+		// Add picture if available
+		if picture, ok := googleUser["picture"].(string); ok {
+			newUser["picture"] = picture
+		}
+
+		// Add default role if needed (you can customize this)
+		newUser["role"] = "user"
+
+		result, err := collection.InsertOne(ctx, newUser)
+		if err != nil {
+			log.Printf("Failed to create user: %v", err)
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to create user",
+				Data:    &fiber.Map{"error": err.Error()},
+			})
+		}
+
+		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+			userID = oid.Hex()
+		}
+		role = "user"
+		existingUser = newUser
+		existingUser["_id"] = result.InsertedID
+	} else {
+		// User exists, log them in
+		log.Printf("User found with email: %s", email)
+		
+		if id, ok := existingUser["_id"].(primitive.ObjectID); ok {
+			userID = id.Hex()
+		} else if idStr, ok := existingUser["_id"].(string); ok {
+			userID = idStr
+		}
+
+		if r, ok := existingUser["role"].(string); ok {
+			role = r
+		}
+	}
+
+	// Generate JWT tokens
+	tokenDetails, err := utils.GenerateTokens(userID, role)
+	if err != nil {
+		log.Printf("Failed to generate tokens: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to generate tokens",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	// Remove sensitive fields
+	delete(existingUser, "password")
+
+	return c.JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Google login successful",
+		Data: &fiber.Map{
+			"accessToken":  tokenDetails.AccessToken,
+			"refreshToken": tokenDetails.RefreshToken,
+			"user":         existingUser,
+		},
+	})
+}
+
