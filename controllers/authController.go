@@ -456,18 +456,30 @@ func GoogleCallback(c *fiber.Ctx) error {
 			emailFieldName: email,
 		}
 
-		// Add name if available
-		if name, ok := googleUser["name"].(string); ok {
+		// Helper function to check if a field exists in the schema
+		fieldExists := func(fieldName string) bool {
+			for _, field := range authContainer.Fields {
+				if field.Name == fieldName {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Add name if available and field exists in schema
+		if name, ok := googleUser["name"].(string); ok && fieldExists("name") {
 			newUser["name"] = name
 		}
 
-		// Add picture if available
-		if picture, ok := googleUser["picture"].(string); ok {
+		// Add picture if available and field exists in schema
+		if picture, ok := googleUser["picture"].(string); ok && fieldExists("picture") {
 			newUser["picture"] = picture
 		}
 
-		// Add default role if needed (you can customize this)
-		newUser["role"] = "user"
+		// Add default role if field exists in schema
+		if fieldExists("role") {
+			newUser["role"] = "user"
+		}
 
 		result, err := collection.InsertOne(ctx, newUser)
 		if err != nil {
@@ -479,10 +491,32 @@ func GoogleCallback(c *fiber.Ctx) error {
 			})
 		}
 
+		// Delete the cache for this schema after creating a new user
+		if authContainer.Redis.IsRedisCached {
+			err = utils.DeleteCacheForSchema(ctx, schemaName, &authContainer)
+			if err != nil {
+				log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
+				// Don't fail the request, just log the error
+			}
+
+			// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+			for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
+				err = utils.DeleteCacheForSchema(ctx, triggeredSchema, &authContainer)
+				if err != nil {
+					// Log the error and continue with the next iteration
+					log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+					continue
+				}
+			}
+		}
+
 		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
 			userID = oid.Hex()
 		}
-		role = "user"
+		// Get role from newUser if it exists, otherwise use empty string
+		if r, ok := newUser["role"].(string); ok {
+			role = r
+		}
 		existingUser = newUser
 		existingUser["_id"] = result.InsertedID
 	} else {

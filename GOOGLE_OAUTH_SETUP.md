@@ -56,7 +56,7 @@ GOOGLE_REDIRECT_URL=http://localhost:8080/api/v1/auth/google/callback
 
 ### Authentication Flow
 
-1. **User initiates login**: Navigate to `http://localhost:8080/api/v1/auth/google/login`
+1. **User initiates login**: Navigate to `http://localhost:3002/api/v1/auth/google/login`
 2. **Redirect to Google**: User is redirected to Google's consent screen
 3. **User authorizes**: User logs in and grants permissions
 4. **Callback**: Google redirects back to `/api/v1/auth/google/callback` with an authorization code
