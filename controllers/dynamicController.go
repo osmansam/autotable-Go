@@ -2668,6 +2668,11 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 		// For now, assuming direct value matching or simple operators if passed in the map.
 		// If the frontend sends the same structure as query params, we can iterate and build.
 		for key, value := range req.Filters {
+			// Skip empty string values (ignore them, don't filter for empty strings)
+			if strVal, ok := value.(string); ok && strVal == "" {
+				continue
+			}
+			
 			// Check if field exists in container
 			isValidField := false
 			for _, f := range container.Fields {

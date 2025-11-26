@@ -69,6 +69,35 @@ func CreateContainer(c *fiber.Ctx) error {
 			Message: "The specified schema already exists in containers",
 		}
 	}
+	// Validate isAuthContainer requirements
+	if container.IsAuthContainer {
+		log.Println("Validating isAuthContainer requirements")
+		
+		// Check if another auth container already exists
+		authCount, err := containerCollection.CountDocuments(ctx, bson.M{"isAuthContainer": true})
+		if err != nil {
+			log.Printf("Database error when checking for existing auth container: %v", err)
+			return utils.SendErrorResponse(c, err, "Database error while checking for existing auth container.")
+		}
+		if authCount > 0 {
+			log.Println("Another auth container already exists")
+			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
+		}
+		
+		// Validate that there's an email field with isLoginCredential true
+		hasValidEmailField := false
+		for _, field := range container.Fields {
+			if field.Name == "email" && field.IsLoginCredential {
+				hasValidEmailField = true
+				break
+			}
+		}
+		if !hasValidEmailField {
+			log.Println("Auth container missing required email field with isLoginCredential")
+			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
+		}
+	}
+	
 	// Validate that objectId fields reference an existing container (not the one being created)
 	for _, field := range container.Fields {
 		if field.Type == "objectId" {
@@ -90,11 +119,16 @@ func CreateContainer(c *fiber.Ctx) error {
 		}
 	}
 	newContainer := models.ContainerModel{
-		SchemaName: container.SchemaName,
-		Fields:     container.Fields,
-		Routes:     container.Routes,
-		Redis:      container.Redis,
-		Pipelines:  container.Pipelines,
+		SchemaName:      container.SchemaName,
+		Fields:          container.Fields,
+		Routes:          container.Routes,
+		Redis:           container.Redis,
+		Pipelines:       container.Pipelines,
+		IsAuthContainer: container.IsAuthContainer,
+		PopulatedRoutes: container.PopulatedRoutes,
+		DynamicApis:     container.DynamicApis,
+		DynamicFunctions: container.DynamicFunctions,
+		Indexes:         container.Indexes,
 	}
 
 	log.Println("Inserting new container into the database")
@@ -280,6 +314,35 @@ func UpdateContainer(c *fiber.Ctx) error {
 	if err != mongo.ErrNoDocuments {
 		log.Printf("Database error: %v", err)
 		return utils.SendErrorResponse(c, err, "Database error occurred while checking for existing schema name.")
+	}
+
+	// Validate isAuthContainer requirements
+	if updatedContainer.IsAuthContainer {
+		log.Println("Validating isAuthContainer requirements for update")
+		
+		// Check if another auth container already exists (excluding the current one being updated)
+		authCount, err := containerCollection.CountDocuments(ctx, bson.M{"isAuthContainer": true, "_id": bson.M{"$ne": updateId}})
+		if err != nil {
+			log.Printf("Database error when checking for existing auth container: %v", err)
+			return utils.SendErrorResponse(c, err, "Database error while checking for existing auth container.")
+		}
+		if authCount > 0 {
+			log.Println("Another auth container already exists")
+			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
+		}
+		
+		// Validate that there's an email field with isLoginCredential true
+		hasValidEmailField := false
+		for _, field := range updatedContainer.Fields {
+			if field.Name == "email" && field.IsLoginCredential {
+				hasValidEmailField = true
+				break
+			}
+		}
+		if !hasValidEmailField {
+			log.Println("Auth container missing required email field with isLoginCredential")
+			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
+		}
 	}
 
 	updatedContainer.Pipelines = existingContainer.Pipelines

@@ -2,6 +2,8 @@
 package utils
 
 import (
+	"net/url"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
@@ -31,6 +33,10 @@ func BuildFilterFromQuery(c *fiber.Ctx, container *models.ContainerModel) (bson.
         for _, param := range splitQuery(queryString) {
             if len(param) > len(f.Name) && param[:len(f.Name)] == f.Name && param[len(f.Name)] == '=' {
                 value := param[len(f.Name)+1:]
+                // URL-decode the value to handle special characters like @ in emails
+                if decodedValue, err := url.QueryUnescape(value); err == nil {
+                    value = decodedValue
+                }
                 allValues = append(allValues, value)
             }
         }
