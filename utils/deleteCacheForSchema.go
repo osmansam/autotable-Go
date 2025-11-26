@@ -72,10 +72,6 @@ func DeleteCacheForSchema(ctx context.Context, schemaName string, container *mod
         log.Printf("No pagination cache keys found for schema %s", schemaName)
     }
 
-    // Delete count cache
-    countKey := "count:" + schemaName
-    configs.RedisClient.Del(ctx, countKey)
-    fmt.Printf("Deleted count cache for schema %s\n", schemaName)
 
     var pipelineContainer *models.ContainerModel
     var err error

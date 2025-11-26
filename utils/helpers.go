@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
@@ -115,30 +114,11 @@ func QueryAndDecode(
 
     // Count total if pagination is enabled
     if pager.Enabled {
-        // Try to get count from Redis cache first
-        countKey := "count:" + collName
-        var total int64
-        
-        if cachedCount, err := configs.RedisClient.Get(ctx, countKey).Result(); err == nil {
-            if count, parseErr := strconv.ParseInt(cachedCount, 10, 64); parseErr == nil {
-                total = count
-            } else {
-                // Cache miss or parse error, count from DB
-                total, err = coll.CountDocuments(ctx, filter)
-                if err != nil {
-                    return nil, err
-                }
-                // Cache the count for 5 minutes
-                configs.RedisClient.Set(ctx, countKey, total, 5*time.Minute)
-            }
-        } else {
-            // Cache miss, count from DB
-            total, err = coll.CountDocuments(ctx, filter)
-            if err != nil {
-                return nil, err
-            }
-            // Cache the count for 5 minutes
-            configs.RedisClient.Set(ctx, countKey, total, 5*time.Minute)
+        // Always count with the current filter to ensure accuracy
+        // (filters and search can vary, so we can't cache a single count)
+        total, err := coll.CountDocuments(ctx, filter)
+        if err != nil {
+            return nil, err
         }
         
         pager.TotalItems = total
