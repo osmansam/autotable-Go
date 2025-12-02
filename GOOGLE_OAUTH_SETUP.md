@@ -8,10 +8,10 @@ Add the following variables to your `.env` file:
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret-here
-GOOGLE_REDIRECT_URL=http://localhost:8080/api/v1/auth/google/callback
+GOOGLE_REDIRECT_URL=http://localhost:3002/api/v1/auth/google/callback
 ```
 
-**Note:** Replace `8080` with your actual `PORT_NUMBER` from your `.env` file.
+**Note:** Replace `3002` with your actual `PORT_NUMBER` from your `.env` file.
 
 ## How to Get Google OAuth Credentials
 
@@ -37,7 +37,7 @@ Visit [Google Cloud Console](https://console.cloud.google.com/)
 
 4. Choose "Web application" as the application type
 5. Add authorized redirect URIs:
-   - For local development: `http://localhost:8080/api/v1/auth/google/callback`
+   - For local development: `http://localhost:3002/api/v1/auth/google/callback`
    - For production: `https://yourdomain.com/api/v1/auth/google/callback`
 
 6. Click "Create"
@@ -49,7 +49,7 @@ Paste the credentials into your `.env` file:
 ```env
 GOOGLE_CLIENT_ID=123456789-abcdefghijklmnop.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-your_secret_here
-GOOGLE_REDIRECT_URL=http://localhost:8080/api/v1/auth/google/callback
+GOOGLE_REDIRECT_URL=http://localhost:3002/api/v1/auth/google/callback
 ```
 
 ## How It Works
@@ -114,7 +114,7 @@ Successful login returns:
 ## Testing
 
 1. Ensure your server is running
-2. Navigate to: `http://localhost:8080/api/v1/auth/google/login`
+2. Navigate to: `http://localhost:3002/api/v1/auth/google/login`
 3. You should be redirected to Google's login page
 4. After successful login, you'll be redirected back with tokens
 5. Check your database to verify the user was created

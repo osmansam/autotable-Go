@@ -154,32 +154,21 @@ func Login(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Expect schemaName as a query parameter to identify the container
-	schemaName := c.Query("schemaName")
-	if schemaName == "" {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Missing schemaName parameter.",
-		})
-	}
-
-	// Retrieve container model
-	container, err := utils.GetContainerModel(schemaName)
+	// Find the auth container (IsAuthContainer = true)
+	containersCollection := configs.GetCollection("containers")
+	var container models.ContainerModel
+	err := containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
 	if err != nil {
-		log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
+		log.Printf("Failed to find auth container: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch container model.",
+			Message: "Authentication container not configured.",
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
 
-	if !container.IsAuthContainer {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "This container is not configured for authentication.",
-		})
-	}
+	schemaName := container.SchemaName
+	log.Printf("Using auth container schema: %s", schemaName)
 
 	// Parse login credentials from request body
 	var loginData map[string]interface{}
@@ -500,15 +489,22 @@ func GoogleCallback(c *fiber.Ctx) error {
 			}
 
 			// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-			for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
-				err = utils.DeleteCacheForSchema(ctx, triggeredSchema, &authContainer)
-				if err != nil {
-					// Log the error and continue with the next iteration
-					log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-					continue
-				}
+		for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
+			// Fetch the correct container model for the triggered schema
+			triggeredContainer, err := utils.GetContainerModel(triggeredSchema)
+			if err != nil {
+				log.Printf("Error fetching container model for schema %s: %v", triggeredSchema, err)
+				continue
+			}
+			
+			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, triggeredContainer)
+			if err != nil {
+				// Log the error and continue with the next iteration
+				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+				continue
 			}
 		}
+	}
 
 		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
 			userID = oid.Hex()
