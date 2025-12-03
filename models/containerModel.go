@@ -11,6 +11,7 @@ type Frontend struct {
     DisplayName string `bson:"displayName,omitempty"`
     RowClassName []RowClassConfig `bson:"rowClassName,omitempty"`
     RowKeyClassName []RowClassConfig `bson:"rowKeyClassName,omitempty"`
+    InvalidateKeys []string `json:"invalidateKeys" bson:"invalidateKeys"`
 }
 
 type Field struct {
