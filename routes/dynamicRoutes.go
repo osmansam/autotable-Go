@@ -10,9 +10,10 @@ import (
 // 	dynamicGroup := app.Group(baseUrl)
 // 	dynamicGroup.Post("/", middlewares.ConditionalAuthentication("CreateDynamicModelItem"), controllers.CreateDynamicModelItem)
 // 	dynamicGroup.Post("/multiple", middlewares.ConditionalAuthentication("CreateMultipleDynamicModelItem"), controllers.CreateMultipleDynamicModelItem)
+// 	dynamicGroup.Post("/export", middlewares.ConditionalAuthentication("ExportDynamicModelItems"), controllers.ExportDynamicModelItems)
 // 	dynamicGroup.Get("/", middlewares.ConditionalAuthentication("GetAllDynamicModelItems"), controllers.GetAllDynamicModelItems)
 // 	dynamicGroup.Get("/page",middlewares.ConditionalAuthentication("GetAllDynamicModelItemsWithPagination"),controllers.GetAllDynamicModelItemsWithPagination)
-// 	dynamicGroup.Get("testPipeline",middlewares.ConditionalAuthentication("TestPipeline"),controllers.TestPipeline)
+// 	dynamicGroup.Get("/testPipeline",middlewares.ConditionalAuthentication("TestPipeline"),controllers.TestPipeline)
 // 	dynamicGroup.Get("/pipeline", middlewares.ConditionalAuthentication("GetPipeline"), controllers.GetPipeline)
 // 	dynamicGroup.Get("/search", middlewares.ConditionalAuthentication("HandleSearchDynamicModelItem"), controllers.HandleSearchDynamicModelItem)
 // 	dynamicGroup.Get("/filter", middlewares.ConditionalAuthentication("HandleFilterDynamicModelItem"), controllers.HandleFilterDynamicModelItem)
@@ -22,6 +23,7 @@ import (
 // 	dynamicGroup.Delete("/multiple", middlewares.ConditionalAuthentication("DeleteMultipleDynamicModelItem"), controllers.DeleteMultipleDynamicModelItem)
 // 	dynamicGroup.Delete("/:id", middlewares.ConditionalAuthentication("DeleteDynamicModelItem"), controllers.DeleteDynamicModelItem)
 // 	dynamicGroup.Patch("/:id", middlewares.ConditionalAuthentication("UpdateDynamicModelItem"), controllers.UpdateDynamicModelItem)
+// 	dynamicGroup.Get("/selection", middlewares.ConditionalAuthentication("GetItemsForSelection"), controllers.GetItemsForSelection)
 // 	dynamicGroup.Get("/:id", middlewares.ConditionalAuthentication("GetDynamicModelItem"), controllers.GetDynamicModelItem)
 // }
 

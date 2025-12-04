@@ -60,6 +60,8 @@ type Routes struct {
     UpdateMultipleDynamicModelItem RouteSpec `bson:"updateMultipleDynamicModelItem"`
     GetDynamicModelItem RouteSpec `bson:"getDynamicModelItem"`
     DeleteMultipleDynamicModelItem RouteSpec `bson:"deleteMultipleDynamicModelItem"`
+    ExportDynamicModelItems RouteSpec `bson:"exportDynamicModelItems"`
+    GetItemsForSelection RouteSpec `bson:"getItemsForSelection"`
 }
 
 type Redis struct {
