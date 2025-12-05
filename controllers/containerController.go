@@ -28,6 +28,72 @@ type PipelinesUpdate struct {
 var containerCollection *mongo.Collection = configs.GetCollection( "containers")
 var validate = validator.New()
 
+// ensureRoleSchemaExists checks if a "role" schema exists and creates it if not
+func ensureRoleSchemaExists(ctx context.Context) error {
+	// Check if role schema already exists
+	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": "role"})
+	if err != nil {
+		log.Printf("Error checking for role schema: %v", err)
+		return err
+	}
+
+	// If role schema already exists, nothing to do
+	if count > 0 {
+		log.Println("Role schema already exists, skipping creation")
+		return nil
+	}
+
+	// Create the role schema
+	log.Println("Creating role schema automatically")
+	roleContainer := models.ContainerModel{
+		SchemaName: "role",
+		Fields: []models.Field{
+			{
+				Name: "name",
+				Type: "string",
+				Tag:  "required",
+			},
+		},
+		Routes: models.Routes{
+			CreateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			CreateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItemsWithPagination: models.RouteSpec{IsActive: true, Method: "GET"},
+			GetPipeline:                           models.RouteSpec{IsActive: true, Method: "GET"},
+			TestPipeline:                          models.RouteSpec{IsActive: true, Method: "POST"},
+			HandleSearchDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			HandleFilterDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "DELETE"},
+			UpdateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "PUT"},
+			UpdateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "PUT"},
+			GetDynamicModelItem:                   models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "DELETE"},
+			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
+		},
+		Redis: models.Redis{
+			IsRedisCached:        false,
+			CacheTime:            0,
+			TriggeredRedisCaches: []string{},
+		},
+		IsAuthContainer: false,
+		PopulatedRoutes: []string{},
+		Pipelines:       []models.PipelineStage{},
+		DynamicFunctions: []models.DynamicFunction{},
+		DynamicApis:     []models.DynamicApiModel{},
+		Indexes:         []models.Index{},
+	}
+
+	// Insert the role container
+	_, err = containerCollection.InsertOne(ctx, roleContainer)
+	if err != nil {
+		log.Printf("Failed to create role schema: %v", err)
+		return err
+	}
+
+	log.Println("Role schema successfully created")
+	return nil
+}
 
 // CreateContainer creates a container with the provided model name and schema fields
 func CreateContainer(c *fiber.Ctx) error {
@@ -95,6 +161,12 @@ func CreateContainer(c *fiber.Ctx) error {
 		if !hasValidEmailField {
 			log.Println("Auth container missing required email field with isLoginCredential")
 			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
+		}
+	
+		// Ensure role schema exists when creating an auth container
+		if err := ensureRoleSchemaExists(ctx); err != nil {
+			log.Printf("Failed to ensure role schema exists: %v", err)
+			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
 		}
 	}
 	
@@ -342,6 +414,12 @@ func UpdateContainer(c *fiber.Ctx) error {
 		if !hasValidEmailField {
 			log.Println("Auth container missing required email field with isLoginCredential")
 			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
+		}
+		
+		// Ensure role schema exists when updating to an auth container
+		if err := ensureRoleSchemaExists(ctx); err != nil {
+			log.Printf("Failed to ensure role schema exists: %v", err)
+			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
 		}
 	}
 
