@@ -12,6 +12,9 @@ type Frontend struct {
     RowClassName []RowClassConfig `bson:"rowClassName,omitempty"`
     RowKeyClassName []RowClassConfig `bson:"rowKeyClassName,omitempty"`
     InvalidateKeys []string `json:"invalidateKeys" bson:"invalidateKeys"`
+    LinkTemplate   string `bson:"linkTemplate,omitempty" json:"linkTemplate,omitempty"`
+    LinkLabelField string `bson:"linkLabelField,omitempty" json:"linkLabelField,omitempty"`
+    LinkType       string `bson:"linkType,omitempty" json:"linkType,omitempty"`
 }
 
 type Field struct {
