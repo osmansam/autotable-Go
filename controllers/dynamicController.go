@@ -1912,9 +1912,40 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "invalid pagination params")
 	}
 
+    // Apply Row Access Logic
+    userRole, _ := c.Locals("userRole").(string)
+    // We need the full user object. Locals("user") might be set by middleware? 
+    // Assuming simple-auth middleware sets "user" or "userID". 
+    // If only userID is available, we might need to fetch user, or just pass map with ID if that's all needed.
+    // For now, let's construct a minimal user map from locals if available, or fetch full user if needed.
+    // Assuming "user" is NOT explicitly in locals as a map, but we have userID and userRole.
+    // If row access relies on other user fields (e.g. email, companyId), we need to fetch the user.
+    // Let's defer strict user fetching for performance unless necessary or use what's available.
+    // Ideally Middleware should set "user" context. 
+    // Let's create a helper or assume middleware sets it. 
+    // HACK: Constructing a pseudo-user map from likely available claims.
+    userID, _ := c.Locals("userID").(string)
+    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
+    // If strict fetching needed: userMap, _ = utils.GetUser(userID) 
+
+    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+    if err != nil {
+         log.Printf("Error building row access filter: %v", err)
+         return utils.SendErrorResponse(c, err, "row access error")
+    }
+    if rowAccessFilter != nil {
+        if len(filter) > 0 {
+             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+        } else {
+             filter = rowAccessFilter
+        }
+    }
+
 	// 5) query
 	opts := utils.BuildFindOptions(sortDoc, pager)
-	items, err := utils.QueryAndDecode(ctx, schemaName, filter, opts, &pager)
+
+    // Apply Row Access Logic
+    items, err := utils.QueryAndDecode(ctx, schemaName, filter, opts, &pager)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "query failed")
 	}
@@ -1927,7 +1958,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	// 6.5) Filter fields based on user role authorization
-	userRole, _ := c.Locals("userRole").(string)
+// 6.5) Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
 	log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
@@ -2000,6 +2031,25 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
     // 5) Execute the query
     opts := utils.BuildFindOptions(sortDoc, pager)
+
+    // Apply Row Access Logic
+    userRole, _ := c.Locals("userRole").(string)
+    userID, _ := c.Locals("userID").(string)
+    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
+
+    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+    if err != nil {
+         log.Printf("Error building row access filter: %v", err)
+         return utils.SendErrorResponse(c, err, "row access error")
+    }
+    if rowAccessFilter != nil {
+        if len(filter) > 0 {
+             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+        } else {
+             filter = rowAccessFilter
+        }
+    }
+
     items, err := utils.QueryAndDecode(ctx, container.SchemaName, filter, opts, &pager)
     if err != nil {
         log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
@@ -2016,7 +2066,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // 7.5) Filter fields based on user role authorization
-    userRole, _ := c.Locals("userRole").(string)
+    // 7.5) Filter fields based on user role authorization
     items = utils.FilterDocuments(items, container.Fields, userRole)
     log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
@@ -2158,94 +2208,127 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to load container model")
     }
 
-    // 2.6 Try Redis cache for paginated results
-    // Use query string for cache key to differentiate between different page/limit/search params
-    queryString := string(c.Request().URI().QueryString())
-    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString)
-    if shouldCache {
-        if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
-            var response fiber.Map
-            if json.Unmarshal([]byte(cachedData), &response) == nil {
-                log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
-                
-                // Filter fields based on user role before returning cached data
-                if itemsInterface, ok := response["items"].([]interface{}); ok {
-                    var items []map[string]interface{}
-                    for _, item := range itemsInterface {
-                        if itemMap, ok := item.(map[string]interface{}); ok {
-                            items = append(items, itemMap)
-                        }
-                    }
-                    
-                    userRole, _ := c.Locals("userRole").(string)
-                    items = utils.FilterDocuments(items, container.Fields, userRole)
-                    response["items"] = items
-                }
-                
-                return c.JSON(response)
-            }
-        }
+    	// 2.6 Try Redis cache for paginated results (Skip if Row Access is potentially active - refined check below)
+	queryString := string(c.Request().URI().QueryString())
+    // Note: If Row Access is active, we should NOT return shared cache unless key includes user. 
+    // Checking row access first to decide on cache key would be better but requires more change.
+    // For now, let's proceed and if we find row access is needed, we will invalidate attempting to use shared cache 
+    // or we append userID to key if row access rules exist.
+    
+    // Check if container has row access rules
+    hasRowAccess := container.RowAccess != nil && len(container.RowAccess.Conditions) > 0
+    
+    userRole, _ := c.Locals("userRole").(string)
+    userID, _ := c.Locals("userID").(string)
+    
+    var redisKey string
+    var shouldCache bool
+
+    if hasRowAccess {
+        // Append userID to query string or key to ensure private cache
+         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString + "&_uid=" + userID)
+    } else {
+         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString)
     }
 
-    // 3. Build filter from query parameters (field-based filtering)
-    filter, err := utils.BuildFilterFromQuery(c, container)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid filter parameter")
-    }
+	if shouldCache {
+		if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+			var response fiber.Map
+			if json.Unmarshal([]byte(cachedData), &response) == nil {
+				log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
+				
+				// Filter fields based on user role before returning cached data
+				if itemsInterface, ok := response["items"].([]interface{}); ok {
+					var items []map[string]interface{}
+					for _, item := range itemsInterface {
+						if itemMap, ok := item.(map[string]interface{}); ok {
+							items = append(items, itemMap)
+						}
+					}
+					
+					items = utils.FilterDocuments(items, container.Fields, userRole)
+					response["items"] = items
+				}
+				
+				return c.JSON(response)
+			}
+		}
+	}
 
-    // 4. Parse sort & pagination (needed for empty search results)
-    sortDoc, err := utils.ParseSort(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
-    }
-    pager, err := utils.ParsePager(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
-    }
+	// 3. Build filter from query parameters (field-based filtering)
+	filter, err := utils.BuildFilterFromQuery(c, container)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+	}
 
-    // 5. Add search functionality if search parameter is provided
-    searchKey := c.Query("search")
-    if searchKey != "" {
-        // Build search OR clauses with references
-        orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Failed to build search filter")
-        }
-        
-        if len(orClauses) > 0 {
-            // Combine existing filter with search using $and
-            if len(filter) > 0 {
-                filter = bson.M{
-                    "$and": []bson.M{
-                        filter,
-                        {"$or": orClauses},
-                    },
-                }
-            } else {
-                // No existing filter, just use search
-                filter = bson.M{"$or": orClauses}
-            }
+	// 4. Parse sort & pagination (needed for empty search results)
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+	}
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+	}
+
+	// 5. Add search functionality if search parameter is provided
+	searchKey := c.Query("search")
+	if searchKey != "" {
+		// Build search OR clauses with references
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to build search filter")
+		}
+		
+		if len(orClauses) > 0 {
+			// Combine existing filter with search using $and
+			if len(filter) > 0 {
+				filter = bson.M{
+					"$and": []bson.M{
+						filter,
+						{"$or": orClauses},
+					},
+				}
+			} else {
+				// No existing filter, just use search
+				filter = bson.M{"$or": orClauses}
+			}
+		} else {
+			// No searchable fields - return empty results
+			if pager.Enabled {
+				return c.JSON(fiber.Map{
+					"items":       []interface{}{},
+					"totalItems":  0,
+					"totalPages":  0,
+					"currentPage": pager.Page,
+				})
+			}
+			return c.JSON([]interface{}{})
+		}
+	}
+
+	// Apply Row Access Logic (Last step of filtering)
+    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
+    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+    if err != nil {
+         log.Printf("Error building row access filter: %v", err)
+         return utils.SendErrorResponse(c, err, "row access error")
+    }
+    if rowAccessFilter != nil {
+        if len(filter) > 0 {
+             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
         } else {
-            // No searchable fields - return empty results
-            if pager.Enabled {
-                return c.JSON(fiber.Map{
-                    "items":       []interface{}{},
-                    "totalItems":  0,
-                    "totalPages":  0,
-                    "currentPage": pager.Page,
-                })
-            }
-            return c.JSON([]interface{}{})
+             filter = rowAccessFilter
         }
     }
 
-    // 6. Query and decode results
-    opts := utils.BuildFindOptions(sortDoc, pager)
-    items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
-    if err != nil {
-        log.Printf("Query failed for schema %q: %v", c.Query("schemaName"), err)
-        return utils.SendErrorResponse(c, err, "Failed to fetch items")
-    }
+	// 6. Query and decode results
+	opts := utils.BuildFindOptions(sortDoc, pager)
+	items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
+	if err != nil {
+		log.Printf("Query failed for schema %q: %v", c.Query("schemaName"), err)
+		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+	}
 
     // 7. Strip hashed fields
     utils.StripHashed(container.Fields, items)
@@ -2258,7 +2341,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     }
 
 	// 8.5. Filter fields based on user role authorization
-	userRole, _ := c.Locals("userRole").(string)
+// 8.5. Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
 	log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 

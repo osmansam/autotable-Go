@@ -143,8 +143,26 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			authorizeRole = route.AuthorizeRole
 		}
 
-		if isAuthenticated||!isActive {
-			return Authenticate(c, isAuthorized, authorizeRole,isActive)
+		if isAuthenticated || !isActive {
+			return Authenticate(c, isAuthorized, authorizeRole, isActive)
+		}
+
+		// Optional Authentication: If token is present, try to parse it to identify the user/role.
+		// This allows Row Access rules to work even on public routes.
+		authHeader := c.Get("Authorization")
+		if authHeader != "" {
+			var token string
+			if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+				token = authHeader[7:]
+			} else {
+				token = authHeader
+			}
+			userID, role, err := utils.ParseToken(token)
+			if err == nil {
+				c.Locals("userID", userID)
+				c.Locals("userRole", role)
+			}
+			// If token is invalid, we ignore it and proceed as anonymous.
 		}
 
 		return c.Next()

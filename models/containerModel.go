@@ -137,7 +137,20 @@ type ContainerModel struct {
     IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
     PopulatedRoutes  []string           `bson:"populatedRoutes"`
     Indexes          []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
+    RowAccess        *RowAccessRule     `bson:"rowAccess,omitempty"`
+}
 
+// Condition is the same shape you already use for filters / rowClass
+type Condition struct {
+    Field         string      `bson:"field"`
+    Operator      string      `bson:"operator"`   // "=", ">", "<", "in", etc.
+    Value         interface{} `bson:"value"`      // can support "{{user.id}}" etc.
+    ExtractFilter bool        `bson:"extractFilter,omitempty" json:"extractFilter,omitempty"`
+    Roles         []string    `bson:"roles,omitempty" json:"roles,omitempty"`
+}
+
+type RowAccessRule struct {
+    Conditions []Condition `bson:"conditions"` // all row rules, each with its own Roles
 }
 
 type ContainerTypes struct {

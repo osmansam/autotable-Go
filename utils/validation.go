@@ -282,7 +282,7 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
     if required, ok := rules["required"].(bool); ok && required {
         if fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "" {
             if msg, ok := rules["requiredMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s is required but not provided", fieldName)
         }
@@ -332,13 +332,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         // Validate array length constraints
         if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
         }
         if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
             if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
         }
@@ -450,13 +450,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         // Length constraints
         if minLength, ok := rules["minlength"].(int); ok && len(val) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have a string length greater than or equal to %d", fieldName, minLength)
         }
         if maxLength, ok := rules["maxlength"].(int); ok && len(val) > maxLength {
             if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have a string length less than or equal to %d", fieldName, maxLength)
         }
@@ -494,13 +494,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
 		// Validate min and max if provided
 		if min, ok := rules["min"].(int); ok && val < float64(min) {
 			if msg, ok := rules["minMessage"].(string); ok && msg != "" {
-				return fmt.Errorf(msg)
+				return fmt.Errorf("%s", msg)
 			}
 			return fmt.Errorf("Field %s should have a value greater than or equal to %d", fieldName, min)
 		}
 		if max, ok := rules["max"].(int); ok && val > float64(max) {
 			if msg, ok := rules["maxMessage"].(string); ok && msg != "" {
-				return fmt.Errorf(msg)
+				return fmt.Errorf("%s", msg)
 			}
 			return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
 		}
@@ -594,13 +594,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         // Min/Max constraints
         if min, ok := rules["min"].(int); ok && val < min {
             if msg, ok := rules["minMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have a value greater than or equal to %d", fieldName, min)
         }
         if max, ok := rules["max"].(int); ok && val > max {
             if msg, ok := rules["maxMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have a value less than or equal to %d", fieldName, max)
         }
@@ -622,13 +622,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         // Validate array length constraints
         if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
         }
         if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
             if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
         }
@@ -648,13 +648,13 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
         // Validate array length constraints
         if minLength, ok := rules["minlength"].(int); ok && len(arrayValue) < minLength {
             if msg, ok := rules["minlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at least %d elements", fieldName, minLength)
         }
         if maxLength, ok := rules["maxlength"].(int); ok && len(arrayValue) > maxLength {
             if msg, ok := rules["maxlengthMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should have at most %d elements", fieldName, maxLength)
         }
@@ -693,7 +693,7 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
     // Check for required field
     if required, ok := rules["required"].(bool); ok && required && (fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "") {
         if msg, ok := rules["requiredMessage"].(string); ok && msg != "" {
-            return fmt.Errorf(msg)
+            return fmt.Errorf("%s", msg)
         }
         return fmt.Errorf("Field %s is required but not provided", fieldName)
     }
@@ -884,7 +884,7 @@ func validateDateConstraints(fieldName string, dateVal time.Time, rules map[stri
         }
         if dateVal.Before(minDate) {
             if msg, ok := rules["minDateMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should not be earlier than %s", fieldName, minDateStr)
         }
@@ -897,7 +897,7 @@ func validateDateConstraints(fieldName string, dateVal time.Time, rules map[stri
         }
         if dateVal.After(maxDate) {
             if msg, ok := rules["maxDateMessage"].(string); ok && msg != "" {
-                return fmt.Errorf(msg)
+                return fmt.Errorf("%s", msg)
             }
             return fmt.Errorf("Field %s should not be later than %s", fieldName, maxDateStr)
         }
