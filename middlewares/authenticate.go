@@ -8,7 +8,7 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 )
 
-func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole string, isActive bool) error {
+func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isActive bool) error {
     authHeader := c.Get("Authorization")
     if authHeader == "" {
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing Authorization header"})
@@ -32,9 +32,18 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole string, isActiv
         return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
     }
 
-    // Check if the role is authorized.
-    if isAuthorized && role != authorizeRole {
-        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+    // Check if the user's role is in the authorized roles array
+    if isAuthorized {
+        roleAuthorized := false
+        for _, allowedRole := range authorizeRole {
+            if role == allowedRole {
+                roleAuthorized = true
+                break
+            }
+        }
+        if !roleAuthorized {
+            return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+        }
     }
 
     return c.Next()
@@ -60,7 +69,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		var isAuthenticated bool
 		var isAuthorized bool
 		var isActive bool
-		var authorizeRole string
+		var authorizeRole []string
 		if isPipeline {
 			pipelineName := c.Query("pipelineName")
 			for _, pipeline := range container.Pipelines {
@@ -141,4 +150,3 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		return c.Next()
 	}
 }
-// TODO: authorize role will become string array and adjusted in middleware

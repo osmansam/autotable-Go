@@ -707,13 +707,16 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     // 3. Determine caching
     redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", schema, container)
     if shouldCache {
-        if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
-            var items []map[string]interface{}
-            if json.Unmarshal([]byte(data), &items) == nil {
-                log.Printf("Fetched items from cache for schema: %s", schema)
-                return c.JSON(items)
-            }
-        }
+        		if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+			var items []map[string]interface{}
+			if json.Unmarshal([]byte(data), &items) == nil {
+				log.Printf("Fetched items from cache for schema: %s", schema)
+				// Filter fields based on user role before returning cached data
+				userRole, _ := c.Locals("userRole").(string)
+				items = utils.FilterDocuments(items, container.Fields, userRole)
+				return c.JSON(items)
+			}
+		}
     }
 
     // 4. Query database (no pagination)
@@ -734,6 +737,11 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
         log.Printf("Population failed for schema %q: %v", schema, err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
+
+    // 6.5. Filter fields based on user role authorization
+    userRole, _ := c.Locals("userRole").(string)
+    items = utils.FilterDocuments(items, container.Fields, userRole)
+    log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
 
     // 7. Cache the result if enabled
     if shouldCache {
@@ -774,15 +782,33 @@ func GetItemsForSelection(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to load schema configuration")
     }
 
-    // Check if the requested field is hashed
+    // Check if the requested field is hashed or restricted
     for _, field := range container.Fields {
-        if field.Name == fieldName && field.IsHashed {
-            log.Printf("Attempted to access hashed field %s in schema %s", fieldName, schemaName)
-            return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
-                Status:  http.StatusForbidden,
-                Message: "Cannot access hashed fields",
-                Data:    nil,
-            })
+        if field.Name == fieldName {
+             // Check Authorization
+             userRole, _ := c.Locals("userRole").(string)
+             if len(field.AuthorizeRole) > 0 {
+                  authorized := false
+                  for _, r := range field.AuthorizeRole {
+                      if r == userRole { authorized = true; break }
+                  }
+                  if !authorized {
+                      return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+                          Status:  http.StatusForbidden,
+                          Message: "Access to this field is restricted",
+                          Data:    nil,
+                      })
+                  }
+             }
+
+            if field.IsHashed {
+                log.Printf("Attempted to access hashed field %s in schema %s", fieldName, schemaName)
+                return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+                    Status:  http.StatusForbidden,
+                    Message: "Cannot access hashed fields",
+                    Data:    nil,
+                })
+            }
         }
     }
 
@@ -807,6 +833,11 @@ func GetItemsForSelection(c *fiber.Ctx) error {
     }
 
     log.Printf("Successfully fetched %d items for selection", len(items))
+    // Filter fields based on user role authorization
+    userRole, _ := c.Locals("userRole").(string)
+    items = utils.FilterDocuments(items, container.Fields, userRole)
+    log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
+
     return c.JSON(items)
 }
 
@@ -1816,6 +1847,15 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     if len(pop) > 0 {
         item = pop[0]
     }
+
+	// 6.5) Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	filteredItems := utils.FilterDocuments([]map[string]interface{}{item}, container.Fields, userRole)
+	if len(filteredItems) > 0 {
+		item = filteredItems[0]
+	}
+	log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
+
     // 7) Cache the result
     if shouldCache {
         if blob, err := json.Marshal(item); err == nil {
@@ -1885,6 +1925,11 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "population failed")
 	}
+
+	// 6.5) Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	items = utils.FilterDocuments(items, container.Fields, userRole)
+	log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
 	// 7) response
 	if pager.Enabled {
@@ -1970,6 +2015,11 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
 
+    // 7.5) Filter fields based on user role authorization
+    userRole, _ := c.Locals("userRole").(string)
+    items = utils.FilterDocuments(items, container.Fields, userRole)
+    log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
+
     // 8) Send response (with pagination metadata if applicable)
     if pager.Enabled {
         return c.JSON(fiber.Map{
@@ -2050,8 +2100,11 @@ func GetPipeline(c *fiber.Ctx) error {
     if shouldCache && !queryChanged {
         cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
         if err == nil {
-            var items []bson.M
+            var items []map[string]interface{}
             if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
+                // Filter fields based on user role authorization
+                userRole, _ := c.Locals("userRole").(string)
+                items = utils.FilterDocuments(items, container.Fields, userRole)
                 return c.JSON(items)
             }
         }
@@ -2063,9 +2116,19 @@ func GetPipeline(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to execute dynamic pipeline")
     }
 
+    // Convert []bson.M to []map[string]interface{} for filtering
+    var resultItems []map[string]interface{}
+    for _, doc := range items {
+        resultItems = append(resultItems, map[string]interface{}(doc))
+    }
+
+    // Filter fields based on user role authorization
+    userRole, _ := c.Locals("userRole").(string)
+    resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+
     // Cache the new data and query if shouldCache is true
     if shouldCache {
-        dataToCache, _ := json.Marshal(items)
+        dataToCache, _ := json.Marshal(resultItems)
         var expiration time.Duration
         if pipelineStage.CacheTime > 0 {
             expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
@@ -2077,8 +2140,8 @@ func GetPipeline(c *fiber.Ctx) error {
     }
 
     // Return the results
-	log.Printf("Pipeline results successfully fetched for schema: %s with pipeline name: %s", schemaName, pipelineName)
-    return c.JSON(items)
+	log.Printf("Pipeline results successfully fetched and filtered for schema: %s with pipeline name: %s", schemaName, pipelineName)
+    return c.JSON(resultItems)
 }
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
@@ -2104,6 +2167,21 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
             var response fiber.Map
             if json.Unmarshal([]byte(cachedData), &response) == nil {
                 log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
+                
+                // Filter fields based on user role before returning cached data
+                if itemsInterface, ok := response["items"].([]interface{}); ok {
+                    var items []map[string]interface{}
+                    for _, item := range itemsInterface {
+                        if itemMap, ok := item.(map[string]interface{}); ok {
+                            items = append(items, itemMap)
+                        }
+                    }
+                    
+                    userRole, _ := c.Locals("userRole").(string)
+                    items = utils.FilterDocuments(items, container.Fields, userRole)
+                    response["items"] = items
+                }
+                
                 return c.JSON(response)
             }
         }
@@ -2178,6 +2256,11 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
         log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
+
+	// 8.5. Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	items = utils.FilterDocuments(items, container.Fields, userRole)
+	log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
     // 9. Build response
     var response fiber.Map
@@ -2373,6 +2456,13 @@ func TestPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
     schemaName := c.Query("schemaName")
+    
+    // Fetch the container model for filtering
+    container, err := utils.GetContainerModel(schemaName)
+    if err != nil {
+         return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+    }
+
     // Parse request body
     var requestBody models.TestPipelineRequestBody
     if err := c.BodyParser(&requestBody); err != nil {
@@ -2389,11 +2479,21 @@ func TestPipeline(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Failed to execute test pipeline")
     }
 
+    // Convert []bson.M to []map[string]interface{} for filtering
+    var resultItems []map[string]interface{}
+    for _, doc := range items {
+        resultItems = append(resultItems, map[string]interface{}(doc))
+    }
+
+    // Filter fields based on user role authorization
+    userRole, _ := c.Locals("userRole").(string)
+    resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+
     // Return the results
     return c.Status(fiber.StatusOK).JSON(fiber.Map{
         "status":  fiber.StatusOK,
-        "message": "Test pipeline executed successfully",
-        "data":    items,
+        "message": "Test pipeline executed and filtered successfully",
+        "data":    resultItems,
     })
 }
 // TODO:redis generate key and delete key will added into this function and then the route will be added and tested again

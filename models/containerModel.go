@@ -32,6 +32,7 @@ type Field struct {
     Frontend          *Frontend `bson:"frontend,omitempty"`
     PopulationSettings *PopulationSettings `bson:"populationSettings,omitempty"`
     Equation          string              `bson:"equation,omitempty"`
+    AuthorizeRole     []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
 }
 
 type PopulationSettings struct {
@@ -42,11 +43,11 @@ type PopulationSettings struct {
     DisplayLabel        string   `bson:"displayLabel"`
 }
 type RouteSpec struct {
-    IsAuthenticated bool   `bson:"isAuthenticated" ` 
-    IsAuthorized    bool   `bson:"isAuthorized" `
-    AuthorizeRole   string `bson:"authorizeRole" `
-    IsActive     bool   `bson:"isActivated" `
-    Method       string `bson:"method" `
+	IsAuthenticated bool     `bson:"isAuthenticated" ` 
+	IsAuthorized    bool     `bson:"isAuthorized" `
+	AuthorizeRole   []string `bson:"authorizeRole" `
+	IsActive        bool     `bson:"isActivated" `
+	Method          string   `bson:"method" `
 }
 
 type Routes struct {
@@ -74,37 +75,37 @@ type Redis struct {
 }
 
 type PipelineStage struct {
-    Name            string `bson:"name"`
-    PipelineJSON    string `bson:"pipelineJson"` 
-    IsAuthenticated bool   `bson:"isAuthenticated"`
-    IsAuthorized    bool   `bson:"isAuthorized"`
-    AuthorizeRole   string `bson:"authorizeRole"`
-    IsActive        bool   `bson:"isActive"`
-    IsRedisCached   bool   `bson:"isRedisCached"`
-    CacheTime       int    `bson:"cacheTime"`
+	Name            string   `bson:"name"`
+	PipelineJSON    string   `bson:"pipelineJson"` 
+	IsAuthenticated bool     `bson:"isAuthenticated"`
+	IsAuthorized    bool     `bson:"isAuthorized"`
+	AuthorizeRole   []string `bson:"authorizeRole"`
+	IsActive        bool     `bson:"isActive"`
+	IsRedisCached   bool     `bson:"isRedisCached"`
+	CacheTime       int      `bson:"cacheTime"`
 
 }
 type DynamicFunction struct {
-    Name            string `bson:"name"`
-    CodeJSON    string `bson:"codeJson"` 
-    IsAuthenticated bool   `bson:"isAuthenticated"`
-    IsAuthorized    bool   `bson:"isAuthorized"`
-    AuthorizeRole   string `bson:"authorizeRole"`
-    IsActive        bool   `bson:"isActive"`
-    IsRedisCached   bool   `bson:"isRedisCached"`
-    CacheTime       int    `bson:"cacheTime"`
+	Name            string   `bson:"name"`
+	CodeJSON        string   `bson:"codeJson"` 
+	IsAuthenticated bool     `bson:"isAuthenticated"`
+	IsAuthorized    bool     `bson:"isAuthorized"`
+	AuthorizeRole   []string `bson:"authorizeRole"`
+	IsActive        bool     `bson:"isActive"`
+	IsRedisCached   bool     `bson:"isRedisCached"`
+	CacheTime       int      `bson:"cacheTime"`
 }
 type DynamicApiModel struct {
-    Name            string `bson:"name"`    
-    Url             string `bson:"url"`
-    Method          string `bson:"method"`
-    Dependencies    []string `bson:"dependencies,omitempty"`
-    IsAuthenticated bool   `bson:"isAuthenticated"`
-    IsAuthorized    bool   `bson:"isAuthorized"`
-    AuthorizeRole   string `bson:"authorizeRole"`
-    IsActive        bool   `bson:"isActive"`
-    IsRedisCached   bool   `bson:"isRedisCached"`
-    CacheTime       int    `bson:"cacheTime"`
+	Name            string   `bson:"name"`    
+	Url             string   `bson:"url"`
+	Method          string   `bson:"method"`
+	Dependencies    []string `bson:"dependencies,omitempty"`
+	IsAuthenticated bool     `bson:"isAuthenticated"`
+	IsAuthorized    bool     `bson:"isAuthorized"`
+	AuthorizeRole   []string `bson:"authorizeRole"`
+	IsActive        bool     `bson:"isActive"`
+	IsRedisCached   bool     `bson:"isRedisCached"`
+	CacheTime       int      `bson:"cacheTime"`
 }
 
 // IndexField represents a single field in an index
@@ -149,5 +150,3 @@ var RestrictedSchemaNames = []string{
     "containers",
 }//this is needed so that user container is not created by mistake and get all the data.
 
-
-// TODO: Authorize Role will be an string array to support multiple roles
