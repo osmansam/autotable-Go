@@ -33,6 +33,7 @@ type Field struct {
     PopulationSettings *PopulationSettings `bson:"populationSettings,omitempty"`
     Equation          string              `bson:"equation,omitempty"`
     AuthorizeRole     []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
+    IsAuthorized      bool                `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`
 }
 
 type PopulationSettings struct {

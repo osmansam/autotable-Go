@@ -12,8 +12,8 @@ func FilterFieldsByRole(fields []models.Field, userRole string) []models.Field {
 	var filteredFields []models.Field
 
 	for _, field := range fields {
-		// If AuthorizeRole is empty or nil, field is visible to everyone
-		if len(field.AuthorizeRole) == 0 {
+		// If IsAuthorized is false, field is visible to everyone
+		if !field.IsAuthorized {
 			// Recursively filter children
 			if len(field.Children) > 0 {
 				field.Children = FilterFieldsByRole(field.Children, userRole)
@@ -48,8 +48,8 @@ func GetAllowedFieldNames(fields []models.Field, userRole string) map[string]boo
 	allowedFields := make(map[string]bool)
 	
 	for _, field := range fields {
-		// If AuthorizeRole is empty, field is visible to everyone
-		if len(field.AuthorizeRole) == 0 {
+		// If IsAuthorized is false, field is visible to everyone
+		if !field.IsAuthorized {
 			allowedFields[field.Name] = true
 			// Add children field names recursively
 			if len(field.Children) > 0 {
