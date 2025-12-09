@@ -361,6 +361,16 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         log.Printf("Failed to save item for schema: %s, error: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to save item.")
     }
+
+    // Capture the generated ID
+    if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+        itemMap["_id"] = oid
+    }
+
+    // Log audit
+    if err := utils.LogCreateAction(ctx, container, utils.GetUserFromContext(c), itemMap); err != nil {
+        log.Printf("Failed to log create action: %v", err)
+    }
 	// Delete the cache for this schema
 if container.Redis.IsRedisCached {
     err = utils.DeleteCacheForSchema(ctx, schemaName, container)
@@ -656,6 +666,26 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to insert multiple items.")
 	}
 
+	// Log audit
+	insertManyResult := result
+
+	var bulkCreatedDocs []interface{}
+	for i, insertedID := range insertManyResult.InsertedIDs {
+		if oid, ok := insertedID.(primitive.ObjectID); ok {
+			if i < len(items) {
+				itemToLog := items[i]
+				itemToLog["_id"] = oid
+				bulkCreatedDocs = append(bulkCreatedDocs, itemToLog)
+			}
+		}
+	}
+
+	if len(bulkCreatedDocs) > 0 {
+		if err := utils.LogBulkCreateAction(ctx, container, utils.GetUserFromContext(c), bulkCreatedDocs); err != nil {
+			log.Printf("Failed to log bulk create: %v", err)
+		}
+	}
+
 	// Clear the cache for this schema.
 	if container.Redis.IsRedisCached {
 		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
@@ -666,7 +696,10 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 		// Also clear cache for each schema in TriggeredRedisCaches.
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+			otherContainer, err := utils.GetContainerModel(triggeredSchema)
+			if err == nil {
+				utils.DeleteCacheForSchema(ctx, triggeredSchema, otherContainer)
+			}
 			if err != nil {
 				log.Printf("Error deleting cache for schema '%s': %v", triggeredSchema, err)
 				// Continue with next triggered schema.
@@ -936,6 +969,11 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Using the schema name to determine the appropriate collection
 	var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
 
+    // Fetch item before deletion for audit
+    var deletedDoc bson.M
+    if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
+        log.Printf("Failed to fetch item before delete for schema: %s, error: %v", schemaName, err)
+    }
 	
 	// Attempting to delete the item with the given ID from the specified collection
 	result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
@@ -943,6 +981,13 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", schemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to delete the item from the specified collection.")
 	}
+
+    // Log audit
+    if deletedDoc != nil {
+         if err := utils.LogDeleteAction(ctx, container, utils.GetUserFromContext(c), deletedDoc); err != nil {
+            log.Printf("Failed to log delete action: %v", err)
+         }
+    }
 	// Now attempting to delete the related cache
 if container.Redis.IsRedisCached {
     err = utils.DeleteCacheForSchema(ctx, schemaName, container)
@@ -1012,6 +1057,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Slices to keep track of successful and failed deletions.
 	var successfulDeletes []interface{}
 	var failedDeletes []map[string]interface{}
+    var bulkDeletedDocs []interface{}
 
 	// Iterate over each deletion request.
 	for _, item := range items {
@@ -1128,6 +1174,12 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 
 		// Attempt deletion from the current collection.
+        // Fetch audit doc
+        var deletedDoc bson.M
+        if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
+            log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", schemaName, err)
+        }
+
 		result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 		// Release the lock immediately.
 		utils.ReleaseLock(lockKey, lockID)
@@ -1153,6 +1205,10 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 			"id":     idStr,
 			"result": result,
 		})
+        if deletedDoc != nil {
+            bulkDeletedDocs = append(bulkDeletedDocs, deletedDoc)
+        }
+
 	}
 
 	// Clear the cache for this schema if caching is enabled.
@@ -1178,6 +1234,13 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if len(successfulDeletes) > 0 {
 		ws.EmitInvalidate(schemaName)
 	}
+
+    // Log Bulk Audit
+    if len(bulkDeletedDocs) > 0 {
+         if err := utils.LogBulkDeleteAction(ctx, container, utils.GetUserFromContext(c), bulkDeletedDocs); err != nil {
+             log.Printf("Failed to log bulk delete: %v", err)
+         }
+    }
 	
 	log.Printf("Multiple deletion process completed for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -1317,6 +1380,13 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		log.Printf("Failed to fetch item for schema: %s, error: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to fetch item")
     }
+
+    // Create a copy for audit logging (Before state)
+    beforeDoc := make(map[string]interface{})
+    for k, v := range existingItem {
+        beforeDoc[k] = v
+    }
+    
     // Apply updates from updatedItemMap to existingItem
     for key, value := range updatedItemMap {
         existingItem[key] = value
@@ -1374,6 +1444,11 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     if err != nil {
 		log.Printf("Failed to update item for schema: %s, error: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to update item")
+    }
+
+    // Log audit
+    if err := utils.LogUpdateAction(ctx, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
+        log.Printf("Failed to log update action: %v", err)
     }
 
     if updateResult.MatchedCount == 0 {
@@ -1515,6 +1590,8 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Prepare slices for successful and failed update results.
 	var successfulUpdates []interface{}
 	var failedUpdates []map[string]interface{}
+    var bulkBeforeDocs []interface{}
+    var bulkAfterDocs []interface{}
 
 	// Get the collection for this schema.
 	currentCollection := configs.GetCollection(schemaName)
@@ -1622,6 +1699,12 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			continue
 		}
 
+        // Clone for audit (Before state)
+        beforeDoc := make(map[string]interface{})
+        for k, v := range existingItem {
+             beforeDoc[k] = v
+        }
+
 		// Merge update fields into the existing document.
 		for key, value := range item {
 			existingItem[key] = value
@@ -1718,7 +1801,16 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			"id":     idStr,
 			"result": updateResult,
 		})
+        bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
+        bulkAfterDocs = append(bulkAfterDocs, existingItem)
 	}
+
+    // Log Bulk Audit
+    if len(bulkAfterDocs) > 0 {
+         if err := utils.LogBulkUpdateAction(ctx, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
+             log.Printf("Failed to log bulk update: %v", err)
+         }
+    }
 
 	// After processing all items, clear the cache for the schema.
 	if container.Redis.IsRedisCached {

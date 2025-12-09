@@ -13,4 +13,7 @@ func AuthRoutes(baseUrl string, app *fiber.App) {
 	// Google OAuth routes
 	authGroup.Get("/google/login", controllers.GoogleLogin)
 	authGroup.Get("/google/callback", controllers.GoogleCallback)
+
+    // Logout
+    authGroup.Post("/logout", controllers.Logout)
 }

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-    "log"
 	"strings"
 
 	"github.com/osmansam/autotableGo/models"
@@ -14,6 +13,8 @@ func GetRowAccessFilter(container *models.ContainerModel, userRole string, user 
 	if container.RowAccess == nil || len(container.RowAccess.Conditions) == 0 {
 		return nil, nil // No rules defined, no filter
 	}
+
+    var matchingConditions []bson.M
 
 	for _, condition := range container.RowAccess.Conditions {
 		// Check if user's role matches any role in this condition

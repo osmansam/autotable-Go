@@ -266,6 +266,31 @@ func Login(c *fiber.Ctx) error {
 
 	// Remove any sensitive fields (like hashed passwords) before returning user data.
 	delete(storedUser, "password")
+
+    // Log Login Audit
+    authUser := &models.User{
+        ID: func() primitive.ObjectID {
+            if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
+                return oid
+            }
+            return primitive.NilObjectID
+        }(),
+        Roles: []string{role},
+        Email: func() string {
+            if email, ok := storedUser["email"].(string); ok {
+                return email
+            }
+            return ""
+        }(),
+    }
+    // IP and UserAgent
+    ip := c.IP()
+    userAgent := c.Get("User-Agent")
+    
+    if err := utils.LogLogin(ctx, authUser, ip, userAgent); err != nil {
+        log.Printf("Failed to log login: %v", err)
+    }
+
 	return c.JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Login successful.",
@@ -544,6 +569,30 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Remove sensitive fields
 	delete(existingUser, "password")
 
+    // Log Login Audit
+    authUser := &models.User{
+        ID: func() primitive.ObjectID {
+            if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
+                return oid
+            }
+            return primitive.NilObjectID
+        }(),
+        Roles: []string{role},
+        Email: func() string {
+            if email, ok := existingUser[emailFieldName].(string); ok {
+                return email
+            }
+            return ""
+        }(),
+    }
+    // IP and UserAgent
+    ip := c.IP()
+    userAgent := c.Get("User-Agent")
+    
+    if err := utils.LogLogin(ctx, authUser, ip, userAgent); err != nil {
+        log.Printf("Failed to log google login: %v", err)
+    }
+
 	return c.JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Google login successful",
@@ -555,3 +604,30 @@ func GoogleCallback(c *fiber.Ctx) error {
 	})
 }
 
+
+// Logout handles the user logout process.
+// Currently it mainly serves to log the logout action for audit purposes.
+// In the future, it can handle token blacklisting.
+func Logout(c *fiber.Ctx) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    // Get user from context (set by middleware)
+    // Note: To use this endpoint effectively, it should be protected by authentication middleware
+    user := utils.GetUserFromContext(c)
+    
+    // IP and UserAgent
+    ip := c.IP()
+    userAgent := c.Get("User-Agent")
+
+    if err := utils.LogLogout(ctx, user, ip, userAgent); err != nil {
+        log.Printf("Failed to log logout: %v", err)
+        // We log the error but still return success to the user as the collection
+        // of usage data shouldn't block the user's workflow.
+    }
+
+    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+        Status:  http.StatusOK,
+        Message: "Logout successful.",
+    })
+}
