@@ -10,6 +10,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // GetUserFromContext extracts user info from Fiber context.
@@ -292,4 +293,144 @@ func LogLogout(ctx context.Context, user *models.User, ip, userAgent string) err
 	}
 
 	return LogAudit(ctx, auditLog)
+}
+
+// BuildAuditLogFilter builds a MongoDB filter from query parameters for audit logs.
+// Supports filtering by: action, schemaName, userEmail, userId, startDate, endDate
+func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
+	filter := bson.M{}
+
+	// Filter by action (e.g., "create", "update", "delete", "login", etc.)
+	if action := c.Query("action"); action != "" {
+		filter["action"] = action
+	}
+
+	// Filter by schemaName
+	if schemaName := c.Query("schemaName"); schemaName != "" {
+		filter["schemaName"] = schemaName
+	}
+
+	// Filter by userEmail
+	if userEmail := c.Query("userEmail"); userEmail != "" {
+		filter["userEmail"] = userEmail
+	}
+
+	// Filter by userId
+	if userIdStr := c.Query("userId"); userIdStr != "" {
+		userId, err := primitive.ObjectIDFromHex(userIdStr)
+		if err != nil {
+			return nil, err
+		}
+		filter["userId"] = userId
+	}
+
+	// Filter by documentId
+	if docIdStr := c.Query("documentId"); docIdStr != "" {
+		docId, err := primitive.ObjectIDFromHex(docIdStr)
+		if err != nil {
+			return nil, err
+		}
+		filter["documentIds"] = bson.M{"$in": []primitive.ObjectID{docId}}
+	}
+
+	// Filter by date range (startDate and endDate in RFC3339 format or similar)
+	startDateStr := c.Query("startDate")
+	endDateStr := c.Query("endDate")
+
+	if startDateStr != "" || endDateStr != "" {
+		dateFilter := bson.M{}
+		
+		if startDateStr != "" {
+			startTime, err := time.Parse(time.RFC3339, startDateStr)
+			if err != nil {
+				return nil, err
+			}
+			dateFilter["$gte"] = primitive.NewDateTimeFromTime(startTime)
+		}
+		
+		if endDateStr != "" {
+			endTime, err := time.Parse(time.RFC3339, endDateStr)
+			if err != nil {
+				return nil, err
+			}
+			dateFilter["$lte"] = primitive.NewDateTimeFromTime(endTime)
+		}
+		
+		filter["timestamp"] = dateFilter
+	}
+
+	// Filter by IP address
+	if ip := c.Query("ip"); ip != "" {
+		filter["ip"] = ip
+	}
+
+	// Filter by roles (supports multiple roles)
+	if role := c.Query("role"); role != "" {
+		filter["roles"] = bson.M{"$in": []string{role}}
+	}
+
+	return filter, nil
+}
+
+// GetAuditLogs retrieves audit logs with pagination, filtering, and sorting.
+func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
+	// Build filter from query parameters
+	filter, err := BuildAuditLogFilter(c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Parse pagination
+	pager, err := ParsePager(c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Parse sorting (default: sort by timestamp descending)
+	sortField := c.Query("sort", "timestamp")
+	ascStr := c.Query("asc", "false")
+	asc := ascStr == "true"
+	
+	sortDir := int32(-1) // Default descending
+	if asc {
+		sortDir = 1
+	}
+	sort := bson.D{{Key: sortField, Value: sortDir}}
+
+	// Get audit_logs collection
+	collection := configs.GetCollection("audit_logs")
+
+	// Build find options
+	opts := options.Find().SetSort(sort)
+	
+	if pager.Enabled {
+		// Get total count for pagination
+		totalItems, err := collection.CountDocuments(ctx, filter)
+		if err != nil {
+			return nil, nil, err
+		}
+		pager.TotalItems = totalItems
+		pager.TotalPages = int((totalItems + int64(pager.Limit) - 1) / int64(pager.Limit))
+
+		opts.SetSkip(pager.Skip)
+		opts.SetLimit(int64(pager.Limit))
+	}
+
+	// Execute query
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cursor.Close(ctx)
+
+	// Decode results
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, nil, err
+	}
+
+	if pager.Enabled {
+		return results, &pager, nil
+	}
+	return results, nil, nil
 }

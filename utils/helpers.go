@@ -161,3 +161,26 @@ func boolToInt(b bool) int {
     }
     return 0
 }
+
+// GetAuditLogsConfig fetches the audit logs authorization configuration from the settings collection
+// It looks for a settings document with key: "audit_logs"
+// Returns default config (authentication only, no role authorization) if not found in database
+func GetAuditLogsConfig() (*models.AuditLogsConfig, error) {
+    ctx := context.Background()
+    collection := configs.GetCollection("settings")
+    
+    // Find the audit_logs settings document
+    var settings models.Settings
+    err := collection.FindOne(ctx, bson.M{"key": "audit_logs"}).Decode(&settings)
+    
+    if err == nil && settings.AuditLogs != nil {
+        return settings.AuditLogs, nil
+    }
+    
+    // Return default configuration if not found
+    // Default: requires authentication only, no role-based authorization
+    return &models.AuditLogsConfig{
+        IsAuthorized:  false,
+        AuthorizeRole: []string{},
+    }, nil
+}

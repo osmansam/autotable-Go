@@ -63,6 +63,7 @@ func main() {
 	routes.DynamicRoutes("api/v1/dynamic", app)
 	routes.AuthRoutes("api/v1/auth", app)
 	routes.PageRoutes("api/v1/page", app)
+	routes.AuditRoutes("api/v1/audit-logs", app)
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")

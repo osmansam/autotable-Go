@@ -159,6 +159,10 @@ type ContainerTypes struct {
     FieldTypes map[string]string `json:"fieldTypes"` // key: field name, value: declared type
 }
 
+type AuditLogsConfig struct {
+    IsAuthorized  bool     `bson:"isAuthorized" json:"isAuthorized"`
+    AuthorizeRole []string `bson:"authorizeRole" json:"authorizeRole"`
+}
 
 var RestrictedSchemaNames = []string{
     "containers",
