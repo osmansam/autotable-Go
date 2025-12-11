@@ -2,16 +2,135 @@ package models
 
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
-type SchemaInfo struct {
-	SchemaName   string `bson:"schemaName" json:"schemaName"`
-	IsPaginated  bool   `bson:"isPaginated" json:"isPaginated"`
-	Icon         string `bson:"icon,omitempty" json:"icon,omitempty"`
+// BindingKind defines the type of data binding for a component
+type BindingKind string
+
+const (
+	BindingKindSchema   BindingKind = "schema"
+	BindingKindPipeline BindingKind = "pipeline"
+	BindingKindApi      BindingKind = "api"
+	BindingKindFunction BindingKind = "function"
+)
+
+// DataBinding defines how a component binds to data sources
+type DataBinding struct {
+	Kind         BindingKind            `bson:"kind" json:"kind"` // "schema" | "pipeline" | "api" | "function"
+	SchemaName   string                 `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
+	PipelineName string                 `bson:"pipelineName,omitempty" json:"pipelineName,omitempty"`
+	ApiName      string                 `bson:"apiName,omitempty" json:"apiName,omitempty"`
+	FunctionName string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
+	Params       map[string]interface{} `bson:"params,omitempty" json:"params,omitempty"` // Optional extra info (e.g., default filters, params)
 }
 
+// GroupBy defines grouping configuration for table components
+type GroupBy struct {
+	GroupByObjectId string `bson:"groupByObjectId,omitempty" json:"groupByObjectId,omitempty"` // Schema name to group by (e.g., "can")
+	GroupByField    string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`       // Field name to display from grouped object (e.g., "name")
+}
+
+// ComponentType defines the type of component
+type ComponentType string
+
+const (
+	ComponentTypeTable     ComponentType = "table"
+	ComponentTypeTabPanel  ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeChart     ComponentType = "chart"
+	ComponentTypeForm      ComponentType = "form"
+	ComponentTypeText      ComponentType = "text"
+	ComponentTypeCustom    ComponentType = "custom"
+)
+
+// TabPanelTab represents a tab inside a tabPanel component
+type TabPanelTab struct {
+	Title      string           `bson:"title" json:"title"`
+	Icon       string           `bson:"icon,omitempty" json:"icon,omitempty"`
+	Components []ComponentBlock `bson:"components" json:"components"`
+}
+
+// ComponentBlock represents a single component with its data binding and configuration
+type ComponentBlock struct {
+	ID            string                 `bson:"id" json:"id"`
+	Type          ComponentType          `bson:"type" json:"type"`
+	Title         string                 `bson:"title,omitempty" json:"title,omitempty"`
+	Order         int                    `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
+	DataBinding   *DataBinding           `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
+	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`           // Grouping configuration for table components
+	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"` // Component-level auth (optional)
+	AuthorizeRole []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
+	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`               // Free-form config (columns, chart type, etc.)
+	Tabs          []TabPanelTab          `bson:"tabs,omitempty" json:"tabs,omitempty"`                 // For tabPanel type components
+}
+
+// GridCell represents a cell in a grid layout
+type GridCell struct {
+	ID         string           `bson:"id" json:"id"`
+	Row        int              `bson:"row" json:"row"`                             // 1-based row index
+	Column     int              `bson:"column" json:"column"`                       // 1-based column index
+	RowSpan    int              `bson:"rowSpan,omitempty" json:"rowSpan,omitempty"` // Number of rows to span
+	ColSpan    int              `bson:"colSpan,omitempty" json:"colSpan,omitempty"` // Number of columns to span
+	Components []ComponentBlock `bson:"components" json:"components"`               // Multiple components allowed in one cell (stacked)
+}
+
+// GridSection represents a grid layout container
+type GridSection struct {
+	Columns int        `bson:"columns" json:"columns"`             // e.g. 1, 2, 3
+	Gap     int        `bson:"gap,omitempty" json:"gap,omitempty"` // px or your unit
+	Cells   []GridCell `bson:"cells" json:"cells"`
+}
+
+// Tab represents a single tab in a tabs container
+type Tab struct {
+	ID       string    `bson:"id" json:"id"`
+	Label    string    `bson:"label" json:"label"`
+	Icon     string    `bson:"icon,omitempty" json:"icon,omitempty"`
+	Order    int       `bson:"order" json:"order"`
+	Sections []Section `bson:"sections" json:"sections"` // Each tab has its own layout sections
+}
+
+// TabsSection represents a tabs container
+type TabsSection struct {
+	Tabs []Tab `bson:"tabs" json:"tabs"`
+}
+
+// SectionType defines the type of section
+type SectionType string
+
+const (
+	SectionTypeGrid      SectionType = "grid"
+	SectionTypeComponent SectionType = "component"
+	SectionTypeTabs      SectionType = "tabs"
+)
+
+// Section represents a layout section (grid, tabs, or single component)
+// Supports both nested structure (Grid/Tabs/Component) and flat structure (direct grid properties)
+type Section struct {
+	ID        string           `bson:"id,omitempty" json:"id,omitempty"`     // for frontend references
+	Type      SectionType      `bson:"type,omitempty" json:"type,omitempty"` // "grid" | "tabs" | "component"
+	Order     int              `bson:"order,omitempty" json:"order,omitempty"`
+	
+	// Nested structure (preferred)
+	Grid      *GridSection     `bson:"grid,omitempty" json:"grid,omitempty"`
+	Tabs      *TabsSection     `bson:"tabs,omitempty" json:"tabs,omitempty"`
+	Component *ComponentBlock  `bson:"component,omitempty" json:"component,omitempty"`
+	
+	// Flat structure (for backward compatibility) - acts as implicit grid
+	Columns   int              `bson:"columns,omitempty" json:"columns,omitempty"`
+	Gap       int              `bson:"gap,omitempty" json:"gap,omitempty"`
+	Cells     []GridCell       `bson:"cells,omitempty" json:"cells,omitempty"`
+}
+
+// PageModel represents a page with hierarchical structure, auth, and layout
 type PageModel struct {
-	ID      primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Name    string             `bson:"name" json:"name" validate:"required"`
-	Icon    string             `bson:"icon,omitempty" json:"icon,omitempty"`
-	Schemas []SchemaInfo       `bson:"schemas" json:"schemas"`
-	Page    *PageModel         `bson:"page,omitempty" json:"page,omitempty"`
+	ID              primitive.ObjectID  `bson:"_id,omitempty" json:"id,omitempty"`
+	Name            string              `bson:"name" json:"name" validate:"required"`
+	Icon            string              `bson:"icon,omitempty" json:"icon,omitempty"`
+	Slug            string              `bson:"slug,omitempty" json:"slug,omitempty"` // e.g. "rewards", "rewards/members"
+	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
+	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                                   // order in sidebar under same parent
+	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`   // If true → used as parent group in sidebar, but no direct route
+	IsAuthenticated bool                `bson:"isAuthenticated,omitempty" json:"isAuthenticated,omitempty"`               // Page-level authentication
+	IsAuthorized    bool                `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`                     // Page-level authorization
+	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
+	Sections        []Section           `bson:"sections,omitempty" json:"sections,omitempty"`                             // Layout: list of top-level sections
+	SubPage         *PageModel          `bson:"subPage,omitempty" json:"subPage,omitempty"`           // Nested subpage (alternative to ParentPageID)
 }

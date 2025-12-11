@@ -1439,6 +1439,44 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
+    // Convert fields that should be ObjectId or ObjectIdArray to proper types
+    for _, field := range container.Fields {
+        if field.Type == "objectId" {
+            if strVal, ok := existingItem[field.Name].(string); ok {
+                if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+                    existingItem[field.Name] = objId
+                }
+            }
+        } else if field.Type == "objectIdArray" {
+            // Handle objectIdArray conversion
+            if val, exists := existingItem[field.Name]; exists && val != nil {
+                // Try []interface{} first (common from JSON parsing)
+                if arrInterface, ok := val.([]interface{}); ok {
+                    objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
+                    for _, item := range arrInterface {
+                        if strVal, ok := item.(string); ok {
+                            if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+                                objIdArray = append(objIdArray, objId)
+                            }
+                        } else if objId, ok := item.(primitive.ObjectID); ok {
+                            objIdArray = append(objIdArray, objId)
+                        }
+                    }
+                    existingItem[field.Name] = objIdArray
+                } else if arrString, ok := val.([]string); ok {
+                    // Handle []string
+                    objIdArray := make([]primitive.ObjectID, 0, len(arrString))
+                    for _, strVal := range arrString {
+                        if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+                            objIdArray = append(objIdArray, objId)
+                        }
+                    }
+                    existingItem[field.Name] = objIdArray
+                }
+            }
+        }
+    }
+
     // Update in collection
     updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
     if err != nil {
@@ -1764,12 +1802,39 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			}
 		}
 
-		// Convert fields that should be ObjectId if needed.
+		// Convert fields that should be ObjectId or ObjectIdArray to proper types
 		for _, field := range container.Fields {
 			if field.Type == "objectId" {
 				if strVal, ok := existingItem[field.Name].(string); ok {
 					if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
 						existingItem[field.Name] = objId
+					}
+				}
+			} else if field.Type == "objectIdArray" {
+				// Handle objectIdArray conversion
+				if val, exists := existingItem[field.Name]; exists && val != nil {
+					// Try []interface{} first (common from JSON parsing)
+					if arrInterface, ok := val.([]interface{}); ok {
+						objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
+						for _, item := range arrInterface {
+							if strVal, ok := item.(string); ok {
+								if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+									objIdArray = append(objIdArray, objId)
+								}
+							} else if objId, ok := item.(primitive.ObjectID); ok {
+								objIdArray = append(objIdArray, objId)
+							}
+						}
+						existingItem[field.Name] = objIdArray
+					} else if arrString, ok := val.([]string); ok {
+						// Handle []string
+						objIdArray := make([]primitive.ObjectID, 0, len(arrString))
+						for _, strVal := range arrString {
+							if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+								objIdArray = append(objIdArray, objId)
+							}
+						}
+						existingItem[field.Name] = objIdArray
 					}
 				}
 			}
