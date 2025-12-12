@@ -20,67 +20,140 @@ func PopulateItems(ctx context.Context, container *models.ContainerModel, items 
 			// Validation: only allow population if targetField.Type is "objectId", "objectIdArray", "autoIncrementId" or "string" (with ObjectSchemaName)
 			if field.Type == "objectId" || field.Type == "objectIdArray" || field.Type == "objectidArray" || field.Type == "autoIncrementId" || (field.Type == "string" && field.ObjectSchemaName != "") {
 				pop := field.PopulationSettings
-				for i, item := range items {
-					if idVal, exists := item[field.Name]; exists && idVal != nil {
-						var populatedDoc map[string]interface{}
-						var err error
-						if field.Type == "objectId" {
+				
+				// OPTIMIZATION: Batch population for objectId fields
+				if field.Type == "objectId" {
+					// Collect all IDs first
+					var allIDs []primitive.ObjectID
+					itemIndices := make(map[string][]int) // Map ID to item indices (can have duplicates)
+					
+					for i, item := range items {
+						if idVal, exists := item[field.Name]; exists && idVal != nil {
 							var objectId primitive.ObjectID
+							var err error
 							switch v := idVal.(type) {
 							case primitive.ObjectID:
 								objectId = v
 							case string:
 								objectId, err = primitive.ObjectIDFromHex(v)
 								if err != nil {
+									log.Printf("Failed to parse ObjectID for field %s at item %d: %v", field.Name, i, err)
 									continue
 								}
 							default:
+								log.Printf("Unexpected type for field %s at item %d: %T", field.Name, i, v)
 								continue
 							}
-							populatedDoc, err = GetPopulatedDocument(ctx, field.ObjectSchemaName, objectId, pop.PopulatedFields)
-						} else if field.Type == "objectIdArray" || field.Type == "objectidArray" {
-							// Handle array of ObjectIDs with robust type checking
-							objectIds := extractObjectIDs(idVal)
 							
-							if len(objectIds) == 0 {
-								// If no valid IDs found, skip population but don't error
-								continue
+							idHex := objectId.Hex()
+							// Check if this ID is already in the list to avoid duplicate fetches
+							if _, exists := itemIndices[idHex]; !exists {
+								allIDs = append(allIDs, objectId)
 							}
-
-							// Get populated documents for all IDs
-							populatedDocs, err := GetPopulatedDocuments(ctx, field.ObjectSchemaName, objectIds, pop.PopulatedFields)
-							if err != nil {
-								log.Printf("Failed to populate field %s for ids %v: %v", field.Name, objectIds, err)
-								continue
+							itemIndices[idHex] = append(itemIndices[idHex], i)
+						}
+					}
+					
+					// Fetch all documents in one query
+					if len(allIDs) > 0 {
+						populatedDocs, err := GetPopulatedDocuments(ctx, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
+						if err != nil {
+							log.Printf("Failed to batch populate field %s: %v", field.Name, err)
+							continue
+						}
+						
+						// Create a lookup map for populated docs
+						docMap := make(map[string]map[string]interface{})
+						for _, doc := range populatedDocs {
+							if id, ok := doc["_id"].(primitive.ObjectID); ok {
+								docMap[id.Hex()] = doc
 							}
-
-							// Create a map for quick lookup
-							docMap := make(map[string]map[string]interface{})
-							for _, doc := range populatedDocs {
-								if id, ok := doc["_id"].(primitive.ObjectID); ok {
-									docMap[id.Hex()] = doc
+						}
+						
+						// Map documents back to ALL items that reference each ID
+						for idHex, indices := range itemIndices {
+							if doc, found := docMap[idHex]; found {
+								// Populate all items that reference this ID
+								for _, idx := range indices {
+									items[idx][field.Name] = doc
 								}
+							} else {
+								// Log when referenced document not found
+								log.Printf("Referenced document not found in %s for ID %s (field: %s)", 
+									field.ObjectSchemaName, idHex, field.Name)
 							}
-
-							// Reconstruct the array in original order
+						}
+					}
+				} else if field.Type == "objectIdArray" || field.Type == "objectidArray" {
+					// Handle array of ObjectIDs - collect all unique IDs first
+					allIDsSet := make(map[string]primitive.ObjectID)
+					itemArrayIDs := make(map[int][]primitive.ObjectID) // Map item index to its IDs
+					
+					for i, item := range items {
+						if idVal, exists := item[field.Name]; exists && idVal != nil {
+							objectIds := extractObjectIDs(idVal)
+							if len(objectIds) > 0 {
+								itemArrayIDs[i] = objectIds
+								for _, id := range objectIds {
+									allIDsSet[id.Hex()] = id
+								}
+							} else {
+								log.Printf("Failed to extract ObjectIDs from field %s at item %d, type: %T, value: %v", 
+									field.Name, i, idVal, idVal)
+							}
+						}
+					}
+					
+					// Fetch all documents in one query
+					if len(allIDsSet) > 0 {
+						var allIDs []primitive.ObjectID
+						for _, id := range allIDsSet {
+							allIDs = append(allIDs, id)
+						}
+						
+						populatedDocs, err := GetPopulatedDocuments(ctx, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
+						if err != nil {
+							log.Printf("Failed to batch populate array field %s: %v", field.Name, err)
+							continue
+						}
+						
+						// Create a lookup map
+						docMap := make(map[string]map[string]interface{})
+						for _, doc := range populatedDocs {
+							if id, ok := doc["_id"].(primitive.ObjectID); ok {
+								docMap[id.Hex()] = doc
+							}
+						}
+						
+						// Map documents back to items maintaining order
+						for i, objectIds := range itemArrayIDs {
 							var orderedDocs []map[string]interface{}
+							notFoundCount := 0
 							for _, id := range objectIds {
 								if doc, found := docMap[id.Hex()]; found {
 									orderedDocs = append(orderedDocs, doc)
+								} else {
+									notFoundCount++
 								}
 							}
-
+							if notFoundCount > 0 {
+								log.Printf("Field %s at item %d: %d referenced documents not found in %s", 
+									field.Name, i, notFoundCount, field.ObjectSchemaName)
+							}
 							items[i][field.Name] = orderedDocs
-							continue
-						} else {
-							// For autoIncrementId and string types, just pass idVal
-							populatedDoc, err = GetPopulatedDocument(ctx, field.ObjectSchemaName, idVal, pop.PopulatedFields)
 						}
-						if err != nil {
-							log.Printf("Failed to populate field %s for id %v: %v", field.Name, idVal, err)
-							continue
+					}
+				} else {
+					// For autoIncrementId and string types, process individually (less common)
+					for i, item := range items {
+						if idVal, exists := item[field.Name]; exists && idVal != nil {
+							populatedDoc, err := GetPopulatedDocument(ctx, field.ObjectSchemaName, idVal, pop.PopulatedFields)
+							if err != nil {
+								log.Printf("Failed to populate field %s for id %v: %v", field.Name, idVal, err)
+								continue
+							}
+							items[i][field.Name] = populatedDoc
 						}
-						items[i][field.Name] = populatedDoc
 					}
 				}
 			}

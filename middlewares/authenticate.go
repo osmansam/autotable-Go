@@ -76,6 +76,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				if pipeline.Name == pipelineName {
 					isAuthenticated = pipeline.IsAuthenticated
 					isAuthorized = pipeline.IsAuthorized
+					isActive = pipeline.IsActive
 					authorizeRole = pipeline.AuthorizeRole
 					break
 				}
@@ -86,6 +87,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				if function.Name == functionName {
 					isAuthenticated = function.IsAuthenticated
 					isAuthorized = function.IsAuthorized
+					isActive = function.IsActive
 					authorizeRole = function.AuthorizeRole
 					c.Locals("dynamicFunction", function)
 					break
@@ -97,6 +99,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				if api.Name == apiName {
 					isAuthenticated = api.IsAuthenticated
 					isAuthorized = api.IsAuthorized
+					isActive = api.IsActive
 					authorizeRole = api.AuthorizeRole
 					c.Locals("apiName", api)
 					break

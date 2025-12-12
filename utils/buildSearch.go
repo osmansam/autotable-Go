@@ -242,7 +242,13 @@ func BuildSearchWithReferences(ctx context.Context, container *models.ContainerM
 			refCollection := configs.GetCollection(field.ObjectSchemaName)
 			refFilter := bson.M{"$or": refOrClauses}
 			
-			cursor, err := refCollection.Find(ctx, refFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+			// OPTIMIZATION: Limit to 1000 IDs max and add projection + timeout
+			findOpts := options.Find().
+				SetProjection(bson.M{"_id": 1}).
+				SetLimit(1000).
+				SetMaxTime(2 * time.Second)
+			
+			cursor, err := refCollection.Find(ctx, refFilter, findOpts)
 			if err != nil {
 				// Log error but continue with other fields
 				fmt.Printf("Error querying referenced collection %s: %v\n", field.ObjectSchemaName, err)
@@ -303,7 +309,13 @@ func BuildSearchWithReferences(ctx context.Context, container *models.ContainerM
 			refCollection := configs.GetCollection(field.ObjectSchemaName)
 			refFilter := bson.M{"$or": refOrClauses}
 			
-			cursor, err := refCollection.Find(ctx, refFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+			// OPTIMIZATION: Limit to 1000 IDs max and add projection + timeout
+			findOpts := options.Find().
+				SetProjection(bson.M{"_id": 1}).
+				SetLimit(1000).
+				SetMaxTime(2 * time.Second)
+			
+			cursor, err := refCollection.Find(ctx, refFilter, findOpts)
 			if err != nil {
 				// Log error but continue with other fields
 				fmt.Printf("Error querying referenced collection %s: %v\n", field.ObjectSchemaName, err)

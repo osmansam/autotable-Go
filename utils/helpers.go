@@ -4,7 +4,9 @@ package utils
 import (
 	"context"
 	"errors"
+	"log"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
@@ -86,6 +88,8 @@ func BuildFindOptions(sort bson.D, pager Pager) *options.FindOptions {
     if pager.Enabled {
         opts.SetSkip(pager.Skip).SetLimit(int64(pager.Limit))
     }
+    // OPTIMIZATION: Add max execution time to prevent slow queries from blocking
+    opts.SetMaxTime(10 * time.Second)
     return opts
 }
 
@@ -114,11 +118,29 @@ func QueryAndDecode(
 
     // Count total if pagination is enabled
     if pager.Enabled {
-        // Always count with the current filter to ensure accuracy
-        // (filters and search can vary, so we can't cache a single count)
-        total, err := coll.CountDocuments(ctx, filter)
+        // OPTIMIZATION: Use estimated count for empty filters, exact count otherwise
+        var total int64
+        
+        if len(filter) == 0 {
+            // For queries without filters, use estimatedDocumentCount (much faster)
+            total, err = coll.EstimatedDocumentCount(ctx)
+        } else {
+            // For filtered queries, use CountDocuments with a timeout
+            countCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+            defer cancel()
+            total, err = coll.CountDocuments(countCtx, filter, options.Count().SetMaxTime(3*time.Second))
+        }
+        
         if err != nil {
-            return nil, err
+            // If count fails, estimate based on current page results
+            log.Printf("Warning: Count failed for %s, estimating: %v", collName, err)
+            if len(items) < pager.Limit {
+                // Last page - calculate total
+                total = int64((pager.Page-1)*pager.Limit + len(items))
+            } else {
+                // Not last page - estimate conservatively
+                total = int64(pager.Page * pager.Limit)
+            }
         }
         
         pager.TotalItems = total
