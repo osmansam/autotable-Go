@@ -2310,8 +2310,8 @@ func GetPipeline(c *fiber.Ctx) error {
             var items []map[string]interface{}
             if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
                 // Filter fields based on user role authorization
-                userRole, _ := c.Locals("userRole").(string)
-                items = utils.FilterDocuments(items, container.Fields, userRole)
+                // userRole, _ := c.Locals("userRole").(string)
+                // items = utils.FilterDocuments(items, container.Fields, userRole)
                 return c.JSON(items)
             }
         }
@@ -2330,8 +2330,8 @@ func GetPipeline(c *fiber.Ctx) error {
     }
 
     // Filter fields based on user role authorization
-    userRole, _ := c.Locals("userRole").(string)
-    resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+    // userRole, _ := c.Locals("userRole").(string)
+    // resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
 
     // Cache the new data and query if shouldCache is true
     if shouldCache {

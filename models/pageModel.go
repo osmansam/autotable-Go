@@ -32,12 +32,29 @@ type GroupBy struct {
 type ComponentType string
 
 const (
-	ComponentTypeTable     ComponentType = "table"
-	ComponentTypeTabPanel  ComponentType = "tabPanel" // tabPanel with embedded tabs
-	ComponentTypeChart     ComponentType = "chart"
-	ComponentTypeForm      ComponentType = "form"
-	ComponentTypeText      ComponentType = "text"
-	ComponentTypeCustom    ComponentType = "custom"
+	ComponentTypeTable            ComponentType = "table"
+	ComponentTypeTabPanel         ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeForm             ComponentType = "form"
+	ComponentTypeText             ComponentType = "text"
+	ComponentTypeCustom           ComponentType = "custom"
+	
+	// Chart Types - Specific chart components
+	ComponentTypeBarChart         ComponentType = "barChart"         // Bar Chart
+	ComponentTypeLineChart        ComponentType = "lineChart"        // Line Chart
+	ComponentTypePieChart         ComponentType = "pieChart"         // Pie Chart
+	ComponentTypeAreaChart        ComponentType = "areaChart"        // Area Chart
+	ComponentTypeRadarChart       ComponentType = "radarChart"       // Radar Chart
+	ComponentTypeHeatmapChart     ComponentType = "heatmapChart"     // Heat Map
+	ComponentTypeScatterChart     ComponentType = "scatterChart"     // Scatter Plot
+	ComponentTypeFunnelChart      ComponentType = "funnelChart"      // Funnel Chart
+	ComponentTypeSankeyChart      ComponentType = "sankeyChart"      // Sankey Diagram
+	ComponentTypeSunburstChart    ComponentType = "sunburstChart"    // Sunburst Chart
+	ComponentTypeTreemapChart     ComponentType = "treemapChart"     // Tree Map
+	ComponentTypeCalendarChart    ComponentType = "calendarChart"    // Calendar Chart
+	ComponentTypeBumpChart        ComponentType = "bumpChart"        // Bump Chart
+	ComponentTypeStreamChart      ComponentType = "streamChart"      // Stream Chart
+	ComponentTypeWaffleChart      ComponentType = "waffleChart"      // Waffle Chart
+	ComponentTypeCirclePackingChart ComponentType = "circlePackingChart" // Circle Packing
 )
 
 // TabPanelTab represents a tab inside a tabPanel component
