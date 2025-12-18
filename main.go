@@ -59,9 +59,10 @@ func main() {
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
 	//routes
+	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)
-	routes.AuthRoutes("api/v1/auth", app)
+	routes.AuthRoutes("api/v1/auth", app) // Existing dynamic routes auth
 	routes.PageRoutes("api/v1/page", app)
 	routes.AuditRoutes("api/v1/audit-logs", app)
 	routes.SwaggerRoutes(app)

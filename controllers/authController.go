@@ -268,7 +268,7 @@ func Login(c *fiber.Ctx) error {
 	delete(storedUser, "password")
 
     // Log Login Audit
-    authUser := &models.User{
+    authUser := &models.AuditUser{
         ID: func() primitive.ObjectID {
             if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
                 return oid
@@ -570,7 +570,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	delete(existingUser, "password")
 
     // Log Login Audit
-    authUser := &models.User{
+    authUser := &models.AuditUser{
         ID: func() primitive.ObjectID {
             if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
                 return oid

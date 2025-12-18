@@ -3,9 +3,9 @@ package utils
 import (
 	"context"
 	"testing"
-    
+
 	"github.com/osmansam/autotableGo/models"
-    "go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // Mock/Stub tests since we can't easily mock Mongo connection here without more setup.
@@ -39,7 +39,7 @@ func TestLogAuditHelpersStructure(t *testing.T) {
     
     ctx := context.Background()
     container := &models.ContainerModel{SchemaName: "testSchema"}
-    user := &models.User{ID: primitive.NewObjectID(), Email: "test@example.com", Roles: []string{"admin"}}
+    user := &models.AuditUser{ID: primitive.NewObjectID(), Email: "test@example.com", Roles: []string{"admin"}}
     
     // Just ensuring these calls don't panic with nil (DB connection will likely fail inside LogAudit if we ran it fully, 
     // but the logic before DB call should be safe).

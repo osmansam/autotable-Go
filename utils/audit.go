@@ -14,7 +14,7 @@ import (
 )
 
 // GetUserFromContext extracts user info from Fiber context.
-func GetUserFromContext(c *fiber.Ctx) *models.User {
+func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
 	userIDStr, ok := c.Locals("userID").(string)
 	if !ok || userIDStr == "" {
 		return nil
@@ -35,7 +35,7 @@ func GetUserFromContext(c *fiber.Ctx) *models.User {
 		return nil
 	}
 
-	return &models.User{
+	return &models.AuditUser{
 		ID:    userID,
 		Roles: roles,
         // Email is not in context locals currently, so we leave it empty.
@@ -85,7 +85,7 @@ func extractDocumentID(doc interface{}) primitive.ObjectID {
 }
 
 // LogCreateAction logs a single document creation.
-func LogCreateAction(ctx context.Context, container *models.ContainerModel, user *models.User, createdDoc interface{}) error {
+func LogCreateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, createdDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -113,7 +113,7 @@ func LogCreateAction(ctx context.Context, container *models.ContainerModel, user
 }
 
 // LogUpdateAction logs a single document update.
-func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.User, beforeDoc, afterDoc interface{}) error {
+func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, beforeDoc, afterDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -146,7 +146,7 @@ func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user
 }
 
 // LogDeleteAction logs a single document deletion.
-func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.User, deletedDoc interface{}) error {
+func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, deletedDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -174,7 +174,7 @@ func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user
 }
 
 // LogBulkCreateAction logs bulk document creation.
-func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, user *models.User, createdDocs []interface{}) error {
+func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, createdDocs []interface{}) error {
 	if container == nil || len(createdDocs) == 0 {
 		return nil
 	}
@@ -203,7 +203,7 @@ func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogBulkUpdateAction logs bulk document updates.
-func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.User, beforeDocs, afterDocs []interface{}) error {
+func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, beforeDocs, afterDocs []interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -233,7 +233,7 @@ func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogBulkDeleteAction logs bulk document deletions.
-func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.User, deletedDocs []interface{}) error {
+func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, deletedDocs []interface{}) error {
 	if container == nil || len(deletedDocs) == 0 {
 		return nil
 	}
@@ -262,7 +262,7 @@ func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogLogin logs a user login event.
-func LogLogin(ctx context.Context, user *models.User, ip, userAgent string) error {
+func LogLogin(ctx context.Context, user *models.AuditUser, ip, userAgent string) error {
 	auditLog := models.AuditLog{
 		Action:    "login",
 		IP:        ip,
@@ -279,7 +279,7 @@ func LogLogin(ctx context.Context, user *models.User, ip, userAgent string) erro
 }
 
 // LogLogout logs a user logout event.
-func LogLogout(ctx context.Context, user *models.User, ip, userAgent string) error {
+func LogLogout(ctx context.Context, user *models.AuditUser, ip, userAgent string) error {
 	auditLog := models.AuditLog{
 		Action:    "logout",
 		IP:        ip,

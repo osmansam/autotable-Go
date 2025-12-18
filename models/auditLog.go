@@ -19,9 +19,10 @@ type AuditLog struct {
 	UserAgent   string             `bson:"userAgent,omitempty"`
 }
 
-// User represents the user context for audit logging.
+// AuditUser represents the user context for audit logging.
 // This is used in the helper functions to pass user information.
-type User struct {
+// This is separate from the tenant User model and represents project-level user context.
+type AuditUser struct {
 	ID    primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
 	Email string             `json:"email,omitempty" bson:"email,omitempty"`
 	Roles []string           `json:"roles,omitempty" bson:"roles,omitempty"`
