@@ -60,6 +60,7 @@ func main() {
 	go ws.RunBroadcaster()
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
+	routes.ProjectRoutes(app)    // Project management routes
 	routes.ContainerRoutes("api/v1/container", app)
 	routes.DynamicRoutes("api/v1/dynamic", app)
 	routes.AuthRoutes("api/v1/auth", app) // Existing dynamic routes auth

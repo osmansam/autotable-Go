@@ -5,6 +5,8 @@ import "go.mongodb.org/mongo-driver/bson/primitive"
 // AuditLog represents a record in the audit_logs collection.
 type AuditLog struct {
 	ID          primitive.ObjectID `bson:"_id,omitempty"`
+	TenantID    string             `bson:"tenantId,omitempty"`   // Project tenant ID
+	ProjectID   string             `bson:"projectId,omitempty"`  // Project ID
 	Timestamp   primitive.DateTime `bson:"timestamp"`
 	UserID      primitive.ObjectID `bson:"userId,omitempty"`
 	UserEmail   string             `bson:"userEmail,omitempty"`

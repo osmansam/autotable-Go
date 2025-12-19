@@ -14,12 +14,13 @@ import (
 )
 
 // EnsureIndexes creates or updates indexes for a given schema based on the container configuration
-func EnsureIndexes(ctx context.Context, container *models.ContainerModel) error {
+func EnsureIndexes(ctx context.Context, container *models.ContainerModel, tenantID, projectID string) error {
 	if container == nil {
 		return fmt.Errorf("container model is nil")
 	}
 
-	collection := configs.GetCollection(container.SchemaName)
+	// Get project-specific collection
+	collection := GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName)
 	if collection == nil {
 		return fmt.Errorf("failed to get collection for schema: %s", container.SchemaName)
 	}
@@ -127,19 +128,20 @@ func createCustomIndexes(ctx context.Context, collection *mongo.Collection, cont
 }
 
 // DropIndexes drops all indexes for a schema (useful when deleting a container)
-func DropIndexes(ctx context.Context, schemaName string) error {
-	collection := configs.GetCollection(schemaName)
+// collectionName should be the full project-specific collection name
+func DropIndexes(ctx context.Context, collectionName string) error {
+	collection := configs.GetCollection(collectionName)
 	if collection == nil {
-		return fmt.Errorf("failed to get collection for schema: %s", schemaName)
+		return fmt.Errorf("failed to get collection: %s", collectionName)
 	}
 
 	// Drop all indexes except _id (which cannot be dropped)
 	_, err := collection.Indexes().DropAll(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to drop indexes for schema %s: %w", schemaName, err)
+		return fmt.Errorf("failed to drop indexes for collection %s: %w", collectionName, err)
 	}
 
-	log.Printf("Dropped all indexes for schema: %s", schemaName)
+	log.Printf("Dropped all indexes for collection: %s", collectionName)
 	return nil
 }
 
@@ -165,21 +167,22 @@ func ListIndexes(ctx context.Context, schemaName string) ([]bson.M, error) {
 }
 
 // RebuildIndexes drops and recreates all indexes for a schema
-func RebuildIndexes(ctx context.Context, container *models.ContainerModel) error {
+func RebuildIndexes(ctx context.Context, container *models.ContainerModel, tenantID, projectID string) error {
 	if container == nil {
 		return fmt.Errorf("container model is nil")
 	}
 
-	// Drop existing indexes
-	if err := DropIndexes(ctx, container.SchemaName); err != nil {
-		log.Printf("Warning: Failed to drop indexes for %s: %v", container.SchemaName, err)
+	// Drop existing indexes (use full collection name)
+	collectionName := GetProjectCollectionName(tenantID, projectID, container.SchemaName)
+	if err := DropIndexes(ctx, collectionName); err != nil {
+		log.Printf("Warning: Failed to drop indexes for %s: %v", collectionName, err)
 	}
 
 	// Wait a bit for indexes to be fully dropped
 	time.Sleep(100 * time.Millisecond)
 
 	// Recreate indexes
-	return EnsureIndexes(ctx, container)
+	return EnsureIndexes(ctx, container, tenantID, projectID)
 }
 
 // isIndexExistsError checks if the error is due to index already existing

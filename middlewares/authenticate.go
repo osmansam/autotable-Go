@@ -51,19 +51,29 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
 
 func ConditionalAuthentication(routeName string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		schemaName := c.Query("schemaName")
-		if schemaName == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
-		}
+	// Extract tenant and project context from query params or locals (set by prior middleware)
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
 
-		// Fetch container model based on schema name
-		container, err := utils.GetContainerModel(schemaName)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
-		}
-		c.Locals("containerModel", container)
+	schemaName := c.Query("schemaName")
+	if schemaName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
+	}
 
-		isDynamicFunc := routeName == "ExecuteDynamicCode"
+	// Fetch container model based on tenant/project context
+	container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
+	}
+	c.Locals("containerModel", container)
+
+	isDynamicFunc := routeName == "ExecuteDynamicCode"
 		isPipeline := routeName == "GetPipeline"
 		isExecuteApi := routeName == "ExecuteDynamicAPI"
 		var isAuthenticated bool

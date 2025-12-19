@@ -26,6 +26,16 @@ func Register(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context (from JWT token if authenticated, or from query params)
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
+
 	// Assume schemaName is provided as a query parameter
 	schemaName := c.Query("schemaName")
 	if schemaName == "" {
@@ -35,8 +45,8 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
-	// Fetch the container model (which holds your dynamic configuration)
-	container, err := utils.GetContainerModel(schemaName)
+	// Fetch the container model using tenant/project context
+	container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -107,7 +117,7 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	// Optionally, check for uniqueness on fields marked as Unique.
-	collection := configs.GetCollection(schemaName)
+	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 	for _, field := range container.Fields {
 		if field.Unique {
 			if value, exists := userData[field.Name]; exists {
@@ -154,8 +164,18 @@ func Login(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Find the auth container (IsAuthContainer = true)
-	containersCollection := configs.GetCollection("containers")
+	// Extract tenant and project context
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
+
+	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
+	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 	var container models.ContainerModel
 	err := containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
 	if err != nil {
@@ -202,7 +222,7 @@ func Login(c *fiber.Ctx) error {
 		}
 	}
 
-	collection := configs.GetCollection(schemaName)
+	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 	var storedUser map[string]interface{}
 	err = collection.FindOne(ctx, filter).Decode(&storedUser)
 	if err != nil {
@@ -287,7 +307,7 @@ func Login(c *fiber.Ctx) error {
     ip := c.IP()
     userAgent := c.Get("User-Agent")
     
-    if err := utils.LogLogin(ctx, authUser, ip, userAgent); err != nil {
+    if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
         log.Printf("Failed to log login: %v", err)
     }
 
@@ -414,8 +434,18 @@ func GoogleCallback(c *fiber.Ctx) error {
 		})
 	}
 
-	// Find the auth container (IsAuthContainer = true)
-	containersCollection := configs.GetCollection("containers")
+	// Extract tenant and project context from state or query params
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
+
+	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
+	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 	var authContainer models.ContainerModel
 	err = containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&authContainer)
 	if err != nil {
@@ -454,8 +484,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 		})
 	}
 
-	// Check if user exists
-	collection := configs.GetCollection(schemaName)
+	// Check if user exists in project-specific collection
+	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 	var existingUser map[string]interface{}
 	err = collection.FindOne(ctx, bson.M{emailFieldName: email}).Decode(&existingUser)
 
@@ -507,7 +537,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 		// Delete the cache for this schema after creating a new user
 		if authContainer.Redis.IsRedisCached {
-			err = utils.DeleteCacheForSchema(ctx, schemaName, &authContainer)
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, &authContainer)
 			if err != nil {
 				log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
 				// Don't fail the request, just log the error
@@ -516,13 +546,13 @@ func GoogleCallback(c *fiber.Ctx) error {
 			// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
 		for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
 			// Fetch the correct container model for the triggered schema
-			triggeredContainer, err := utils.GetContainerModel(triggeredSchema)
+			triggeredContainer, err := utils.GetContainerModel(tenantID, projectID, triggeredSchema)
 			if err != nil {
 				log.Printf("Error fetching container model for schema %s: %v", triggeredSchema, err)
 				continue
 			}
 			
-			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, triggeredContainer)
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, triggeredContainer)
 			if err != nil {
 				// Log the error and continue with the next iteration
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
@@ -589,7 +619,7 @@ func GoogleCallback(c *fiber.Ctx) error {
     ip := c.IP()
     userAgent := c.Get("User-Agent")
     
-    if err := utils.LogLogin(ctx, authUser, ip, userAgent); err != nil {
+    if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
         log.Printf("Failed to log google login: %v", err)
     }
 
@@ -616,11 +646,21 @@ func Logout(c *fiber.Ctx) error {
     // Note: To use this endpoint effectively, it should be protected by authentication middleware
     user := utils.GetUserFromContext(c)
     
+    // Extract tenant and project context
+    tenantID := c.Query("tenantID")
+    projectID := c.Query("projectID")
+    if tenantID == "" {
+        tenantID, _ = c.Locals("tenantID").(string)
+    }
+    if projectID == "" {
+        projectID, _ = c.Locals("projectID").(string)
+    }
+    
     // IP and UserAgent
     ip := c.IP()
     userAgent := c.Get("User-Agent")
 
-    if err := utils.LogLogout(ctx, user, ip, userAgent); err != nil {
+    if err := utils.LogLogout(ctx, tenantID, projectID, user, ip, userAgent); err != nil {
         log.Printf("Failed to log logout: %v", err)
         // We log the error but still return success to the user as the collection
         // of usage data shouldn't block the user's workflow.

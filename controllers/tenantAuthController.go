@@ -554,7 +554,8 @@ func TenantLogout(c *fiber.Ctx) error {
 	ip := c.IP()
 	userAgent := c.Get("User-Agent")
 
-	if err := utils.LogLogout(ctx, auditUser, ip, userAgent); err != nil {
+	// Tenant logout doesn't use project-specific audit logs (uses global tenant audit)
+	if err := utils.LogLogout(ctx, "", "", auditUser, ip, userAgent); err != nil {
 		log.Printf("Failed to log logout: %v", err)
 	}
 

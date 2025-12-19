@@ -181,6 +181,52 @@ Invitation to join a tenant or project.
 
 ---
 
+## 📦 Collection Naming Strategy
+
+### Why Project-Specific Collections?
+
+To ensure complete data isolation between projects, each project gets its own set of MongoDB collections.
+
+### Naming Pattern
+
+```
+tenant_{tenantId}_project_{projectId}_{resourceName}
+```
+
+### Examples
+
+**Tenant:** Acme Corp (`65a1b2c3d4e5f6789`)  
+**Project:** Mobile App (`78f9e8d7c6b5a4321`)
+
+| Resource                | Collection Name                                                 |
+| ----------------------- | --------------------------------------------------------------- |
+| Containers metadata     | `tenant_65a1b2c3d4e5f6789_project_78f9e8d7c6b5a4321_containers` |
+| Pages metadata          | `tenant_65a1b2c3d4e5f6789_project_78f9e8d7c6b5a4321_pages`      |
+| Users data (dynamic)    | `tenant_65a1b2c3d4e5f6789_project_78f9e8d7c6b5a4321_users`      |
+| Products data (dynamic) | `tenant_65a1b2c3d4e5f6789_project_78f9e8d7c6b5a4321_products`   |
+
+### Benefits
+
+✅ **Complete Isolation** - Projects cannot access each other's data  
+✅ **Multi-tenancy Safe** - Each tenant's projects are separate  
+✅ **Scalable** - Easy to move projects to different databases  
+✅ **Clear Ownership** - Collection name shows which tenant/project owns it
+
+### Helper Functions
+
+```go
+// Get containers metadata collection for a project
+utils.GetContainerCollectionForProject(tenantID, projectID)
+
+// Get dynamic data collection for a schema
+utils.GetDynamicCollectionForProject(tenantID, projectID, "users")
+
+// Get pages collection for a project
+utils.GetPageCollectionForProject(tenantID, projectID)
+```
+
+---
+
 ## 🔐 Authentication Flow
 
 ### Scenario: Owner Invites Developer
@@ -487,17 +533,25 @@ Authorization: Bearer <dynamic-route-token>
 
 ---
 
+### ✅ Project Management (IMPLEMENTED)
+
+| Method | Endpoint                   | Description             | Auth Required      |
+| ------ | -------------------------- | ----------------------- | ------------------ |
+| POST   | `/api/tenant/projects`     | Create project          | Tenant Admin/Owner |
+| GET    | `/api/tenant/projects`     | List projects in tenant | Any Tenant Member  |
+| GET    | `/api/tenant/projects/:id` | Get project details     | Any Tenant Member  |
+| PATCH  | `/api/tenant/projects/:id` | Update project          | Tenant Admin/Owner |
+| DELETE | `/api/tenant/projects/:id` | Delete project          | Tenant Owner Only  |
+
+**Note:** When a project is created, it automatically:
+
+- Creates a project-specific containers collection: `tenant_{tenantId}_project_{projectId}_containers`
+- Adds the creator as project admin
+- Sets up indexes for optimal performance
+
+---
+
 ### ⏳ TODO: Still Need to Implement
-
-#### Project Management
-
-| Method | Endpoint                   | Description             |
-| ------ | -------------------------- | ----------------------- |
-| POST   | `/api/tenant/projects`     | Create project          |
-| GET    | `/api/tenant/projects`     | List projects in tenant |
-| GET    | `/api/tenant/projects/:id` | Get project details     |
-| PATCH  | `/api/tenant/projects/:id` | Update project          |
-| DELETE | `/api/tenant/projects/:id` | Delete project          |
 
 #### Invite System
 
@@ -571,7 +625,7 @@ curl -X POST http://localhost:8080/api/tenant/auth/register \
   }'
 # Save accessToken as OWNER_TOKEN
 
-# 2. Owner creates project (TODO)
+# 2. Owner creates project ✅
 curl -X POST http://localhost:8080/api/tenant/projects \
   -H "Authorization: Bearer $OWNER_TOKEN" \
   -H "Content-Type: application/json" \
@@ -580,6 +634,7 @@ curl -X POST http://localhost:8080/api/tenant/projects \
     "slug": "mobile"
   }'
 # Save project.id as PROJECT_ID
+# This creates: tenant_65a1b2c3d4e5f6789_project_78f9e8d7c6b5a4321_containers collection
 
 # 3. Owner invites developer (TODO)
 curl -X POST http://localhost:8080/api/tenant/invites \
@@ -635,12 +690,14 @@ curl -X POST http://localhost:8080/api/v1/container \
 ## 🚀 Next Steps
 
 1. ✅ **Authentication System** - DONE
-2. ⏳ **Project Management APIs** - Need to implement
-3. ⏳ **Invite System** - Need to implement
-4. ⏳ **Membership Management** - Need to implement
-5. ⏳ **Tenant Settings** - Need to implement
-6. ⏳ **Update Container Model** - Add tenantId/projectId filtering
-7. ⏳ **Frontend Integration** - Build UI for all flows
+2. ✅ **Project Management APIs** - DONE (Create, List, Get, Update, Delete)
+3. ✅ **Collection Isolation** - DONE (Project-specific collections created automatically)
+4. ⏳ **Invite System** - Need to implement
+5. ⏳ **Membership Management** - Need to implement
+6. ⏳ **Tenant Settings** - Need to implement
+7. ⏳ **Update Container Controller** - Use project-specific collections
+8. ⏳ **Update Page Controller** - Use project-specific collections
+9. ⏳ **Frontend Integration** - Build UI for all flows
 
 ---
 

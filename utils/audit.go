@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -50,7 +49,8 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 		auditLog.Timestamp = primitive.NewDateTimeFromTime(time.Now())
 	}
 
-	collection := configs.GetCollection("audit_logs")
+	// Use project-specific audit_logs collection
+	collection := GetProjectCollection(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
 	_, err := collection.InsertOne(ctx, auditLog)
 	if err != nil {
 		log.Printf("Failed to insert audit log: %v", err)
@@ -85,7 +85,7 @@ func extractDocumentID(doc interface{}) primitive.ObjectID {
 }
 
 // LogCreateAction logs a single document creation.
-func LogCreateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, createdDoc interface{}) error {
+func LogCreateAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, createdDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -97,6 +97,8 @@ func LogCreateAction(ctx context.Context, container *models.ContainerModel, user
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "create",
 		DocumentIDs: docIDs,
@@ -113,7 +115,7 @@ func LogCreateAction(ctx context.Context, container *models.ContainerModel, user
 }
 
 // LogUpdateAction logs a single document update.
-func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, beforeDoc, afterDoc interface{}) error {
+func LogUpdateAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, beforeDoc, afterDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -129,6 +131,8 @@ func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "update",
 		DocumentIDs: docIDs,
@@ -146,11 +150,11 @@ func LogUpdateAction(ctx context.Context, container *models.ContainerModel, user
 }
 
 // LogDeleteAction logs a single document deletion.
-func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, deletedDoc interface{}) error {
+func LogDeleteAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, deletedDoc interface{}) error {
 	if container == nil {
 		return nil
 	}
-
+	
 	docID := extractDocumentID(deletedDoc)
 	var docIDs []primitive.ObjectID
 	if docID != primitive.NilObjectID {
@@ -158,6 +162,8 @@ func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "delete",
 		DocumentIDs: docIDs,
@@ -169,12 +175,12 @@ func LogDeleteAction(ctx context.Context, container *models.ContainerModel, user
 		auditLog.UserEmail = user.Email
 		auditLog.Roles = user.Roles
 	}
-
+	
 	return LogAudit(ctx, auditLog)
 }
 
 // LogBulkCreateAction logs bulk document creation.
-func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, createdDocs []interface{}) error {
+func LogBulkCreateAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, createdDocs []interface{}) error {
 	if container == nil || len(createdDocs) == 0 {
 		return nil
 	}
@@ -187,6 +193,8 @@ func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, 
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "bulk_create",
 		DocumentIDs: docIDs,
@@ -203,7 +211,7 @@ func LogBulkCreateAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogBulkUpdateAction logs bulk document updates.
-func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, beforeDocs, afterDocs []interface{}) error {
+func LogBulkUpdateAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, beforeDocs, afterDocs []interface{}) error {
 	if container == nil {
 		return nil
 	}
@@ -216,6 +224,8 @@ func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, 
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "bulk_update",
 		DocumentIDs: docIDs,
@@ -233,7 +243,7 @@ func LogBulkUpdateAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogBulkDeleteAction logs bulk document deletions.
-func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, user *models.AuditUser, deletedDocs []interface{}) error {
+func LogBulkDeleteAction(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, user *models.AuditUser, deletedDocs []interface{}) error {
 	if container == nil || len(deletedDocs) == 0 {
 		return nil
 	}
@@ -246,6 +256,8 @@ func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, 
 	}
 
 	auditLog := models.AuditLog{
+		TenantID:    tenantID,
+		ProjectID:   projectID,
 		SchemaName:  container.SchemaName,
 		Action:      "bulk_delete",
 		DocumentIDs: docIDs,
@@ -262,8 +274,10 @@ func LogBulkDeleteAction(ctx context.Context, container *models.ContainerModel, 
 }
 
 // LogLogin logs a user login event.
-func LogLogin(ctx context.Context, user *models.AuditUser, ip, userAgent string) error {
+func LogLogin(ctx context.Context, tenantID, projectID string, user *models.AuditUser, ip, userAgent string) error {
 	auditLog := models.AuditLog{
+		TenantID:  tenantID,
+		ProjectID: projectID,
 		Action:    "login",
 		IP:        ip,
 		UserAgent: userAgent,
@@ -279,8 +293,10 @@ func LogLogin(ctx context.Context, user *models.AuditUser, ip, userAgent string)
 }
 
 // LogLogout logs a user logout event.
-func LogLogout(ctx context.Context, user *models.AuditUser, ip, userAgent string) error {
+func LogLogout(ctx context.Context, tenantID, projectID string, user *models.AuditUser, ip, userAgent string) error {
 	auditLog := models.AuditLog{
+		TenantID:  tenantID,
+		ProjectID: projectID,
 		Action:    "logout",
 		IP:        ip,
 		UserAgent: userAgent,
@@ -299,6 +315,24 @@ func LogLogout(ctx context.Context, user *models.AuditUser, ip, userAgent string
 // Supports filtering by: action, schemaName, userEmail, userId, startDate, endDate
 func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 	filter := bson.M{}
+
+	// Extract tenant and project context for security - ensure users only see their project's logs
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
+	
+	// Add tenant and project filters to ensure isolation
+	if tenantID != "" {
+		filter["tenantId"] = tenantID
+	}
+	if projectID != "" {
+		filter["projectId"] = projectID
+	}
 
 	// Filter by action (e.g., "create", "update", "delete", "login", etc.)
 	if action := c.Query("action"); action != "" {
@@ -397,8 +431,18 @@ func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
 	}
 	sort := bson.D{{Key: sortField, Value: sortDir}}
 
-	// Get audit_logs collection
-	collection := configs.GetCollection("audit_logs")
+	// Extract tenant and project context
+	tenantID := c.Query("tenantID")
+	projectID := c.Query("projectID")
+	if tenantID == "" {
+		tenantID, _ = c.Locals("tenantID").(string)
+	}
+	if projectID == "" {
+		projectID, _ = c.Locals("projectID").(string)
+	}
+
+	// Get project-specific audit_logs collection
+	collection := GetProjectCollection(tenantID, projectID, "audit_logs")
 
 	// Build find options
 	opts := options.Find().SetSort(sort)
