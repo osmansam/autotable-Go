@@ -61,11 +61,13 @@ func main() {
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes
-	routes.ContainerRoutes("api/v1/container", app)
-	routes.DynamicRoutes("api/v1/dynamic", app)
-	routes.AuthRoutes("api/v1/auth", app) // Existing dynamic routes auth
-	routes.PageRoutes("api/v1/page", app)
-	routes.AuditRoutes("api/v1/audit-logs", app)
+	
+	// Project-scoped routes with tenant and project slugs in URL
+	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
+	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
+	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
+	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
+	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")

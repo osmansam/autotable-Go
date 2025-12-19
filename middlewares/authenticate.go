@@ -51,14 +51,10 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
 
 func ConditionalAuthentication(routeName string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-	// Extract tenant and project context from query params or locals (set by prior middleware)
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get project context: " + err.Error()})
 	}
 
 	schemaName := c.Query("schemaName")

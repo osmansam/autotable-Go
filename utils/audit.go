@@ -316,14 +316,10 @@ func LogLogout(ctx context.Context, tenantID, projectID string, user *models.Aud
 func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 	filter := bson.M{}
 
-	// Extract tenant and project context for security - ensure users only see their project's logs
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := GetTenantAndProjectContext(c)
+	if err != nil {
+		return nil, err
 	}
 	
 	// Add tenant and project filters to ensure isolation
@@ -431,14 +427,10 @@ func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
 	}
 	sort := bson.D{{Key: sortField, Value: sortDir}}
 
-	// Extract tenant and project context
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := GetTenantAndProjectContext(c)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Get project-specific audit_logs collection

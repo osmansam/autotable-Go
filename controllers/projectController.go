@@ -107,6 +107,18 @@ func CreateProject(c *fiber.Ctx) error {
 		})
 	}
 
+	// Get tenant to retrieve slug
+	var tenant models.Tenant
+	tenantsCollection := configs.GetCollection("tenants")
+	err = tenantsCollection.FindOne(ctx, bson.M{"_id": tenantOID}).Decode(&tenant)
+	if err != nil {
+		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+			Status:  http.StatusNotFound,
+			Message: "Tenant not found",
+			Data:    nil,
+		})
+	}
+
 	// Check if slug is unique within tenant
 	var existingProject models.Project
 	err = projectsCollection.FindOne(ctx, bson.M{
@@ -124,13 +136,14 @@ func CreateProject(c *fiber.Ctx) error {
 
 	// Create project
 	newProject := models.Project{
-		ID:        primitive.NewObjectID(),
-		TenantID:  tenantOID,
-		Name:      input.Name,
-		Slug:      input.Slug,
-		IsActive:  true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         primitive.NewObjectID(),
+		TenantID:   tenantOID,
+		TenantSlug: tenant.Slug,
+		Name:       input.Name,
+		Slug:       input.Slug,
+		IsActive:   true,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	_, err = projectsCollection.InsertOne(ctx, newProject)
@@ -394,6 +407,9 @@ func UpdateProject(c *fiber.Ctx) error {
 		}
 
 		updateDoc["slug"] = *input.Slug
+		
+		// When slug changes, we should also update tenantSlug cache key in Redis
+		// The old cache entry will expire naturally after 1 hour
 	}
 
 	if input.IsActive != nil {

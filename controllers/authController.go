@@ -26,14 +26,13 @@ func Register(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context (from JWT token if authenticated, or from query params)
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context: " + err.Error(),
+		})
 	}
 
 	// Assume schemaName is provided as a query parameter
@@ -164,20 +163,19 @@ func Login(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context: " + err.Error(),
+		})
 	}
 
 	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
 	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 	var container models.ContainerModel
-	err := containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
+	err = containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
 	if err != nil {
 		log.Printf("Failed to find auth container: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -435,13 +433,13 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	// Extract tenant and project context from state or query params
-	tenantID := c.Query("tenantID")
-	projectID := c.Query("projectID")
-	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
-	}
-	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context: " + err.Error(),
+		})
 	}
 
 	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
@@ -647,13 +645,13 @@ func Logout(c *fiber.Ctx) error {
     user := utils.GetUserFromContext(c)
     
     // Extract tenant and project context
-    tenantID := c.Query("tenantID")
-    projectID := c.Query("projectID")
-    if tenantID == "" {
-        tenantID, _ = c.Locals("tenantID").(string)
-    }
-    if projectID == "" {
-        projectID, _ = c.Locals("projectID").(string)
+    // Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+            Status:  http.StatusInternalServerError,
+            Message: "Failed to get project context: " + err.Error(),
+        })
     }
     
     // IP and UserAgent

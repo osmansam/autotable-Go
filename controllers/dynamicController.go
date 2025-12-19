@@ -31,8 +31,11 @@ import (
 // getProjectContext extracts tenantID and projectID from fiber context
 // Returns an error if either is missing
 func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
-	tenantID, _ = c.Locals("tenantID").(string)
-	projectID, _ = c.Locals("projectID").(string)
+	// Use the new utility that extracts from URL slugs (or falls back to query/locals)
+	tenantID, projectID, err = utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return "", "", err
+	}
 	
 	if tenantID == "" || projectID == "" {
 		return "", "", fmt.Errorf("missing tenant or project context - ensure you are authenticated and have switched to a project")
