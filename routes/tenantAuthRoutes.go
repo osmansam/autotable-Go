@@ -9,7 +9,7 @@ import (
 // TenantAuthRoutes sets up all tenant authentication routes
 func TenantAuthRoutes(app *fiber.App) {
 	// Public routes (no authentication required)
-	tenantAuth := app.Group("/api/tenant/auth")
+	tenantAuth := app.Group("/api/v1/tenant/auth")
 	
 	// Register new user and create tenant
 	tenantAuth.Post("/register", controllers.TenantRegister)
@@ -21,7 +21,7 @@ func TenantAuthRoutes(app *fiber.App) {
 	tenantAuth.Post("/refresh", controllers.TenantRefreshToken)
 
 	// Protected routes (require authentication)
-	tenantAuthProtected := app.Group("/api/tenant/auth")
+	tenantAuthProtected := app.Group("/api/v1/tenant/auth")
 	tenantAuthProtected.Use(middlewares.TenantAuthenticate)
 	
 	// Logout

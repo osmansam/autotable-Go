@@ -8,9 +8,12 @@ import (
 )
 
 // PageRoutes sets up all page management routes
-// These routes require tenant authentication and project scope
 func PageRoutes(baseUrl string, app *fiber.App) {
-	// All page routes require tenant authentication and project scope
+	// Dynamic route level access - no authentication required (public access)
+	// This allows pages to be accessed just like dynamic routes with isAuthActive=false
+	app.Get(baseUrl, controllers.GetAllPages)
+	
+	// Tenant-authenticated routes (project scope required)
 	pageGroup := app.Group(baseUrl)
 	pageGroup.Use(middlewares.TenantAuthenticate)
 	pageGroup.Use(middlewares.RequireProjectScope)
@@ -25,8 +28,8 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 		controllers.CreatePage,
 	)
 	
-	// Get all pages - any project member can view
-	pageGroup.Get("/", controllers.GetAllPages)
+	// Get all pages - tenant access (any project member can view)
+	pageGroup.Get("/tenant", controllers.GetAllPages)
 	
 	// Get single page - any project member can view
 	pageGroup.Get("/:id", controllers.GetPage)

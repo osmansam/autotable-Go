@@ -100,9 +100,12 @@ func CreateContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project IDs from context
-	tenantID, _ := c.Locals("tenantID").(string)
-	projectID, _ := c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
 	if tenantID == "" || projectID == "" {
 		log.Println("Missing tenant or project context")
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context. Please ensure you are authenticated and have switched to a project.")
@@ -247,12 +250,11 @@ func GetAllContainers(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project IDs from context
-	tenantID, _ := c.Locals("tenantID").(string)
-	projectID, _ := c.Locals("projectID").(string)
-	if tenantID == "" || projectID == "" {
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil || tenantID == "" || projectID == "" {
 		log.Println("Missing tenant or project context")
-		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+		return utils.SendErrorResponse(c, err, "Missing tenant or project context.")
 	}
 
 	// Get project-specific container collection
@@ -307,9 +309,12 @@ func DeleteContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project IDs from context
-	tenantID, _ := c.Locals("tenantID").(string)
-	projectID, _ := c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
 	if tenantID == "" || projectID == "" {
 		log.Println("Missing tenant or project context")
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
@@ -384,9 +389,12 @@ func UpdateContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project IDs from context
-	tenantID, _ := c.Locals("tenantID").(string)
-	projectID, _ := c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
 	if tenantID == "" || projectID == "" {
 		log.Println("Missing tenant or project context")
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
@@ -513,9 +521,12 @@ func UpdatePipelines(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
-    // Extract tenant and project IDs from context
-    tenantID, _ := c.Locals("tenantID").(string)
-    projectID, _ := c.Locals("projectID").(string)
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
     if tenantID == "" || projectID == "" {
         log.Println("Missing tenant or project context")
         return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
@@ -578,9 +589,12 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
-    // Extract tenant and project IDs from context
-    tenantID, _ := c.Locals("tenantID").(string)
-    projectID, _ := c.Locals("projectID").(string)
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
     if tenantID == "" || projectID == "" {
         log.Println("Missing tenant or project context")
         return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
@@ -643,13 +657,18 @@ func GetContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project IDs from context
-	tenantID, _ := c.Locals("tenantID").(string)
-	projectID, _ := c.Locals("projectID").(string)
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
 	if tenantID == "" || projectID == "" {
 		log.Println("Missing tenant or project context")
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
 	}
+
+	// Get project-specific container collection
 
 	// Get project-specific container collection
 	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
@@ -700,7 +719,7 @@ func GetContainer(c *fiber.Ctx) error {
 	log.Println("Container successfully retrieved from database")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
-		Message: "Container successfully retrieved.",
+		Message: "Container successfully retrieved",
 		Data:    &fiber.Map{"data": container},
 	})
 }
@@ -710,9 +729,12 @@ func GetAllContainerTypes(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
-    // Extract tenant and project IDs from context
-    tenantID, _ := c.Locals("tenantID").(string)
-    projectID, _ := c.Locals("projectID").(string)
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
     if tenantID == "" || projectID == "" {
         log.Println("Missing tenant or project context")
         return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")

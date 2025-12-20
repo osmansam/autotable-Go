@@ -11,6 +11,7 @@ import (
 // These routes require tenant authentication and project scope
 func ContainerRoutes(baseUrl string, app *fiber.App) {
 	// All container routes require tenant authentication and project scope
+		app.Get(baseUrl, controllers.GetAllContainers)
 	containerGroup := app.Group(baseUrl)
 	containerGroup.Use(middlewares.TenantAuthenticate)
 	containerGroup.Use(middlewares.RequireProjectScope)
@@ -30,8 +31,8 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 		controllers.ResetRedis,
 	)
 	
-	// Get all containers - any project member can view
-	containerGroup.Get("/", controllers.GetAllContainers)
+	// Get all containers-tenantlevel - any project member can view
+	containerGroup.Get("/tenant", controllers.GetAllContainers)
 	
 	// Get container types - any project member can view
 	containerGroup.Get("/types", controllers.GetAllContainerTypes)

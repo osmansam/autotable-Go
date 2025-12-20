@@ -10,7 +10,7 @@ import (
 // ProjectRoutes sets up all project management routes
 func ProjectRoutes(app *fiber.App) {
 	// All project routes require tenant authentication and tenant scope
-	projectGroup := app.Group("/api/tenant/projects")
+	projectGroup := app.Group("/api/v1/tenant/projects")
 	projectGroup.Use(middlewares.TenantAuthenticate)
 	projectGroup.Use(middlewares.RequireTenantScope)
 	

@@ -16,6 +16,7 @@ var (
 	ErrProjectSlugMissing = errors.New("project slug is required in URL path")
 	ErrTenantNotFound     = errors.New("tenant not found")
 	ErrProjectNotFound    = errors.New("project not found")
+	ErrProjectMismatch    = errors.New("URL project does not match authenticated project scope")
 )
 
 // GetTenantAndProjectFromSlugs extracts tenant and project IDs from URL slugs
@@ -112,13 +113,78 @@ func splitCachedValue(value string) []string {
 
 // GetTenantAndProjectContext extracts tenant/project from URL slugs or falls back to query/locals
 // This provides backward compatibility during migration
+// SECURITY: If JWT token has project scope, validates that URL matches the token's project
 func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
+	// SECURITY: Check if user has JWT token with project scope FIRST
+	tokenProjectID, hasTokenProject := c.Locals("projectID").(string)
+	tokenTenantID, hasTokenTenant := c.Locals("tenantID").(string)
+
 	// Try URL slugs first (new pattern)
 	tenantSlug := c.Params("tenantSlug")
 	projectSlug := c.Params("projectSlug")
 
 	if tenantSlug != "" && projectSlug != "" {
-		return GetTenantAndProjectFromSlugs(c)
+		// Get IDs from URL slugs (but DON'T overwrite locals yet)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Try cache first
+		cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
+		cachedValue, cacheErr := configs.RedisClient.Get(ctx, cacheKey).Result()
+		var urlTenantID, urlProjectID string
+		
+		if cacheErr == nil && cachedValue != "" {
+			parts := splitCachedValue(cachedValue)
+			if len(parts) == 2 {
+				urlTenantID = parts[0]
+				urlProjectID = parts[1]
+			}
+		}
+		
+		// If not in cache, query database
+		if urlProjectID == "" {
+			projectsCollection := configs.GetCollection("projects")
+			var project struct {
+				ID       primitive.ObjectID `bson:"_id"`
+				TenantID primitive.ObjectID `bson:"tenantId"`
+				IsActive bool               `bson:"isActive"`
+			}
+			err = projectsCollection.FindOne(ctx, bson.M{
+				"tenantSlug": tenantSlug,
+				"slug":       projectSlug,
+				"isActive":   true,
+			}).Decode(&project)
+			if err != nil {
+				return "", "", ErrProjectNotFound
+			}
+			
+			urlProjectID = project.ID.Hex()
+			urlTenantID = project.TenantID.Hex()
+
+			// Cache the result
+			cacheValue := urlTenantID + "|" + urlProjectID
+			go func() {
+				configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second)
+			}()
+		}
+
+		// SECURITY CHECK: If user has project-scoped JWT token, URL MUST match
+		if hasTokenProject && tokenProjectID != "" {
+			if urlProjectID != tokenProjectID {
+				return "", "", ErrProjectMismatch
+			}
+			if hasTokenTenant && tokenTenantID != "" && urlTenantID != tokenTenantID {
+				return "", "", ErrProjectMismatch
+			}
+		}
+
+		// Only NOW update locals after validation passes
+		c.Locals("tenantID", urlTenantID)
+		c.Locals("projectID", urlProjectID)
+		c.Locals("tenantSlug", tenantSlug)
+		c.Locals("projectSlug", projectSlug)
+
+		return urlTenantID, urlProjectID, nil
 	}
 
 	// Fall back to query params or locals (old pattern for backward compatibility)
@@ -126,10 +192,10 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 	projectID = c.Query("projectID")
 
 	if tenantID == "" {
-		tenantID, _ = c.Locals("tenantID").(string)
+		tenantID = tokenTenantID
 	}
 	if projectID == "" {
-		projectID, _ = c.Locals("projectID").(string)
+		projectID = tokenProjectID
 	}
 
 	// Store in locals if not already there

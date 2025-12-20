@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
@@ -17,12 +16,25 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var pageCollection *mongo.Collection = configs.GetCollection("pages")
+// getProjectContext extracts tenant and project IDs from the request context
+func getPageProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
+	return utils.GetTenantAndProjectContext(c)
+}
 
-// CreatePage creates a new page
+// CreatePage creates a new page in project-specific collection
 func CreatePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	var page models.PageModel
 
@@ -33,10 +45,13 @@ func CreatePage(c *fiber.Ctx) error {
 	}
 
 	log.Println("Validating parsed data for CreatePage")
-	if validationErr := validate.Struct(&page); validationErr != nil {
+	if validationErr := utils.ValidateStruct(page); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
 
 	log.Println("Inserting new page into the database")
 	result, err := pageCollection.InsertOne(ctx, page)
@@ -56,12 +71,25 @@ func CreatePage(c *fiber.Ctx) error {
 	})
 }
 
-// GetAllPages retrieves all pages from the database
+// GetAllPages retrieves all pages from project-specific collection
 func GetAllPages(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
 	var pages []models.PageModel
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
 
 	log.Println("Retrieving all pages from the database")
 	results, err := pageCollection.Find(ctx, bson.M{})
@@ -90,10 +118,20 @@ func GetAllPages(c *fiber.Ctx) error {
 	return c.JSON(pages)
 }
 
-// GetPage retrieves a single page from the database based on its ID
+// GetPage retrieves a single page from project-specific collection based on its ID
 func GetPage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	pageIdStr := c.Params("id")
 	pageId, err := primitive.ObjectIDFromHex(pageIdStr)
@@ -101,6 +139,9 @@ func GetPage(c *fiber.Ctx) error {
 		log.Printf("Invalid ID format: %v", err)
 		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
 
 	log.Println("Fetching page from the database")
 	var page models.PageModel
@@ -126,10 +167,20 @@ func GetPage(c *fiber.Ctx) error {
 	})
 }
 
-// UpdatePage updates an existing page's details
+// UpdatePage updates an existing page in project-specific collection
 func UpdatePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	var updatedPage models.PageModel
 
@@ -140,7 +191,7 @@ func UpdatePage(c *fiber.Ctx) error {
 	}
 
 	log.Println("Validating parsed data for UpdatePage")
-	if validationErr := validate.Struct(&updatedPage); validationErr != nil {
+	if validationErr := utils.ValidateStruct(updatedPage); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
@@ -151,6 +202,9 @@ func UpdatePage(c *fiber.Ctx) error {
 		log.Printf("Invalid ID format: %v", err)
 		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
 
 	log.Println("Updating page in the database")
 	updateResult, err := pageCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedPage})
@@ -179,10 +233,20 @@ func UpdatePage(c *fiber.Ctx) error {
 	})
 }
 
-// DeletePage deletes a page from the database
+// DeletePage deletes a page from project-specific collection
 func DeletePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
@@ -190,6 +254,9 @@ func DeletePage(c *fiber.Ctx) error {
 		log.Printf("Invalid ID format: %v", err)
 		return utils.SendErrorResponse(c, err, "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.")
 	}
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
 
 	log.Println("Attempting to delete page from the database")
 	result, err := pageCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
