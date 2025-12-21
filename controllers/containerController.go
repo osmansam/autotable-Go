@@ -230,8 +230,8 @@ func CreateContainer(c *fiber.Ctx) error {
 		// Don't fail the request, just log the warning
 	}
 
-	// Invalidate Redis cache for all containers
-	configs.RedisClient.Del(ctx, "containers:all")
+	// Invalidate Redis cache for all containers (project-specific)
+	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
 	log.Println("Invalidated containers cache after creation")
 
 	// Emit WebSocket event for container change
