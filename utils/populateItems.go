@@ -6,14 +6,13 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func PopulateItems(ctx context.Context, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
+func PopulateItems(ctx context.Context, tenantID, projectID string, container *models.ContainerModel, items []map[string]interface{}) ([]map[string]interface{}, error) {
 	for _, field := range container.Fields {
 		// Check if the field has population settings
 		if field.PopulationSettings != nil {
@@ -56,7 +55,7 @@ func PopulateItems(ctx context.Context, container *models.ContainerModel, items 
 					
 					// Fetch all documents in one query
 					if len(allIDs) > 0 {
-						populatedDocs, err := GetPopulatedDocuments(ctx, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
+						populatedDocs, err := GetPopulatedDocuments(ctx, tenantID, projectID, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
 						if err != nil {
 							log.Printf("Failed to batch populate field %s: %v", field.Name, err)
 							continue
@@ -111,7 +110,7 @@ func PopulateItems(ctx context.Context, container *models.ContainerModel, items 
 							allIDs = append(allIDs, id)
 						}
 						
-						populatedDocs, err := GetPopulatedDocuments(ctx, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
+						populatedDocs, err := GetPopulatedDocuments(ctx, tenantID, projectID, field.ObjectSchemaName, allIDs, pop.PopulatedFields)
 						if err != nil {
 							log.Printf("Failed to batch populate array field %s: %v", field.Name, err)
 							continue
@@ -147,7 +146,7 @@ func PopulateItems(ctx context.Context, container *models.ContainerModel, items 
 					// For autoIncrementId and string types, process individually (less common)
 					for i, item := range items {
 						if idVal, exists := item[field.Name]; exists && idVal != nil {
-							populatedDoc, err := GetPopulatedDocument(ctx, field.ObjectSchemaName, idVal, pop.PopulatedFields)
+							populatedDoc, err := GetPopulatedDocument(ctx, tenantID, projectID, field.ObjectSchemaName, idVal, pop.PopulatedFields)
 							if err != nil {
 								log.Printf("Failed to populate field %s for id %v: %v", field.Name, idVal, err)
 								continue
@@ -162,8 +161,8 @@ func PopulateItems(ctx context.Context, container *models.ContainerModel, items 
 	return items, nil
 }
 
-func GetPopulatedDocument(ctx context.Context, collectionName string, id interface{}, fields []string) (map[string]interface{}, error) {
-    coll := configs.GetCollection(collectionName)
+func GetPopulatedDocument(ctx context.Context, tenantID, projectID, collectionName string, id interface{}, fields []string) (map[string]interface{}, error) {
+    coll := GetDynamicCollectionForProject(tenantID, projectID, collectionName)
 
     projection := bson.M{}
     for _, field := range fields {
@@ -197,12 +196,12 @@ func GetPopulatedDocument(ctx context.Context, collectionName string, id interfa
 }
 
 // GetPopulatedDocuments retrieves multiple documents by their IDs and returns only specified fields
-func GetPopulatedDocuments(ctx context.Context, collectionName string, ids []primitive.ObjectID, fields []string) ([]map[string]interface{}, error) {
+func GetPopulatedDocuments(ctx context.Context, tenantID, projectID, collectionName string, ids []primitive.ObjectID, fields []string) ([]map[string]interface{}, error) {
     if len(ids) == 0 {
         return []map[string]interface{}{}, nil
     }
 
-    coll := configs.GetCollection(collectionName)
+    coll := GetDynamicCollectionForProject(tenantID, projectID, collectionName)
 
     projection := bson.M{}
     for _, field := range fields {

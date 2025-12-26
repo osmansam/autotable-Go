@@ -304,7 +304,12 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     // Calculate equation fields
     for _, field := range container.Fields {
         if field.Equation != "" {
-            val, err := utils.EvaluateEquation(field.Equation, itemMap)
+            ctx := &utils.EquationContext{
+                TenantID:  tenantID,
+                ProjectID: projectID,
+                Data:      itemMap,
+            }
+            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
             if err != nil {
                 log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
                 return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -577,7 +582,12 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
     for i, item := range items {
         for _, field := range container.Fields {
             if field.Equation != "" {
-                val, err := utils.EvaluateEquation(field.Equation, item)
+                ctx := &utils.EquationContext{
+                    TenantID:  tenantID,
+                    ProjectID: projectID,
+                    Data:      item,
+                }
+                val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
                 if err != nil {
                     log.Printf("Error evaluating equation for field %s in item %d: %v", field.Name, i, err)
                     return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -800,7 +810,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 6. Populate if needed
-    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItems", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "GetAllDynamicModelItems", items)
     if err != nil {
         log.Printf("Population failed for schema %q: %v", schema, err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -1460,7 +1470,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         if field.Equation != "" {
             // We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
             // bson.M is map[string]interface{}, so it should be fine.
-            val, err := utils.EvaluateEquation(field.Equation, existingItem)
+            ctx := &utils.EquationContext{
+                TenantID:  tenantID,
+                ProjectID: projectID,
+                Data:      existingItem,
+            }
+            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
             if err != nil {
                 log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
                  return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -1821,7 +1836,12 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
         equationError := false
         for _, field := range container.Fields {
             if field.Equation != "" {
-                val, err := utils.EvaluateEquation(field.Equation, existingItem)
+                eqCtx := &utils.EquationContext{
+                    TenantID:  tenantID,
+                    ProjectID: projectID,
+                    Data:      existingItem,
+                }
+                val, err := utils.EvaluateEquationWithContext(field.Equation, eqCtx)
                 if err != nil {
                     utils.ReleaseLock(lockKey, lockID)
                     failedUpdates = append(failedUpdates, map[string]interface{}{
@@ -2043,7 +2063,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
             if json.Unmarshal([]byte(raw), &item) == nil {
                 // strip hashed & populate
                 utils.StripHashed(container.Fields, []map[string]interface{}{item})
-                pop, _ := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+                pop, _ := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "GetDynamicModelItem", []map[string]interface{}{item})
                 if len(pop) > 0 {
                     item = pop[0]
                 }
@@ -2073,7 +2093,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, []map[string]interface{}{item})
 
     // 6) Populate if needed
-    pop, err := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+    pop, err := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "GetDynamicModelItem", []map[string]interface{}{item})
     if err != nil {
         return utils.SendErrorResponse(c, err, "Failed to populate item")
     }
@@ -2192,7 +2212,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 	// 6) strip hashed, populate
 	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, container, "HandleSearchDynamicModelItem", items)
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "HandleSearchDynamicModelItem", items)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "population failed")
 	}
@@ -2307,7 +2327,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 7) Populate references if configured
-    items, err = utils.PopulateIfNeeded(ctx, container, "HandleFilterDynamicModelItem", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "HandleFilterDynamicModelItem", items)
     if err != nil {
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
@@ -2594,7 +2614,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 8. Populate if configured
-    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItemsWithPagination", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "GetAllDynamicModelItemsWithPagination", items)
     if err != nil {
         log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -3198,7 +3218,7 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 
 	// 6. Populate and Strip Hashed
 	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, container, "ExportDynamicModelItems", items)
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, "ExportDynamicModelItems", items)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to populate items")
 	}

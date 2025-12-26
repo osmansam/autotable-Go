@@ -177,13 +177,14 @@ func StripHashed(fields []models.Field, items []map[string]interface{}) {
 // PopulateIfNeeded calls PopulateItems if the route is in PopulatedRoutes.
 func PopulateIfNeeded(
     ctx context.Context,
+    tenantID, projectID string,
     container *models.ContainerModel,
     routeName string,
     items []map[string]interface{},
 ) ([]map[string]interface{}, error) {
     for _, r := range container.PopulatedRoutes {
         if r == routeName {
-            return PopulateItems(ctx, container, items)
+            return PopulateItems(ctx, tenantID, projectID, container, items)
         }
     }
     return items, nil
