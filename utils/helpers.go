@@ -174,19 +174,28 @@ func StripHashed(fields []models.Field, items []map[string]interface{}) {
     }
 }
 
-// PopulateIfNeeded calls PopulateItems if the route is in PopulatedRoutes.
+// PopulateIfNeeded calls PopulateItems if any field has PopulationSettings configured.
+// This automatically populates fields that are configured for population, regardless of the route.
 func PopulateIfNeeded(
     ctx context.Context,
     tenantID, projectID string,
     container *models.ContainerModel,
-    routeName string,
     items []map[string]interface{},
 ) ([]map[string]interface{}, error) {
-    for _, r := range container.PopulatedRoutes {
-        if r == routeName {
-            return PopulateItems(ctx, tenantID, projectID, container, items)
+    // Check if any field has population settings configured
+    hasPopulationSettings := false
+    for _, field := range container.Fields {
+        if field.PopulationSettings != nil {
+            hasPopulationSettings = true
+            break
         }
     }
+    
+    // If any field has population settings, populate the items
+    if hasPopulationSettings {
+        return PopulateItems(ctx, tenantID, projectID, container, items)
+    }
+    
     return items, nil
 }
 
