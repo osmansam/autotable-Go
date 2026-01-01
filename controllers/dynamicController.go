@@ -193,6 +193,9 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 
     // Extract tenant and project context
     tenantID, projectID, err := getProjectContext(c)
+    
+    // Extract userID for WebSocket events
+    userIDStr, _ := c.Locals("userID").(string)
     if err != nil {
         log.Printf("Project context error: %v", err)
         return utils.SendErrorResponse(c, err, err.Error())
@@ -417,12 +420,15 @@ if container.Redis.IsRedisCached {
     }
 }
     // Emit WebSocket invalidate event for this schema
-    ws.EmitInvalidate(schemaName)
+    ws.EmitInvalidate(schemaName, userIDStr)
+    
+    // Strip hashed fields from response
+    utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
     
     // Successfully saved the item
     log.Printf("Item successfully created for schema: %s", schemaName)
     return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-        Status: http.StatusCreated, Message: "Item successfully created.", Data: result,
+        Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
     })
 }
 func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
@@ -432,6 +438,9 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -744,12 +753,12 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				continue
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
 	
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -936,6 +945,9 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1035,7 +1047,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
     }
 	
 	// Attempting to delete the item with the given ID from the specified collection
-	result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
+	_, err = currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
 		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", schemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to delete the item from the specified collection.")
@@ -1066,14 +1078,24 @@ if container.Redis.IsRedisCached {
     }
 }
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
+	
+	// Convert deletedDoc to map[string]interface{} for response
+	responseItem := make(map[string]interface{})
+	if deletedDoc != nil {
+		for k, v := range deletedDoc {
+			responseItem[k] = v
+		}
+		// Strip hashed fields from response
+		utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
+	}
 	
 	// Successfully deleted the item
 	log.Printf("Item successfully deleted for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Item successfully deleted from the specified collection.",
-		Data:   result,
+		Data:   responseItem,
 	})
 }
 
@@ -1083,6 +1105,10 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1287,7 +1313,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
@@ -1298,7 +1324,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	}
 	// Emit WebSocket invalidate event for this schema if there were any successful deletions
 	if len(successfulDeletes) > 0 {
-		ws.EmitInvalidate(schemaName)
+		ws.EmitInvalidate(schemaName, userIDStr)
 	}
 
     // Log Bulk Audit
@@ -1322,6 +1348,11 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
     // Extract tenant and project context
     tenantID, projectID, err := getProjectContext(c)
+    
+    // Extract userID for WebSocket events
+    userIDStr, _ := c.Locals("userID").(string)
+    log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
+    
     if err != nil {
         log.Printf("Project context error: %v", err)
         return utils.SendErrorResponse(c, err, err.Error())
@@ -1591,15 +1622,24 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 			continue
 		}
 		// Emit WebSocket invalidate event for triggered schema
-		ws.EmitInvalidate(triggeredSchema)
+		ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
+
+	// Convert existingItem to map[string]interface{} for response
+	responseItem := make(map[string]interface{})
+	for k, v := range existingItem {
+		responseItem[k] = v
+	}
+
+	// Strip hashed fields from response
+	utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
-    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: updateResult})
+    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Set a timeout for the operation.
@@ -1608,6 +1648,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1978,7 +2022,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
@@ -1990,7 +2034,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Emit WebSocket invalidate event for this schema if there were any successful updates
 	if len(successfulUpdates) > 0 {
-		ws.EmitInvalidate(schemaName)
+		ws.EmitInvalidate(schemaName, userIDStr)
 	}
 	
 	log.Printf("Multiple items update completed for schema: %s", schemaName)

@@ -10,12 +10,18 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
 	"github.com/gofiber/websocket/v2"
+	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/routes"
 	"github.com/osmansam/autotableGo/ws"
 )
 
 func main() {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		log.Println("Warning: .env file not found, using system environment variables")
+	}
+	
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	app := fiber.New()
 	

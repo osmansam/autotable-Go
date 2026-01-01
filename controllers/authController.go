@@ -271,8 +271,8 @@ func Login(c *fiber.Ctx) error {
 	if r, ok := storedUser["role"].(string); ok {
 		role = r
 	}
-	// Generate tokens dynamically
-	tokenDetails, err := utils.GenerateTokens(userID, role)
+	// Generate tokens dynamically with tenant and project context
+	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID)
 	if err != nil {
 		log.Println("Could not generate tokens for user:", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -583,8 +583,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 	}
 
-	// Generate JWT tokens
-	tokenDetails, err := utils.GenerateTokens(userID, role)
+	// Generate JWT tokens with tenant and project context
+	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID)
 	if err != nil {
 		log.Printf("Failed to generate tokens: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{

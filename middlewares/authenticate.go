@@ -20,13 +20,34 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
     } else {
         token = authHeader // fallback if no "Bearer " prefix
     }
-    userID, role, err := utils.ParseToken(token)
+    
+    userID, role, tokenTenantID, tokenProjectID, err := utils.ParseToken(token)
     if err != nil {
         log.Printf("Error parsing token: %v", err)
         return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
     }
+    
+    // Get the expected tenant and project IDs from context
+    expectedTenantID, _ := c.Locals("expectedTenantID").(string)
+    expectedProjectID, _ := c.Locals("expectedProjectID").(string)
+    
+    // Validate tenant ID if available
+    if expectedTenantID != "" && tokenTenantID != expectedTenantID {
+        log.Printf("Token tenant_id (%s) doesn't match requested tenant (%s)", tokenTenantID, expectedTenantID)
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Access denied - Token is not valid for this tenant"})
+    }
+    
+    // Validate project ID - this is the critical check to prevent cross-project access
+    if expectedProjectID != "" && tokenProjectID != expectedProjectID {
+        log.Printf("Token project_id (%s) doesn't match requested project (%s)", tokenProjectID, expectedProjectID)
+        return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Access denied - Token is not valid for this project"})
+    }
+    
     c.Locals("userID", userID)
     c.Locals("userRole", role)
+    c.Locals("tenantID", tokenTenantID)
+    c.Locals("projectID", tokenProjectID)
+    
     // Check if the account is active.
     if !isActive {
         return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
@@ -153,6 +174,9 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		}
 
 		if isAuthenticated || !isActive {
+			// Store expected tenant and project IDs in context for validation
+			c.Locals("expectedTenantID", tenantID)
+			c.Locals("expectedProjectID", projectID)
 			return Authenticate(c, isAuthorized, authorizeRole, isActive)
 		}
 
@@ -166,10 +190,28 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			} else {
 				token = authHeader
 			}
-			userID, role, err := utils.ParseToken(token)
+			
+			log.Printf("DEBUG (Optional Auth) - Token received (first 50 chars): %.50s...", token)
+			log.Printf("DEBUG (Optional Auth) - Token length: %d", len(token))
+			
+			userID, role, tokenTenantID, tokenProjectID, err := utils.ParseToken(token)
 			if err == nil {
-				c.Locals("userID", userID)
-				c.Locals("userRole", role)
+				// Validate that token's project matches the requested project
+				if tokenProjectID != projectID {
+					log.Printf("Optional auth: Token project_id (%s) doesn't match requested project (%s) - proceeding as anonymous", tokenProjectID, projectID)
+					// Don't set user context - treat as anonymous
+				} else if tokenTenantID != tenantID {
+					log.Printf("Optional auth: Token tenant_id (%s) doesn't match requested tenant (%s) - proceeding as anonymous", tokenTenantID, tenantID)
+					// Don't set user context - treat as anonymous
+				} else {
+					// Valid token for this project
+					c.Locals("userID", userID)
+					c.Locals("userRole", role)
+					c.Locals("tenantID", tokenTenantID)
+					c.Locals("projectID", tokenProjectID)
+				}
+			} else {
+				log.Printf("Optional auth token parse failed: %v", err)
 			}
 			// If token is invalid, we ignore it and proceed as anonymous.
 		}

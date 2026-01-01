@@ -235,7 +235,8 @@ func CreateContainer(c *fiber.Ctx) error {
 	log.Println("Invalidated containers cache after creation")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -374,7 +375,8 @@ func DeleteContainer(c *fiber.Ctx) error {
 	log.Println("Invalidated containers cache after deletion")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container and its corresponding collection successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -506,7 +508,8 @@ func UpdateContainer(c *fiber.Ctx) error {
 	log.Println("Invalidated containers cache after update")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -574,7 +577,8 @@ func UpdatePipelines(c *fiber.Ctx) error {
     log.Println("Invalidated containers cache after pipeline update")
 
     // Emit WebSocket event for container change
-    ws.EmitContainerChanged()
+    userIDStr, _ := c.Locals("userID").(string)
+    ws.EmitContainerChanged(userIDStr)
 
     log.Println("Pipelines successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
@@ -642,7 +646,8 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
     log.Println("Invalidated containers cache after dynamic functions update")
 
     // Emit WebSocket event for container change
-    ws.EmitContainerChanged()
+    userIDStr, _ := c.Locals("userID").(string)
+    ws.EmitContainerChanged(userIDStr)
 
     log.Println("DynamicFunctions successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
