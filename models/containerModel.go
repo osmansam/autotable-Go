@@ -34,6 +34,7 @@ type Field struct {
     Equation          string              `bson:"equation,omitempty"`
     AuthorizeRole     []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
     IsAuthorized      bool                `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`
+    Order             int                 `bson:"order,omitempty" json:"order,omitempty"`
 }
 
 type PopulationSettings struct {
@@ -172,4 +173,15 @@ type AuditLogsConfig struct {
 var RestrictedSchemaNames = []string{
     "containers",
 }//this is needed so that user container is not created by mistake and get all the data.
+
+// SortFieldsByOrder sorts fields by their order property (low to high)
+func (c *ContainerModel) SortFieldsByOrder() {
+    for i := 0; i < len(c.Fields); i++ {
+        for j := i + 1; j < len(c.Fields); j++ {
+            if c.Fields[i].Order > c.Fields[j].Order {
+                c.Fields[i], c.Fields[j] = c.Fields[j], c.Fields[i]
+            }
+        }
+    }
+}
 

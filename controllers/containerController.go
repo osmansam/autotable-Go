@@ -266,6 +266,10 @@ func GetAllContainers(c *fiber.Ctx) error {
 	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 		var containers []models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &containers) == nil {
+			// Sort fields by order for each container before returning
+			for i := range containers {
+				containers[i].SortFieldsByOrder()
+			}
 			log.Println("Fetched all containers from Redis cache")
 			return c.JSON(containers)
 		}
@@ -289,6 +293,8 @@ func GetAllContainers(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, err, "An error occurred while processing the retrieved containers. Please try again later.")
 		}
 
+		// Sort fields by order for each container
+		singleContainer.SortFieldsByOrder()
 		containers = append(containers, singleContainer)
 	}
 	if err != nil {
@@ -690,6 +696,8 @@ func GetContainer(c *fiber.Ctx) error {
 	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 		var container models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &container) == nil {
+			// Sort fields by order before returning
+			container.SortFieldsByOrder()
 			log.Printf("Fetched container %s from Redis cache", containerIdStr)
 			return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 				Status:  http.StatusOK,
@@ -714,6 +722,9 @@ func GetContainer(c *fiber.Ctx) error {
 		log.Printf("Failed to retrieve container: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
 	}
+
+	// Sort fields by order before caching and returning
+	container.SortFieldsByOrder()
 
 	// Cache the result in Redis (30 minutes TTL)
 	if payload, err := json.Marshal(container); err == nil {

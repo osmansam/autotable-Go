@@ -22,6 +22,10 @@ func GetContainerModel(tenantID, projectID, schemaName string) (*models.Containe
 	if err != nil {
 		return nil, err
 	}
+	
+	// Sort fields by order before returning
+	containerModel.SortFieldsByOrder()
+	
 	return &containerModel, nil
 }
 
