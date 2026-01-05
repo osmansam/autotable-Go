@@ -191,9 +191,6 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				token = authHeader
 			}
 			
-			log.Printf("DEBUG (Optional Auth) - Token received (first 50 chars): %.50s...", token)
-			log.Printf("DEBUG (Optional Auth) - Token length: %d", len(token))
-			
 			userID, role, tokenTenantID, tokenProjectID, err := utils.ParseToken(token)
 			if err == nil {
 				// Validate that token's project matches the requested project

@@ -268,9 +268,24 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 	role := ""
-	if r, ok := storedUser["role"].(string); ok {
+	
+	// Try different possible role field names
+	if r, ok := storedUser["role"].(string); ok && r != "" {
 		role = r
+	} else if r, ok := storedUser["roleId"].(string); ok && r != "" {
+		role = r
+	} else if roleOID, ok := storedUser["role"].(primitive.ObjectID); ok {
+		role = roleOID.Hex()
+	} else if roleOID, ok := storedUser["roleId"].(primitive.ObjectID); ok {
+		role = roleOID.Hex()
+	} else if roles, ok := storedUser["roles"].([]interface{}); ok && len(roles) > 0 {
+		if roleStr, ok := roles[0].(string); ok {
+			role = roleStr
+		} else if roleOID, ok := roles[0].(primitive.ObjectID); ok {
+			role = roleOID.Hex()
+		}
 	}
+	
 	// Generate tokens dynamically with tenant and project context
 	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID)
 	if err != nil {
@@ -562,9 +577,11 @@ func GoogleCallback(c *fiber.Ctx) error {
 		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
 			userID = oid.Hex()
 		}
-		// Get role from newUser if it exists, otherwise use empty string
-		if r, ok := newUser["role"].(string); ok {
+		// Get role from newUser with improved extraction
+		if r, ok := newUser["role"].(string); ok && r != "" {
 			role = r
+		} else if roleOID, ok := newUser["role"].(primitive.ObjectID); ok {
+			role = roleOID.Hex()
 		}
 		existingUser = newUser
 		existingUser["_id"] = result.InsertedID
@@ -578,8 +595,16 @@ func GoogleCallback(c *fiber.Ctx) error {
 			userID = idStr
 		}
 
-		if r, ok := existingUser["role"].(string); ok {
+		if r, ok := existingUser["role"].(string); ok && r != "" {
 			role = r
+		} else if roleOID, ok := existingUser["role"].(primitive.ObjectID); ok {
+			role = roleOID.Hex()
+		} else if roles, ok := existingUser["roles"].([]interface{}); ok && len(roles) > 0 {
+			if roleStr, ok := roles[0].(string); ok {
+				role = roleStr
+			} else if roleOID, ok := roles[0].(primitive.ObjectID); ok {
+				role = roleOID.Hex()
+			}
 		}
 	}
 
