@@ -9,9 +9,10 @@ import (
 
 // PageRoutes sets up all page management routes
 func PageRoutes(baseUrl string, app *fiber.App) {
-	// Dynamic route level access - no authentication required (public access)
-	// This allows pages to be accessed just like dynamic routes with isAuthActive=false
-	app.Get(baseUrl, controllers.GetAllPages)
+	// Public route with conditional authentication based on page settings
+	// Users will see pages based on IsAuthenticated/IsAuthorized settings
+	// Apply conditional auth middleware to extract user role if token is present
+	app.Get(baseUrl+"/public", middlewares.ConditionalAuthenticationForPages, controllers.GetAllPagesPublic)
 	
 	// Tenant-authenticated routes (project scope required)
 	pageGroup := app.Group(baseUrl)
@@ -29,10 +30,19 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 	)
 	
 	// Get all pages - tenant access (any project member can view)
-	pageGroup.Get("/tenant", controllers.GetAllPages)
+	pageGroup.Get("/",middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+			models.ProjectRoleEditor,
+		}),  controllers.GetAllPages)
 	
 	// Get single page - any project member can view
-	pageGroup.Get("/:id", controllers.GetPage)
+	pageGroup.Get("/:id",
+	middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+			models.ProjectRoleEditor,
+		}),  controllers.GetPage)
 	
 	// Update page - requires project admin, developer, or editor role
 	pageGroup.Patch("/:id", 

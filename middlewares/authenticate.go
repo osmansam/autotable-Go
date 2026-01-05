@@ -70,6 +70,55 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
     return c.Next()
 }
 
+// ConditionalAuthenticationForPages middleware allows optional authentication for page routes
+// If a valid token is present, it extracts user context; otherwise proceeds as anonymous
+func ConditionalAuthenticationForPages(c *fiber.Ctx) error {
+	// Extract tenant and project context from URL slugs
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get project context: " + err.Error()})
+	}
+
+	// Store expected tenant and project IDs in context
+	c.Locals("expectedTenantID", tenantID)
+	c.Locals("expectedProjectID", projectID)
+
+	// Optional Authentication: If token is present, try to parse it to identify the user/role
+	// This allows pages with IsAuthenticated/IsAuthorized to be filtered properly
+	authHeader := c.Get("Authorization")
+	if authHeader != "" {
+		var token string
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			token = authHeader[7:]
+		} else {
+			token = authHeader
+		}
+		
+		userID, role, tokenTenantID, tokenProjectID, err := utils.ParseToken(token)
+		if err == nil {
+			// Validate that token's project matches the requested project
+			if tokenProjectID != projectID {
+				log.Printf("Optional auth (pages): Token project_id (%s) doesn't match requested project (%s) - proceeding as anonymous", tokenProjectID, projectID)
+			} else if tokenTenantID != tenantID {
+				log.Printf("Optional auth (pages): Token tenant_id (%s) doesn't match requested tenant (%s) - proceeding as anonymous", tokenTenantID, tenantID)
+			} else {
+				// Valid token for this project
+				log.Printf("Optional auth (pages): Valid token found, setting userRole to: %s", role)
+				c.Locals("userID", userID)
+				c.Locals("userRole", role)
+				c.Locals("tenantID", tokenTenantID)
+				c.Locals("projectID", tokenProjectID)
+			}
+		} else {
+			log.Printf("Optional auth (pages): Token parse failed: %v", err)
+		}
+	} else {
+		log.Printf("Optional auth (pages): No Authorization header found - proceeding as anonymous")
+	}
+
+	return c.Next()
+}
+
 func ConditionalAuthentication(routeName string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)

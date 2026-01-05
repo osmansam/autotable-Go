@@ -119,6 +119,77 @@ func GetAllPages(c *fiber.Ctx) error {
 	return c.JSON(pages)
 }
 
+// GetAllPagesPublic retrieves all pages with conditional authentication
+// This allows public access to pages based on their IsAuthenticated settings
+func GetAllPagesPublic(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Get project context
+	tenantID, projectID, err := getPageProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	var pages []models.PageModel
+
+	// Get project-specific pages collection
+	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
+
+	log.Println("Retrieving all pages from the database (public access)")
+	results, err := pageCollection.Find(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to retrieve pages: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to retrieve pages from the database. Please try again later.")
+	}
+	defer results.Close(ctx)
+
+	// Get user role from context (may be empty if not authenticated)
+	userRole, _ := c.Locals("userRole").(string)
+	for results.Next(ctx) {
+		var singlePage models.PageModel
+		if err = results.Decode(&singlePage); err != nil {
+			log.Printf("Error decoding page: %v", err)
+			return utils.SendErrorResponse(c, err, "An error occurred while processing the retrieved pages. Please try again later.")
+		}
+
+		// Filter pages based on authentication/authorization settings
+		if singlePage.IsAuthenticated {
+			// Skip if user is not authenticated
+			if userRole == "" {
+				continue
+			}
+			// Check authorization if required
+			if singlePage.IsAuthorized {
+				isAuthorized := false
+				for _, allowedRole := range singlePage.AuthorizeRole {
+					if allowedRole == userRole {
+						isAuthorized = true
+						break
+					}
+				}
+				if !isAuthorized {
+					continue
+				}
+			}
+		}
+
+		pages = append(pages, singlePage)
+	}
+
+	if err = results.Err(); err != nil {
+		log.Printf("Cursor error: %v", err)
+		return utils.SendErrorResponse(c, err, "An error occurred while processing the retrieved pages. Please try again later.")
+	}
+
+	log.Println("Pages successfully retrieved (public access)")
+	return c.JSON(pages)
+}
+
 // GetPage retrieves a single page from project-specific collection based on its ID
 func GetPage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
