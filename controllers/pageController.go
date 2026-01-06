@@ -150,6 +150,8 @@ func GetAllPagesPublic(c *fiber.Ctx) error {
 
 	// Get user role from context (may be empty if not authenticated)
 	userRole, _ := c.Locals("userRole").(string)
+	userID, _ := c.Locals("userID").(string)
+	
 	for results.Next(ctx) {
 		var singlePage models.PageModel
 		if err = results.Decode(&singlePage); err != nil {
@@ -159,12 +161,13 @@ func GetAllPagesPublic(c *fiber.Ctx) error {
 
 		// Filter pages based on authentication/authorization settings
 		if singlePage.IsAuthenticated {
-			// Skip if user is not authenticated
-			if userRole == "" {
+			// Page requires authentication - check if user is logged in
+			if userID == "" {
 				continue
 			}
-			// Check authorization if required
+			// User is authenticated - now check if specific role authorization is required
 			if singlePage.IsAuthorized {
+				// Check if user has one of the authorized roles
 				isAuthorized := false
 				for _, allowedRole := range singlePage.AuthorizeRole {
 					if allowedRole == userRole {
@@ -261,7 +264,7 @@ func UpdatePage(c *fiber.Ctx) error {
 		log.Printf("Failed to parse request body: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to parse the request body. Ensure the provided JSON is valid.")
 	}
-
+	log.Printf("%+v", updatedPage)
 	log.Println("Validating parsed data for UpdatePage")
 	if validationErr := utils.ValidateStruct(updatedPage); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)

@@ -145,8 +145,8 @@ type PageModel struct {
 	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
 	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                                   // order in sidebar under same parent
 	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`   // If true → used as parent group in sidebar, but no direct route
-	IsAuthenticated bool                `bson:"isAuthenticated,omitempty" json:"isAuthenticated,omitempty"`               // Page-level authentication
-	IsAuthorized    bool                `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`                     // Page-level authorization
+	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`               // Page-level authentication
+	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                     // Page-level authorization
 	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
 	Sections        []Section           `bson:"sections,omitempty" json:"sections,omitempty"`                             // Layout: list of top-level sections
 	SubPage         *PageModel          `bson:"subPage,omitempty" json:"subPage,omitempty"`           // Nested subpage (alternative to ParentPageID)

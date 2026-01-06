@@ -286,8 +286,12 @@ func Login(c *fiber.Ctx) error {
 		}
 	}
 	
+	// Get tenant and project slugs from context
+	tenantSlug, _ := c.Locals("tenantSlug").(string)
+	projectSlug, _ := c.Locals("projectSlug").(string)
+	
 	// Generate tokens dynamically with tenant and project context
-	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID)
+	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
 	if err != nil {
 		log.Println("Could not generate tokens for user:", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -608,8 +612,12 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 	}
 
+	// Get tenant and project slugs from context
+	tenantSlug, _ := c.Locals("tenantSlug").(string)
+	projectSlug, _ := c.Locals("projectSlug").(string)
+
 	// Generate JWT tokens with tenant and project context
-	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID)
+	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
 	if err != nil {
 		log.Printf("Failed to generate tokens: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{

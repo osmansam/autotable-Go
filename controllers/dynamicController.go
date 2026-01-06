@@ -828,7 +828,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     // 6.5. Filter fields based on user role authorization
     userRole, _ := c.Locals("userRole").(string)
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
+
 
     // 7. Cache the result if enabled
     if shouldCache {
@@ -930,7 +930,6 @@ func GetItemsForSelection(c *fiber.Ctx) error {
     // Filter fields based on user role authorization
     userRole, _ := c.Locals("userRole").(string)
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
     return c.JSON(items)
 }
@@ -2151,7 +2150,6 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 	if len(filteredItems) > 0 {
 		item = filteredItems[0]
 	}
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
 
     // 7) Cache the result
     if shouldCache {
@@ -2264,7 +2262,6 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	// 6.5) Filter fields based on user role authorization
 // 6.5) Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
 	// 7) response
 	if pager.Enabled {
@@ -2379,7 +2376,6 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     // 7.5) Filter fields based on user role authorization
     // 7.5) Filter fields based on user role authorization
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
     // 8) Send response (with pagination metadata if applicable)
     if pager.Enabled {
@@ -2667,7 +2663,6 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	// 8.5. Filter fields based on user role authorization
 // 8.5. Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
     // 9. Build response
     var response fiber.Map
