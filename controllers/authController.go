@@ -4,9 +4,11 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -341,21 +343,58 @@ func Login(c *fiber.Ctx) error {
 
 // GoogleLogin initiates the Google OAuth flow
 func GoogleLogin(c *fiber.Ctx) error {
-	log.Println("Google OAuth Login initiated")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Extract tenant and project context from URL slugs
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("GoogleLogin: Failed to get project context: %v", err)
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
+
+	// Get tenant and project slugs from context
+	tenantSlug, _ := c.Locals("tenantSlug").(string)
+	projectSlug, _ := c.Locals("projectSlug").(string)
 	
-	oauthConfig := utils.GetGoogleOAuthConfig()
+	// Use FIXED redirect URL from env (not dynamic with tenant/project)
+	// The tenant/project context is stored in Redis with the state token
+	redirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
+	if redirectURL == "" {
+		redirectURL = "http://localhost:3002/api/v1/auth/google/callback" // fallback
+	}
+	
+	oauthConfig := utils.GetGoogleOAuthConfigWithRedirect(redirectURL)
 	
 	// Generate a cryptographically secure random state for CSRF protection
 	state := uuid.New().String()
 	
-	// Store state in Redis with 5-minute expiration
+	// Store state in Redis with tenant/project context for 5-minute expiration
 	redisClient := configs.RedisClient
 	stateKey := "oauth:state:" + state
-	err := redisClient.Set(ctx, stateKey, "valid", 5*time.Minute).Err()
+	
+	// Store context as JSON to retrieve later: {tenantID, projectID, tenantSlug, projectSlug}
+	stateData := map[string]string{
+		"tenantID":    tenantID,
+		"projectID":   projectID,
+		"tenantSlug":  tenantSlug,
+		"projectSlug": projectSlug,
+	}
+	stateJSON, err := json.Marshal(stateData)
 	if err != nil {
-		log.Printf("Failed to store OAuth state: %v", err)
+		log.Printf("GoogleLogin: Failed to marshal state data: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to prepare OAuth state",
+		})
+	}
+	
+	err = redisClient.Set(ctx, stateKey, stateJSON, 5*time.Minute).Err()
+	if err != nil {
+		log.Printf("GoogleLogin: Failed to store OAuth state in Redis: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to initiate OAuth flow",
@@ -368,7 +407,6 @@ func GoogleLogin(c *fiber.Ctx) error {
 
 // GoogleCallback handles the OAuth callback from Google
 func GoogleCallback(c *fiber.Ctx) error {
-	log.Println("Google OAuth Callback received")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -381,25 +419,55 @@ func GoogleCallback(c *fiber.Ctx) error {
 		})
 	}
 
-	// Verify state exists in Redis
+	// Verify state exists in Redis and retrieve tenant/project context
 	redisClient := configs.RedisClient
 	stateKey := "oauth:state:" + state
+	
 	val, err := redisClient.Get(ctx, stateKey).Result()
-	if err != nil || val != "valid" {
-		log.Printf("Invalid or expired OAuth state: %v", err)
+	if err != nil {
+		log.Printf("GoogleCallback: Invalid or expired OAuth state: %v", err)
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Invalid or expired OAuth state. Please try again.",
 		})
 	}
 
+	// Parse state data to get tenant/project context
+	var stateData map[string]string
+	if err := json.Unmarshal([]byte(val), &stateData); err != nil {
+		log.Printf("GoogleCallback: Failed to parse OAuth state data: %v", err)eneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid OAuth state format",
+		})
+	}
+
 	// Delete the state from Redis (one-time use)
 	redisClient.Del(ctx, stateKey)
+
+	// Extract tenant and project context from state
+	tenantID := stateData["tenantID"]
+	projectID := stateData["projectID"]
+	tenantSlug := stateData["tenantSlug"]
+	projectSlug := stateData["projectSlug"]
+
+	if tenantID == "" || projectID == "" {
+		log.Printf("GoogleCallback: Missing tenant or project context")
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid OAuth state: missing tenant or project context",
+		})
+	}
+
+	// Set context in locals for downstream use
+	c.Locals("tenantID", tenantID)
+	c.Locals("projectID", projectID)
+	c.Locals("tenantSlug", tenantSlug)
+	c.Locals("projectSlug", projectSlug)
 
 	// Get the authorization code from query params
 	code := c.Query("code")
 	if code == "" {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Authorization code not found")
 			Status:  http.StatusBadRequest,
 			Message: "Authorization code not found",
 		})
@@ -407,10 +475,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	// Exchange code for token
 	oauthConfig := utils.GetGoogleOAuthConfig()
+	
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		log.Printf("Failed to exchange token: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to exchange token: %v", err)ON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to exchange authorization code",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -421,7 +489,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	client := oauthConfig.Client(ctx, token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		log.Printf("Failed to get user info: %v", err)
+		log.Printf("GoogleCallback: Failed to get user info from Google: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to get user information from Google",
@@ -433,7 +501,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Parse user info
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Failed to read response body: %v", err)
+		log.Printf("GoogleCallback: Failed to read response body: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to read user information",
@@ -443,31 +511,22 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	var googleUser map[string]interface{}
 	if err := json.Unmarshal(body, &googleUser); err != nil {
-		log.Printf("Failed to parse user info: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to parse user info: %v", err)s.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to parse user information",
 			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
 
-	// Extract tenant and project context from state or query params
-	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
-	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to get project context: " + err.Error(),
-		})
-	}
-
 	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
 	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+	
 	var authContainer models.ContainerModel
-	err = containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&authContainer)
+	filter := bson.M{"isAuthContainer": true}
+	
+	err = containersCollection.FindOne(ctx, filter).Decode(&authContainer)
 	if err != nil {
-		log.Printf("Failed to find auth container: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to find auth container: %v", err)ON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Authentication container not configured",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -475,7 +534,6 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	schemaName := authContainer.SchemaName
-	log.Printf("Using auth container schema: %s", schemaName)
 
 	// Find email field in the container schema
 	var emailFieldName string
@@ -487,7 +545,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	if emailFieldName == "" {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: No email field found in auth container")onse{
 			Status:  http.StatusInternalServerError,
 			Message: "Auth container must have an email field",
 		})
@@ -495,6 +553,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	email, ok := googleUser["email"].(string)
 	if !ok || email == "" {
+		log.Printf("GoogleCallback: Email not provided by Google")
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Email not provided by Google",
@@ -503,19 +562,22 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	// Check if user exists in project-specific collection
 	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	
 	var existingUser map[string]interface{}
-	err = collection.FindOne(ctx, bson.M{emailFieldName: email}).Decode(&existingUser)
+	userQuery := bson.M{emailFieldName: email}
+	
+	err = collection.FindOne(ctx, userQuery).Decode(&existingUser)
 
 	var userID string
 	var role string
 
 	if err != nil {
 		// User doesn't exist, create new user
-		log.Printf("Creating new user with email: %s", email)
 		
 		newUser := map[string]interface{}{
 			emailFieldName: email,
 		}
+		log.Printf("[GoogleCallback] Initial new user data: %+v", newUser)
 
 		// Helper function to check if a field exists in the schema
 		fieldExists := func(fieldName string) bool {
@@ -530,21 +592,26 @@ func GoogleCallback(c *fiber.Ctx) error {
 		// Add name if available and field exists in schema
 		if name, ok := googleUser["name"].(string); ok && fieldExists("name") {
 			newUser["name"] = name
+			log.Printf("[GoogleCallback] Added name to new user: %s", name)
 		}
 
 		// Add picture if available and field exists in schema
 		if picture, ok := googleUser["picture"].(string); ok && fieldExists("picture") {
 			newUser["picture"] = picture
+			log.Printf("[GoogleCallback] Added picture to new user: %s", picture)
 		}
 
 		// Add default role if field exists in schema
 		if fieldExists("role") {
 			newUser["role"] = "user"
+			log.Println("[GoogleCallback] Added default role: user")
 		}
 
+		log.Printf("[GoogleCallback] Final new user data: %+v", newUser)
+		log.Println("[GoogleCallback] Inserting new user into database...")
 		result, err := collection.InsertOne(ctx, newUser)
 		if err != nil {
-			log.Printf("Failed to create user: %v", err)
+			log.Printf("GoogleCallback: Failed to create user: %v", err)
 			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 				Status:  http.StatusInternalServerError,
 				Message: "Failed to create user",
@@ -556,32 +623,27 @@ func GoogleCallback(c *fiber.Ctx) error {
 		if authContainer.Redis.IsRedisCached {
 			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, &authContainer)
 			if err != nil {
-				log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
-				// Don't fail the request, just log the error
+				log.Printf("GoogleCallback: Failed to delete cache for schema %s: %v", schemaName, err)
 			}
 
-			// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-		for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
-			// Fetch the correct container model for the triggered schema
-			triggeredContainer, err := utils.GetContainerModel(tenantID, projectID, triggeredSchema)
-			if err != nil {
-				log.Printf("Error fetching container model for schema %s: %v", triggeredSchema, err)
-				continue
-			}
-			
-			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, triggeredContainer)
-			if err != nil {
-				// Log the error and continue with the next iteration
-				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-				continue
+			// Delete cache for triggered schemas
+			for _, triggeredSchema := range authContainer.Redis.TriggeredRedisCaches {
+				triggeredContainer, err := utils.GetContainerModel(tenantID, projectID, triggeredSchema)
+				if err != nil {
+					log.Printf("GoogleCallback: Error fetching container model for schema %s: %v", triggeredSchema, err)
+					continue
+				}
+				
+				err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, triggeredContainer)
+				if err != nil {
+					log.Printf("GoogleCallback: Error deleting cache for schema %s: %v", triggeredSchema, err)
+				}
 			}
 		}
-	}
 
 		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
 			userID = oid.Hex()
 		}
-		// Get role from newUser with improved extraction
 		if r, ok := newUser["role"].(string); ok && r != "" {
 			role = r
 		} else if roleOID, ok := newUser["role"].(primitive.ObjectID); ok {
@@ -589,10 +651,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 		existingUser = newUser
 		existingUser["_id"] = result.InsertedID
-	} else {
 		// User exists, log them in
-		log.Printf("User found with email: %s", email)
-		
 		if id, ok := existingUser["_id"].(primitive.ObjectID); ok {
 			userID = id.Hex()
 		} else if idStr, ok := existingUser["_id"].(string); ok {
@@ -612,15 +671,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 	}
 
-	// Get tenant and project slugs from context
-	tenantSlug, _ := c.Locals("tenantSlug").(string)
-	projectSlug, _ := c.Locals("projectSlug").(string)
-
 	// Generate JWT tokens with tenant and project context
 	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
 	if err != nil {
-		log.Printf("Failed to generate tokens: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to generate tokens: %v", err)ON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to generate tokens",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -646,23 +700,30 @@ func GoogleCallback(c *fiber.Ctx) error {
             return ""
         }(),
     }
-    // IP and UserAgent
+    
     ip := c.IP()
     userAgent := c.Get("User-Agent")
     
     if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
-        log.Printf("Failed to log google login: %v", err)
+        log.Printf("GoogleCallback: Failed to log login: %v", err)
     }
 
-	return c.JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Google login successful",
-		Data: &fiber.Map{
-			"accessToken":  tokenDetails.AccessToken,
-			"refreshToken": tokenDetails.RefreshToken,
-			"user":         existingUser,
-		},
-	})
+	// Redirect to frontend with tokens
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173" // fallback
+	}
+	
+	// Build the redirect URL with tenant/project context
+	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?accessToken=%s&refreshToken=%s",
+		frontendURL,
+		tenantSlug,
+		projectSlug,
+		tokenDetails.AccessToken,
+		tokenDetails.RefreshToken,
+	)
+	
+	return c.Redirect(redirectURL)
 }
 
 
