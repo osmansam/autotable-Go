@@ -136,6 +136,7 @@ type ContainerModel struct {
     DynamicFunctions []DynamicFunction   `bson:"dynamicFunctions"` 
     DynamicApis      []DynamicApiModel   `bson:"dynamicApis"`
     IsAuthContainer  bool                `bson:"isAuthContainer,omitempty"`
+    IsRegisterActive bool                `bson:"isRegisterActive,omitempty"`
     PopulatedRoutes  []string            `bson:"populatedRoutes"`
     Indexes          []Index             `bson:"indexes,omitempty"` // MongoDB indexes for performance
     RowAccess        *RowAccessRule      `bson:"rowAccess,omitempty"`

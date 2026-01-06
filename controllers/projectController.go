@@ -53,6 +53,131 @@ func ValidateSlug(slug string) bool {
 	return match && !regexp.MustCompile(`--`).MatchString(slug)
 }
 
+// createDefaultSchemas creates the default 'role' and 'auth' schemas for a new project
+func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error {
+	// Get the containers collection for this project
+	containersCollectionName := GetCollectionNameForProject(tenantID, projectID, "containers")
+	db := configs.ConnectDB().Database(projectsCollection.Database().Name())
+	containersCollection := db.Collection(containersCollectionName)
+
+	// 1. Create the 'role' schema first
+	log.Println("Creating default 'role' schema for project")
+	roleContainer := models.ContainerModel{
+		SchemaName: "role",
+		Fields: []models.Field{
+			{
+				Name:  "name",
+				Type:  "string",
+				Tag:   "",
+				Order: 1,
+			},
+		},
+		Routes: models.Routes{
+			CreateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			CreateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItemsWithPagination: models.RouteSpec{IsActive: true, Method: "GET"},
+			GetPipeline:                           models.RouteSpec{IsActive: true, Method: "GET"},
+			TestPipeline:                          models.RouteSpec{IsActive: true, Method: "POST"},
+			HandleSearchDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			HandleFilterDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "DELETE"},
+			UpdateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "PATCH"},
+			UpdateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "PATCH"},
+			GetDynamicModelItem:                   models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "DELETE"},
+			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
+		},
+		Redis: models.Redis{
+			IsRedisCached:        false,
+			CacheTime:            0,
+			TriggeredRedisCaches: []string{},
+		},
+		IsAuthContainer: false,
+		PopulatedRoutes: []string{},
+		Pipelines:       []models.PipelineStage{},
+		DynamicFunctions: []models.DynamicFunction{},
+		DynamicApis:     []models.DynamicApiModel{},
+		Indexes:         []models.Index{},
+	}
+
+	_, err := containersCollection.InsertOne(ctx, roleContainer)
+	if err != nil {
+		log.Printf("Failed to create role schema: %v", err)
+		return fmt.Errorf("failed to create role schema: %w", err)
+	}
+	log.Println("Role schema successfully created")
+
+	// 2. Create the 'auth' schema with email and role fields
+	log.Println("Creating default 'auth' schema for project")
+	authContainer := models.ContainerModel{
+		SchemaName: "auth",
+		Fields: []models.Field{
+			{
+				Name:              "email",
+				Type:              "string",
+				Tag:               "required",
+				IsLoginCredential: true,
+				Unique:            true,
+				Order:             1,
+			},
+			{
+				Name:             "role",
+				Type:             "objectId",
+				Tag:              "required",
+				ObjectSchemaName: "role",
+				PopulationSettings: &models.PopulationSettings{
+					FieldName:           "role",
+					PopulatedFields:     []string{"name"},
+					DisplayFields:       []string{"name"},
+					InputSelectionField: "name",
+					DisplayLabel:        "Role",
+				},
+				Order: 2,
+			},
+		},
+		Routes: models.Routes{
+			CreateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			CreateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "POST"},
+			GetAllDynamicModelItemsWithPagination: models.RouteSpec{IsActive: true, Method: "GET"},
+			GetPipeline:                           models.RouteSpec{IsActive: true, Method: "GET"},
+			TestPipeline:                          models.RouteSpec{IsActive: true, Method: "POST"},
+			HandleSearchDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			HandleFilterDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "DELETE"},
+			UpdateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "PATCH"},
+			UpdateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "PATCH"},
+			GetDynamicModelItem:                   models.RouteSpec{IsActive: true, Method: "GET"},
+			DeleteMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "DELETE"},
+			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
+			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
+		},
+		Redis: models.Redis{
+			IsRedisCached:        false,
+			CacheTime:            0,
+			TriggeredRedisCaches: []string{},
+		},
+		IsAuthContainer: true,
+		IsRegisterActive: true,
+		PopulatedRoutes: []string{},
+		Pipelines:       []models.PipelineStage{},
+		DynamicFunctions: []models.DynamicFunction{},
+		DynamicApis:     []models.DynamicApiModel{},
+		Indexes:         []models.Index{},
+	}
+
+	_, err = containersCollection.InsertOne(ctx, authContainer)
+	if err != nil {
+		log.Printf("Failed to create auth schema: %v", err)
+		return fmt.Errorf("failed to create auth schema: %w", err)
+	}
+	log.Println("Auth schema successfully created")
+
+	return nil
+}
+
 // CreateProject creates a new project within a tenant
 func CreateProject(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -203,6 +328,14 @@ func CreateProject(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Warning: Failed to create index on containers collection: %v", err)
 		// Don't fail the project creation, just log it
+	}
+
+	// Create default schemas (role and auth)
+	err = createDefaultSchemas(ctx, tenantID, newProject.ID.Hex())
+	if err != nil {
+		log.Printf("Warning: Failed to create default schemas: %v", err)
+		// Don't fail the project creation, just log the warning
+		// The schemas can be created manually later if needed
 	}
 
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
