@@ -435,7 +435,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Parse state data to get tenant/project context
 	var stateData map[string]string
 	if err := json.Unmarshal([]byte(val), &stateData); err != nil {
-		log.Printf("GoogleCallback: Failed to parse OAuth state data: %v", err)eneralResponse{
+		log.Printf("GoogleCallback: Failed to parse OAuth state data: %v", err)
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Invalid OAuth state format",
 		})
@@ -468,6 +469,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	code := c.Query("code")
 	if code == "" {
 		log.Printf("GoogleCallback: Authorization code not found")
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Authorization code not found",
 		})
@@ -478,7 +480,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		log.Printf("GoogleCallback: Failed to exchange token: %v", err)ON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to exchange token: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to exchange authorization code",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -511,7 +514,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	var googleUser map[string]interface{}
 	if err := json.Unmarshal(body, &googleUser); err != nil {
-		log.Printf("GoogleCallback: Failed to parse user info: %v", err)s.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to parse user info: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to parse user information",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -526,7 +530,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	
 	err = containersCollection.FindOne(ctx, filter).Decode(&authContainer)
 	if err != nil {
-		log.Printf("GoogleCallback: Failed to find auth container: %v", err)ON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to find auth container: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Authentication container not configured",
 			Data:    &fiber.Map{"error": err.Error()},
@@ -545,7 +550,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	if emailFieldName == "" {
-		log.Printf("GoogleCallback: No email field found in auth container")onse{
+		log.Printf("GoogleCallback: No email field found in auth container")
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Auth container must have an email field",
 		})
@@ -573,11 +579,9 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	if err != nil {
 		// User doesn't exist, create new user
-		
 		newUser := map[string]interface{}{
 			emailFieldName: email,
 		}
-		log.Printf("[GoogleCallback] Initial new user data: %+v", newUser)
 
 		// Helper function to check if a field exists in the schema
 		fieldExists := func(fieldName string) bool {
@@ -592,23 +596,18 @@ func GoogleCallback(c *fiber.Ctx) error {
 		// Add name if available and field exists in schema
 		if name, ok := googleUser["name"].(string); ok && fieldExists("name") {
 			newUser["name"] = name
-			log.Printf("[GoogleCallback] Added name to new user: %s", name)
 		}
 
 		// Add picture if available and field exists in schema
 		if picture, ok := googleUser["picture"].(string); ok && fieldExists("picture") {
 			newUser["picture"] = picture
-			log.Printf("[GoogleCallback] Added picture to new user: %s", picture)
 		}
 
 		// Add default role if field exists in schema
 		if fieldExists("role") {
 			newUser["role"] = "user"
-			log.Println("[GoogleCallback] Added default role: user")
 		}
 
-		log.Printf("[GoogleCallback] Final new user data: %+v", newUser)
-		log.Println("[GoogleCallback] Inserting new user into database...")
 		result, err := collection.InsertOne(ctx, newUser)
 		if err != nil {
 			log.Printf("GoogleCallback: Failed to create user: %v", err)
@@ -651,6 +650,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 		existingUser = newUser
 		existingUser["_id"] = result.InsertedID
+	} else {
 		// User exists, log them in
 		if id, ok := existingUser["_id"].(primitive.ObjectID); ok {
 			userID = id.Hex()
@@ -674,7 +674,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Generate JWT tokens with tenant and project context
 	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
 	if err != nil {
-		log.Printf("GoogleCallback: Failed to generate tokens: %v", err)ON(responses.GeneralResponse{
+		log.Printf("GoogleCallback: Failed to generate tokens: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to generate tokens",
 			Data:    &fiber.Map{"error": err.Error()},
