@@ -81,6 +81,7 @@ func main() {
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
+	routes.SetupExcelRoutes(app, "api/v1") // Excel upload routes
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
