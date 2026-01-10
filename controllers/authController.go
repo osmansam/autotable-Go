@@ -715,13 +715,25 @@ func GoogleCallback(c *fiber.Ctx) error {
 		frontendURL = "http://localhost:5173" // fallback
 	}
 	
-	// Build the redirect URL with tenant/project context
-	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?accessToken=%s&refreshToken=%s",
+	// Serialize user data to JSON and encode for URL
+	userJSON, err := json.Marshal(existingUser)
+	if err != nil {
+		log.Printf("GoogleCallback: Failed to marshal user data: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to serialize user data",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+	
+	// Build the redirect URL with tenant/project context and user data
+	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?accessToken=%s&refreshToken=%s&user=%s",
 		frontendURL,
 		tenantSlug,
 		projectSlug,
 		tokenDetails.AccessToken,
 		tokenDetails.RefreshToken,
+		string(userJSON),
 	)
 	
 	return c.Redirect(redirectURL)
