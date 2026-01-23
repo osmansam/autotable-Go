@@ -120,12 +120,24 @@ func ConnectRedis() *redis.Client {
 
 // Global variables to hold our database connections.
 var (
-	DB          *mongo.Client   = ConnectDB()
-	RedisClient *redis.Client   = ConnectRedis()
-	database    *mongo.Database = DB.Database(os.Getenv("COLLECTION_NAME"))
+	DB          *mongo.Client
+	RedisClient *redis.Client
+	database    *mongo.Database
+	dbInitialized bool
 )
+
+// InitDB initializes the database connections if not already initialized.
+func InitDB() {
+	if !dbInitialized {
+		DB = ConnectDB()
+		RedisClient = ConnectRedis()
+		database = DB.Database(os.Getenv("COLLECTION_NAME"))
+		dbInitialized = true
+	}
+}
 
 // GetCollection returns a collection from the MongoDB database.
 func GetCollection(collectionName string) *mongo.Collection {
+	InitDB()
 	return database.Collection(collectionName)
 }

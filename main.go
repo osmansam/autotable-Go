@@ -52,8 +52,7 @@ func main() {
 	//cors
 	app.Use(cors.New())
 	//run database
-	configs.ConnectDB()
-	configs.ConnectRedis()
+	configs.InitDB()
 
 //websocket wiring
 	app.Use("/ws", func(c *fiber.Ctx) error {
