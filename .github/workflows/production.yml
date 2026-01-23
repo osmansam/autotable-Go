@@ -66,24 +66,24 @@ jobs:
             --exclude='logs' \
             ./ $SSH_USER@$DROPLET_IP:~/autotable/
 
-          # Deploy with docker-compose
+          # Deploy with docker compose
           ssh -i ~/.ssh/id_rsa $SSH_USER@$DROPLET_IP << 'ENDSSH'
             cd ~/autotable
             
             # Stop and remove old containers
-            docker-compose down || true
+            docker compose down || true
             
             # Pull latest images and rebuild
-            docker-compose build --no-cache
+            docker compose build --no-cache
             
             # Start services
-            docker-compose up -d
+            docker compose up -d
             
             # Clean up old images
             docker image prune -af || true
             
             # Show running containers
-            docker-compose ps
+            docker compose ps
           ENDSSH
 
       - name: Health check
