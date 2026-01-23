@@ -10,12 +10,19 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
 	"github.com/gofiber/websocket/v2"
+	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
+	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/routes"
 	"github.com/osmansam/autotableGo/ws"
 )
 
 func main() {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		log.Println("Warning: .env file not found, using system environment variables")
+	}
+	
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	app := fiber.New()
 	
@@ -59,11 +66,22 @@ func main() {
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
 	//routes
-	routes.ContainerRoutes("api/v1/container", app)
-	routes.DynamicRoutes("api/v1/dynamic", app)
-	routes.AuthRoutes("api/v1/auth", app)
-	routes.PageRoutes("api/v1/page", app)
-	routes.AuditRoutes("api/v1/audit-logs", app)
+	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
+	routes.ProjectRoutes(app)    // Project management routes
+	
+	// Global OAuth callback route (doesn't require tenant/project in URL)
+	// This is the fixed URL registered in Google Cloud Console
+	// Tenant/project context is retrieved from Redis state
+	app.Get("/api/v1/auth/google/callback", controllers.GoogleCallback)
+	
+	// Project-scoped routes with tenant and project slugs in URL
+	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
+	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
+	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
+	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
+	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
+	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
+	routes.SetupExcelRoutes(app, "api/v1") // Excel upload routes
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")

@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -25,11 +26,10 @@ type DynamicFunctionsUpdate struct {
 type PipelinesUpdate struct {
     Pipelines []models.PipelineStage `json:"Pipelines"`
 }
-var containerCollection *mongo.Collection = configs.GetCollection( "containers")
 var validate = validator.New()
 
 // ensureRoleSchemaExists checks if a "role" schema exists and creates it if not
-func ensureRoleSchemaExists(ctx context.Context) error {
+func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Collection) error {
 	// Check if role schema already exists
 	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": "role"})
 	if err != nil {
@@ -100,6 +100,20 @@ func CreateContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context. Please ensure you are authenticated and have switched to a project.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+
 	var container models.ContainerModel
 
 	log.Println("Parsing request body for CreateContainer")
@@ -164,7 +178,7 @@ func CreateContainer(c *fiber.Ctx) error {
 		}
 	
 		// Ensure role schema exists when creating an auth container
-		if err := ensureRoleSchemaExists(ctx); err != nil {
+		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
 		}
@@ -211,17 +225,18 @@ func CreateContainer(c *fiber.Ctx) error {
 	}
 
 	// Create indexes for the new container
-	if err := utils.EnsureIndexes(ctx, &newContainer); err != nil {
+	if err := utils.EnsureIndexes(ctx, &newContainer, tenantID, projectID); err != nil {
 		log.Printf("Warning: Failed to create indexes for schema %s: %v", newContainer.SchemaName, err)
 		// Don't fail the request, just log the warning
 	}
 
-	// Invalidate Redis cache for all containers
-	configs.RedisClient.Del(ctx, "containers:all")
+	// Invalidate Redis cache for all containers (project-specific)
+	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
 	log.Println("Invalidated containers cache after creation")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -236,11 +251,25 @@ func GetAllContainers(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Try to get from Redis cache first
-	redisKey := "containers:all"
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil || tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, err, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+
+	// Try to get from Redis cache first (project-specific key)
+	redisKey := fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)
 	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 		var containers []models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &containers) == nil {
+			// Sort fields by order for each container before returning
+			for i := range containers {
+				containers[i].SortFieldsByOrder()
+			}
 			log.Println("Fetched all containers from Redis cache")
 			return c.JSON(containers)
 		}
@@ -264,6 +293,8 @@ func GetAllContainers(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, err, "An error occurred while processing the retrieved containers. Please try again later.")
 		}
 
+		// Sort fields by order for each container
+		singleContainer.SortFieldsByOrder()
 		containers = append(containers, singleContainer)
 	}
 	if err != nil {
@@ -284,6 +315,20 @@ func GetAllContainers(c *fiber.Ctx) error {
 func DeleteContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
@@ -317,26 +362,27 @@ func DeleteContainer(c *fiber.Ctx) error {
 	}
 
 	// Drop indexes for the container (before dropping collection)
-	if err := utils.DropIndexes(ctx, container.SchemaName); err != nil {
-		log.Printf("Warning: Failed to drop indexes for schema %s: %v", container.SchemaName, err)
+	projectCollectionName := utils.GetProjectCollectionName(tenantID, projectID, container.SchemaName)
+	if err := utils.DropIndexes(ctx, projectCollectionName); err != nil {
+		log.Printf("Warning: Failed to drop indexes for schema %s: %v", projectCollectionName, err)
 	}
 
 	// Drop the dynamic collection associated with the container.
-	collectionName := container.SchemaName
-	log.Printf("Dropping collection '%s' from the database", collectionName)
-	err = containerCollection.Database().Collection(collectionName).Drop(ctx)
+	log.Printf("Dropping collection '%s' from the database", projectCollectionName)
+	err = containerCollection.Database().Collection(projectCollectionName).Drop(ctx)
 	if err != nil {
-		log.Printf("Failed to drop collection '%s': %v", collectionName, err)
+		log.Printf("Failed to drop collection '%s': %v", projectCollectionName, err)
 		return utils.SendErrorResponse(c, err, "Container deleted but failed to drop the corresponding collection.")
 	}
 
-	// Invalidate Redis cache for all containers and this specific container
-	configs.RedisClient.Del(ctx, "containers:all")
-	configs.RedisClient.Del(ctx, "container:"+deleteIdStr)
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+	configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", deleteIdStr, tenantID, projectID))
 	log.Println("Invalidated containers cache after deletion")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container and its corresponding collection successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -350,6 +396,20 @@ func DeleteContainer(c *fiber.Ctx) error {
 func UpdateContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
 	var updatedContainer models.ContainerModel
 
@@ -417,7 +477,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 		}
 		
 		// Ensure role schema exists when updating to an auth container
-		if err := ensureRoleSchemaExists(ctx); err != nil {
+		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
 		}
@@ -443,18 +503,19 @@ func UpdateContainer(c *fiber.Ctx) error {
 	}
 
 	// Rebuild indexes for the updated container
-	if err := utils.RebuildIndexes(ctx, &updatedContainer); err != nil {
+	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
 		log.Printf("Warning: Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
 		// Don't fail the request, just log the warning
 	}
 
-	// Invalidate Redis cache for all containers and this specific container
-	configs.RedisClient.Del(ctx, "containers:all")
-	configs.RedisClient.Del(ctx, "container:"+updateIdStr)
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+	configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", updateIdStr, tenantID, projectID))
 	log.Println("Invalidated containers cache after update")
 
 	// Emit WebSocket event for container change
-	ws.EmitContainerChanged()
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr)
 
 	log.Println("Container successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -468,6 +529,20 @@ func UpdateContainer(c *fiber.Ctx) error {
 func UpdatePipelines(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
+    if tenantID == "" || projectID == "" {
+        log.Println("Missing tenant or project context")
+        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+    }
+
+    // Get project-specific container collection
+    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
     containerIdStr := c.Params("id")
     containerId, err := primitive.ObjectIDFromHex(containerIdStr)
@@ -502,13 +577,14 @@ func UpdatePipelines(c *fiber.Ctx) error {
         })
     }
 
-    // Invalidate Redis cache for all containers and this specific container
-    configs.RedisClient.Del(ctx, "containers:all")
-    configs.RedisClient.Del(ctx, "container:"+containerIdStr)
+    // Invalidate Redis cache for all containers and this specific container (project-specific)
+    configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+    configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID))
     log.Println("Invalidated containers cache after pipeline update")
 
     // Emit WebSocket event for container change
-    ws.EmitContainerChanged()
+    userIDStr, _ := c.Locals("userID").(string)
+    ws.EmitContainerChanged(userIDStr)
 
     log.Println("Pipelines successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
@@ -522,6 +598,20 @@ func UpdatePipelines(c *fiber.Ctx) error {
 func UpdateDynamicFunctions(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
+    if tenantID == "" || projectID == "" {
+        log.Println("Missing tenant or project context")
+        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+    }
+
+    // Get project-specific container collection
+    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
     containerIdStr := c.Params("id")
     containerId, err := primitive.ObjectIDFromHex(containerIdStr)
@@ -556,13 +646,14 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
         })
     }
 
-    // Invalidate Redis cache for all containers and this specific container
-    configs.RedisClient.Del(ctx, "containers:all")
-    configs.RedisClient.Del(ctx, "container:"+containerIdStr)
+    // Invalidate Redis cache for all containers and this specific container (project-specific)
+    configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+    configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID))
     log.Println("Invalidated containers cache after dynamic functions update")
 
     // Emit WebSocket event for container change
-    ws.EmitContainerChanged()
+    userIDStr, _ := c.Locals("userID").(string)
+    ws.EmitContainerChanged(userIDStr)
 
     log.Println("DynamicFunctions successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
@@ -577,6 +668,22 @@ func GetContainer(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+
 	containerIdStr := c.Params("id")
 	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
 	if err != nil {
@@ -584,11 +691,13 @@ func GetContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
 
-	// Try to get from Redis cache first
-	redisKey := "container:" + containerIdStr
+	// Try to get from Redis cache first (project-specific key)
+	redisKey := fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID)
 	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 		var container models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &container) == nil {
+			// Sort fields by order before returning
+			container.SortFieldsByOrder()
 			log.Printf("Fetched container %s from Redis cache", containerIdStr)
 			return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 				Status:  http.StatusOK,
@@ -614,6 +723,9 @@ func GetContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
 	}
 
+	// Sort fields by order before caching and returning
+	container.SortFieldsByOrder()
+
 	// Cache the result in Redis (30 minutes TTL)
 	if payload, err := json.Marshal(container); err == nil {
 		configs.RedisClient.Set(ctx, redisKey, payload, 30*time.Minute)
@@ -623,7 +735,7 @@ func GetContainer(c *fiber.Ctx) error {
 	log.Println("Container successfully retrieved from database")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
-		Message: "Container successfully retrieved.",
+		Message: "Container successfully retrieved",
 		Data:    &fiber.Map{"data": container},
 	})
 }
@@ -632,6 +744,20 @@ func GetContainer(c *fiber.Ctx) error {
 func GetAllContainerTypes(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context from URL slugs with JWT validation
+    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+    if err != nil {
+        log.Printf("Failed to get project context: %v", err)
+        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+    }
+    if tenantID == "" || projectID == "" {
+        log.Println("Missing tenant or project context")
+        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+    }
+
+    // Get project-specific container collection
+    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
     // Retrieve all container documents from the collection.
     cursor, err := containerCollection.Find(ctx, bson.M{})

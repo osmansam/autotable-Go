@@ -34,6 +34,7 @@ type Field struct {
     Equation          string              `bson:"equation,omitempty"`
     AuthorizeRole     []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
     IsAuthorized      bool                `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`
+    Order             int                 `bson:"order,omitempty" json:"order,omitempty"`
 }
 
 type PopulationSettings struct {
@@ -126,18 +127,24 @@ type Index struct {
 }
 
 type ContainerModel struct {
-    ID               primitive.ObjectID `bson:"_id,omitempty"`
-    SchemaName       string             `bson:"schemaName"`
-    Fields           []Field            `bson:"fields"`
-    Routes           Routes             `bson:"routes"`
-    Redis            Redis              `bson:"redis"`
-    Pipelines        []PipelineStage    `bson:"pipelines"` 
-    DynamicFunctions []DynamicFunction  `bson:"dynamicFunctions"` 
-    DynamicApis      []DynamicApiModel  `bson:"dynamicApis"`
-    IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
-    PopulatedRoutes  []string           `bson:"populatedRoutes"`
-    Indexes          []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
-    RowAccess        *RowAccessRule     `bson:"rowAccess,omitempty"`
+    ID               primitive.ObjectID  `bson:"_id,omitempty"`
+    SchemaName       string              `bson:"schemaName"`
+    Fields           []Field             `bson:"fields"`
+    Routes           Routes              `bson:"routes"`
+    Redis            Redis               `bson:"redis"`
+    Pipelines        []PipelineStage     `bson:"pipelines"` 
+    DynamicFunctions []DynamicFunction   `bson:"dynamicFunctions"` 
+    DynamicApis      []DynamicApiModel   `bson:"dynamicApis"`
+    IsAuthContainer  bool                `bson:"isAuthContainer,omitempty"`
+    IsRegisterActive bool                `bson:"isRegisterActive,omitempty"`
+    PopulatedRoutes  []string            `bson:"populatedRoutes"`
+    Indexes          []Index             `bson:"indexes,omitempty"` // MongoDB indexes for performance
+    RowAccess        *RowAccessRule      `bson:"rowAccess,omitempty"`
+    
+    // Multi-tenancy fields
+    TenantID         *primitive.ObjectID `bson:"tenantId,omitempty" json:"tenantId,omitempty"`     // Project-scoped containers
+    ProjectID        *primitive.ObjectID `bson:"projectId,omitempty" json:"projectId,omitempty"`   // Project-scoped containers
+    CollectionName   string              `bson:"collectionName,omitempty" json:"collectionName,omitempty"` // Stores "schemaName_<projectIdHex>"
 }
 
 // Condition is the same shape you already use for filters / rowClass
@@ -167,4 +174,15 @@ type AuditLogsConfig struct {
 var RestrictedSchemaNames = []string{
     "containers",
 }//this is needed so that user container is not created by mistake and get all the data.
+
+// SortFieldsByOrder sorts fields by their order property (low to high)
+func (c *ContainerModel) SortFieldsByOrder() {
+    for i := 0; i < len(c.Fields); i++ {
+        for j := i + 1; j < len(c.Fields); j++ {
+            if c.Fields[i].Order > c.Fields[j].Order {
+                c.Fields[i], c.Fields[j] = c.Fields[j], c.Fields[i]
+            }
+        }
+    }
+}
 

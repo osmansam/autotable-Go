@@ -20,3 +20,13 @@ func GetGoogleOAuthConfig() *oauth2.Config {
 		Endpoint: google.Endpoint,
 	}
 }
+
+// GetGoogleOAuthConfigWithRedirect returns OAuth2 config with custom redirect URL
+func GetGoogleOAuthConfigWithRedirect(redirectURL string) *oauth2.Config {
+	config := GetGoogleOAuthConfig()
+	if redirectURL != "" {
+		config.RedirectURL = redirectURL
+	}
+	return config
+}
+

@@ -28,6 +28,22 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// getProjectContext extracts tenantID and projectID from fiber context
+// Returns an error if either is missing
+func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
+	// Use the new utility that extracts from URL slugs (or falls back to query/locals)
+	tenantID, projectID, err = utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return "", "", err
+	}
+	
+	if tenantID == "" || projectID == "" {
+		return "", "", fmt.Errorf("missing tenant or project context - ensure you are authenticated and have switched to a project")
+	}
+	
+	return tenantID, projectID, nil
+}
+
 // convertFormFieldTypes converts string values from multipart forms to their appropriate types
 func convertFormFieldTypes(itemMap map[string]interface{}, container *models.ContainerModel) {
 	for _, field := range container.Fields {
@@ -175,19 +191,28 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    
+    // Extract userID for WebSocket events
+    userIDStr, _ := c.Locals("userID").(string)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     schemaName := c.Query("schemaName")
-    log.Printf("Creating item for schema: %s", schemaName)
+    log.Printf("Creating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
     // Fetch the associated container model
 	var container *models.ContainerModel
-	var err error
 
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		// Use the container model from the context if available
 		container, _ = storedContainer.(*models.ContainerModel)
 	} else {
 		// Fetch container model if not available in context
-		container, err = utils.GetContainerModel(schemaName)
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 	return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -282,7 +307,12 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     // Calculate equation fields
     for _, field := range container.Fields {
         if field.Equation != "" {
-            val, err := utils.EvaluateEquation(field.Equation, itemMap)
+            ctx := &utils.EquationContext{
+                TenantID:  tenantID,
+                ProjectID: projectID,
+                Data:      itemMap,
+            }
+            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
             if err != nil {
                 log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
                 return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -314,8 +344,8 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
-    // Get the associated collection for this schema
-    var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
+    // Get the project-specific collection for this schema
+    var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
     // Checking for Unique fields
     for _, field := range container.Fields {
@@ -368,12 +398,12 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // Log audit
-    if err := utils.LogCreateAction(ctx, container, utils.GetUserFromContext(c), itemMap); err != nil {
+    if err := utils.LogCreateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), itemMap); err != nil {
         log.Printf("Failed to log create action: %v", err)
     }
 	// Delete the cache for this schema
 if container.Redis.IsRedisCached {
-    err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+    err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
     if err != nil {
         log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
@@ -381,7 +411,7 @@ if container.Redis.IsRedisCached {
 
     // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
     for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-        err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+        err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
         if err != nil {
         // Log the error and continue with the next iteration
         log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
@@ -390,12 +420,15 @@ if container.Redis.IsRedisCached {
     }
 }
     // Emit WebSocket invalidate event for this schema
-    ws.EmitInvalidate(schemaName)
+    ws.EmitInvalidate(schemaName, userIDStr)
+    
+    // Strip hashed fields from response
+    utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
     
     // Successfully saved the item
     log.Printf("Item successfully created for schema: %s", schemaName)
     return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-        Status: http.StatusCreated, Message: "Item successfully created.", Data: result,
+        Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
     })
 }
 func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
@@ -403,16 +436,25 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
 	schemaName := c.Query("schemaName")
-	log.Printf("Creating multiple items for schema: %s", schemaName)
+	log.Printf("Creating multiple items for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
 	// Fetch the container model (either from the context or by fetching it)
 	var container *models.ContainerModel
-	var err error
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
 	} else {
-		container, err = utils.GetContainerModel(schemaName)
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -549,7 +591,12 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
     for i, item := range items {
         for _, field := range container.Fields {
             if field.Equation != "" {
-                val, err := utils.EvaluateEquation(field.Equation, item)
+                ctx := &utils.EquationContext{
+                    TenantID:  tenantID,
+                    ProjectID: projectID,
+                    Data:      item,
+                }
+                val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
                 if err != nil {
                     log.Printf("Error evaluating equation for field %s in item %d: %v", field.Name, i, err)
                     return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -605,8 +652,8 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		items[i] = item
 	}
 
-	// Get the MongoDB collection for this schema.
-	currentCollection := configs.GetCollection(schemaName)
+	// Get the project-specific MongoDB collection for this schema.
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
 	// Check for unique field constraints.
 	// For each field that is marked as Unique, we check both within the request and against existing documents.
@@ -681,14 +728,14 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	if len(bulkCreatedDocs) > 0 {
-		if err := utils.LogBulkCreateAction(ctx, container, utils.GetUserFromContext(c), bulkCreatedDocs); err != nil {
+		if err := utils.LogBulkCreateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkCreatedDocs); err != nil {
 			log.Printf("Failed to log bulk create: %v", err)
 		}
 	}
 
 	// Clear the cache for this schema.
 	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
 		if err != nil {
 			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
 			return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
@@ -696,9 +743,9 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 		// Also clear cache for each schema in TriggeredRedisCaches.
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			otherContainer, err := utils.GetContainerModel(triggeredSchema)
+			otherContainer, err := utils.GetContainerModel(tenantID, projectID, triggeredSchema)
 			if err == nil {
-				utils.DeleteCacheForSchema(ctx, triggeredSchema, otherContainer)
+				utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, otherContainer)
 			}
 			if err != nil {
 				log.Printf("Error deleting cache for schema '%s': %v", triggeredSchema, err)
@@ -706,12 +753,12 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				continue
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
 	
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -727,6 +774,13 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     // 2. Load container model (requires schemaName)
     container, err := utils.FetchContainerModel(c)
     if err != nil {
@@ -738,7 +792,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     schema := container.SchemaName
 
     // 3. Determine caching
-    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", schema, container)
+    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", tenantID, projectID, schema, container)
     if shouldCache {
         		if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 			var items []map[string]interface{}
@@ -755,7 +809,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     // 4. Query database (no pagination)
     pager := utils.Pager{Enabled: false}
     opts := options.Find() // no skip/limit
-    items, err := utils.QueryAndDecode(ctx, schema, bson.M{}, opts, &pager)
+    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schema, bson.M{}, opts, &pager)
     if err != nil {
         log.Printf("DB query failed for schema %q: %v", schema, err)
         return utils.SendErrorResponse(c, err, "Failed to fetch items")
@@ -765,7 +819,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 6. Populate if needed
-    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItems", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
     if err != nil {
         log.Printf("Population failed for schema %q: %v", schema, err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -774,7 +828,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
     // 6.5. Filter fields based on user role authorization
     userRole, _ := c.Locals("userRole").(string)
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
+
 
     // 7. Cache the result if enabled
     if shouldCache {
@@ -794,6 +848,13 @@ func GetItemsForSelection(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     // Get schema name and field name from query params
     schemaName := c.Query("schemaName")
     fieldName := c.Query("fieldName")
@@ -806,10 +867,10 @@ func GetItemsForSelection(c *fiber.Ctx) error {
         })
     }
 
-    log.Printf("Getting items for selection: schema=%s, field=%s", schemaName, fieldName)
+    log.Printf("Getting items for selection: schema=%s, field=%s (tenant: %s, project: %s)", schemaName, fieldName, tenantID, projectID)
 
     // Load container model to check if field is hashed
-    container, err := utils.GetContainerModel(schemaName)
+    container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
     if err != nil {
         log.Printf("Failed to get container model for schema %s: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to load schema configuration")
@@ -845,8 +906,8 @@ func GetItemsForSelection(c *fiber.Ctx) error {
         }
     }
 
-    // Query the collection with projection for only _id and fieldName
-    collection := configs.GetCollection(schemaName)
+    // Query the project-specific collection with projection for only _id and fieldName
+    collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
     projection := bson.M{
         "_id":     1,
         fieldName: 1,
@@ -869,7 +930,6 @@ func GetItemsForSelection(c *fiber.Ctx) error {
     // Filter fields based on user role authorization
     userRole, _ := c.Locals("userRole").(string)
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
     return c.JSON(items)
 }
@@ -881,9 +941,20 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
-	log.Printf("Deleting item for schema: %s", schemaName)
+	log.Printf("Deleting item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
     
     // Attempting to convert the ID from string to ObjectID
 	deleteIdStr := c.Params("id")
@@ -919,7 +990,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		if container.SchemaName != schemaName { // Skip the current schema
 			for _, field := range container.Fields {
 				if field.Type == "objectId" && field.Name == schemaName { // Field referencing the schema as an objectId
-					collection := configs.GetCollection(container.SchemaName)
+					collection := utils.GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName)
 					count, err := collection.CountDocuments(ctx, bson.M{field.Name: deleteId})
 					if err != nil {
 						log.Printf("Database error while checking references for schema: %s, error: %v", schemaName, err)
@@ -942,7 +1013,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		if container.SchemaName != schemaName { // Skip the current schema
 			for _, field := range container.Fields {
 				if field.Type == "objectId" && field.Name == schemaName && field.IsForceDelete { // Field referencing the schema as an objectId
-					collection := configs.GetCollection( container.SchemaName)
+					collection := utils.GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName)
 					_, delErr := collection.DeleteMany(ctx, bson.M{field.Name: deleteId})
 					if delErr != nil {
 						log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, delErr)
@@ -958,16 +1029,15 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
         // Fetch container model if not available in context
-        var err error
-        container, err = utils.GetContainerModel(schemaName)
+        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
         if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
               return utils.SendErrorResponse(c, err, "Failed to fetch container model")
         }
     }
 	
-	// Using the schema name to determine the appropriate collection
-	var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
+	// Using the project-specific collection for this schema
+	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
     // Fetch item before deletion for audit
     var deletedDoc bson.M
@@ -976,7 +1046,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
     }
 	
 	// Attempting to delete the item with the given ID from the specified collection
-	result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
+	_, err = currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
 		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", schemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to delete the item from the specified collection.")
@@ -984,13 +1054,13 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 
     // Log audit
     if deletedDoc != nil {
-         if err := utils.LogDeleteAction(ctx, container, utils.GetUserFromContext(c), deletedDoc); err != nil {
+         if err := utils.LogDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), deletedDoc); err != nil {
             log.Printf("Failed to log delete action: %v", err)
          }
     }
 	// Now attempting to delete the related cache
 if container.Redis.IsRedisCached {
-    err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+    err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
     if err != nil {
 		log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
@@ -998,7 +1068,7 @@ if container.Redis.IsRedisCached {
 
     // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
     for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-        err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+        err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
         if err != nil {
         // Log the error and continue with the next iteration
         log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
@@ -1007,14 +1077,24 @@ if container.Redis.IsRedisCached {
     }
 }
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
+	
+	// Convert deletedDoc to map[string]interface{} for response
+	responseItem := make(map[string]interface{})
+	if deletedDoc != nil {
+		for k, v := range deletedDoc {
+			responseItem[k] = v
+		}
+		// Strip hashed fields from response
+		utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
+	}
 	
 	// Successfully deleted the item
 	log.Printf("Item successfully deleted for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Item successfully deleted from the specified collection.",
-		Data:   result,
+		Data:   responseItem,
 	})
 }
 
@@ -1022,8 +1102,19 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
 	schemaName := c.Query("schemaName")
-	log.Printf("Deleting multiple items for schema: %s", schemaName)
+	log.Printf("Deleting multiple items for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
 	// Parse the request body as a JSON array.
 	var items []map[string]interface{}
@@ -1044,15 +1135,15 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
 	} else {
-		container, err = utils.GetContainerModel(schemaName)
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
 		}
 	}
 
-	// Get the collection for the current schema.
-	currentCollection := configs.GetCollection(schemaName)
+	// Get the project-specific collection for the current schema.
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
 	// Slices to keep track of successful and failed deletions.
 	var successfulDeletes []interface{}
@@ -1124,7 +1215,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 			for _, field := range otherContainer.Fields {
 				// If the field references the current schema.
 				if field.Type == "objectId" && field.Name == schemaName {
-					coll := configs.GetCollection(otherContainer.SchemaName)
+					coll := utils.GetDynamicCollectionForProject(tenantID, projectID, otherContainer.SchemaName)
 					count, err := coll.CountDocuments(ctx, bson.M{field.Name: deleteId})
 					if err != nil {
 						utils.ReleaseLock(lockKey, lockID)
@@ -1164,7 +1255,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 			}
 			for _, field := range otherContainer.Fields {
 				if field.Type == "objectId" && field.Name == schemaName && field.IsForceDelete {
-					coll := configs.GetCollection(otherContainer.SchemaName)
+					coll := utils.GetDynamicCollectionForProject(tenantID, projectID, otherContainer.SchemaName)
 					if _, err := coll.DeleteMany(ctx, bson.M{field.Name: deleteId}); err != nil {
 						// Log error but continue with deletion.
 						log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, err)
@@ -1213,15 +1304,15 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Clear the cache for this schema if caching is enabled.
 	if container.Redis.IsRedisCached {
-		if err = utils.DeleteCacheForSchema(ctx, schemaName, container); err != nil {
+		if err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container); err != nil {
 			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
 		}
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			if err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container); err != nil {
+			if err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container); err != nil {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
@@ -1232,12 +1323,12 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	}
 	// Emit WebSocket invalidate event for this schema if there were any successful deletions
 	if len(successfulDeletes) > 0 {
-		ws.EmitInvalidate(schemaName)
+		ws.EmitInvalidate(schemaName, userIDStr)
 	}
 
     // Log Bulk Audit
     if len(bulkDeletedDocs) > 0 {
-         if err := utils.LogBulkDeleteAction(ctx, container, utils.GetUserFromContext(c), bulkDeletedDocs); err != nil {
+         if err := utils.LogBulkDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkDeletedDocs); err != nil {
              log.Printf("Failed to log bulk delete: %v", err)
          }
     }
@@ -1254,8 +1345,20 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    
+    // Extract userID for WebSocket events
+    userIDStr, _ := c.Locals("userID").(string)
+    log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
+    
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     schemaName := c.Query("schemaName")
-    log.Printf("Updating item for schema: %s", schemaName)
+    log.Printf("Updating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
     updateIdStr := c.Params("id")
     updateId, err := primitive.ObjectIDFromHex(updateIdStr)
     if err != nil {
@@ -1284,7 +1387,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		container, _ = storedContainer.(*models.ContainerModel)
 	} else {
 		// Fetch container model if not available in context
-		container, err = utils.GetContainerModel(schemaName)
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			  return utils.SendErrorResponse(c, err, "Failed to fetch container model")
@@ -1372,8 +1475,8 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Validation failed")
     }
     
-    // Fetch the existing item
-    var currentCollection *mongo.Collection = configs.GetCollection( schemaName)
+    // Fetch the existing item from project-specific collection
+    var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
     var existingItem bson.M
     err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
     if err != nil {
@@ -1397,7 +1500,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
         if field.Equation != "" {
             // We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
             // bson.M is map[string]interface{}, so it should be fine.
-            val, err := utils.EvaluateEquation(field.Equation, existingItem)
+            ctx := &utils.EquationContext{
+                TenantID:  tenantID,
+                ProjectID: projectID,
+                Data:      existingItem,
+            }
+            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
             if err != nil {
                 log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
                  return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -1485,7 +1593,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // Log audit
-    if err := utils.LogUpdateAction(ctx, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
+    if err := utils.LogUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
         log.Printf("Failed to log update action: %v", err)
     }
 
@@ -1495,7 +1603,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
     }
 	// Now attempting to delete the related cache
 	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"status":  fiber.StatusInternalServerError,
@@ -1506,38 +1614,57 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
 		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
 			if err != nil {
 			// Log the error and continue with the next iteration
 			log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			continue
 		}
 		// Emit WebSocket invalidate event for triggered schema
-		ws.EmitInvalidate(triggeredSchema)
+		ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName)
+	ws.EmitInvalidate(schemaName, userIDStr)
+
+	// Convert existingItem to map[string]interface{} for response
+	responseItem := make(map[string]interface{})
+	for k, v := range existingItem {
+		responseItem[k] = v
+	}
+
+	// Strip hashed fields from response
+	utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
-    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: updateResult})
+    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Set a timeout for the operation.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
 	schemaName := c.Query("schemaName")
-	log.Printf("Updating multiple items for schema: %s", schemaName)
+	log.Printf("Updating multiple items for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
 	// Fetch container model from context or via a helper function.
 	var container *models.ContainerModel
-	var err error
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
 	} else {
-		container, err = utils.GetContainerModel(schemaName)
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
 			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
@@ -1631,8 +1758,8 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
     var bulkBeforeDocs []interface{}
     var bulkAfterDocs []interface{}
 
-	// Get the collection for this schema.
-	currentCollection := configs.GetCollection(schemaName)
+	// Get the project-specific collection for this schema.
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
 	// Process each update item individually.
 	for index, item := range items {
@@ -1752,7 +1879,12 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
         equationError := false
         for _, field := range container.Fields {
             if field.Equation != "" {
-                val, err := utils.EvaluateEquation(field.Equation, existingItem)
+                eqCtx := &utils.EquationContext{
+                    TenantID:  tenantID,
+                    ProjectID: projectID,
+                    Data:      existingItem,
+                }
+                val, err := utils.EvaluateEquationWithContext(field.Equation, eqCtx)
                 if err != nil {
                     utils.ReleaseLock(lockKey, lockID)
                     failedUpdates = append(failedUpdates, map[string]interface{}{
@@ -1872,24 +2004,24 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
     // Log Bulk Audit
     if len(bulkAfterDocs) > 0 {
-         if err := utils.LogBulkUpdateAction(ctx, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
+         if err := utils.LogBulkUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
              log.Printf("Failed to log bulk update: %v", err)
          }
     }
 
 	// After processing all items, clear the cache for the schema.
 	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, schemaName, container)
+		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
 		if err != nil {
 			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
 		}
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, triggeredSchema, container)
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
 			if err != nil {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema)
+			ws.EmitInvalidate(triggeredSchema, userIDStr)
 		}
 	}
 
@@ -1901,7 +2033,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Emit WebSocket invalidate event for this schema if there were any successful updates
 	if len(successfulUpdates) > 0 {
-		ws.EmitInvalidate(schemaName)
+		ws.EmitInvalidate(schemaName, userIDStr)
 	}
 	
 	log.Printf("Multiple items update completed for schema: %s", schemaName)
@@ -1915,6 +2047,13 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 func GetDynamicModelItem(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
 
     // 1) Load and validate schemaName
     container, err := utils.FetchContainerModel(c)
@@ -1960,14 +2099,14 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     }
 
     // 3) Try cache
-    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", schema, container, idParam)
+    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", tenantID, projectID, schema, container, idParam)
     if shouldCache {
         if raw, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
             var item map[string]interface{}
             if json.Unmarshal([]byte(raw), &item) == nil {
                 // strip hashed & populate
                 utils.StripHashed(container.Fields, []map[string]interface{}{item})
-                pop, _ := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+                pop, _ := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
                 if len(pop) > 0 {
                     item = pop[0]
                 }
@@ -1980,8 +2119,8 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
-    // 4) Fetch from Mongo
-    coll := configs.GetCollection(schema)
+    // 4) Fetch from Mongo using project-specific collection
+    coll := utils.GetDynamicCollectionForProject(tenantID, projectID, schema)
     var rawDoc bson.M
     if err := coll.FindOne(ctx, filter).Decode(&rawDoc); err != nil {
         return utils.SendErrorResponse(c, err, "Item not found")
@@ -1997,7 +2136,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, []map[string]interface{}{item})
 
     // 6) Populate if needed
-    pop, err := utils.PopulateIfNeeded(ctx, container, "GetDynamicModelItem", []map[string]interface{}{item})
+    pop, err := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
     if err != nil {
         return utils.SendErrorResponse(c, err, "Failed to populate item")
     }
@@ -2011,7 +2150,6 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 	if len(filteredItems) > 0 {
 		item = filteredItems[0]
 	}
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, schema)
 
     // 7) Cache the result
     if shouldCache {
@@ -2028,6 +2166,13 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
 	// 1) load container (your original local-or-fetch logic is fine)
 	container, err := utils.FetchContainerModel(c)
@@ -2102,14 +2247,14 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	opts := utils.BuildFindOptions(sortDoc, pager)
 
     // Apply Row Access Logic
-    items, err := utils.QueryAndDecode(ctx, schemaName, filter, opts, &pager)
+    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, &pager)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "query failed")
 	}
 
 	// 6) strip hashed, populate
 	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, container, "HandleSearchDynamicModelItem", items)
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "population failed")
 	}
@@ -2117,7 +2262,6 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	// 6.5) Filter fields based on user role authorization
 // 6.5) Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, schemaName)
 
 	// 7) response
 	if pager.Enabled {
@@ -2136,6 +2280,13 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     // 1) Context + load containerModel (ensures schemaName is present)
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
 
     container, err := utils.FetchContainerModel(c)
     if err != nil {
@@ -2207,7 +2358,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
         }
     }
 
-    items, err := utils.QueryAndDecode(ctx, container.SchemaName, filter, opts, &pager)
+    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, container.SchemaName, filter, opts, &pager)
     if err != nil {
         log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
         return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
@@ -2217,7 +2368,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 7) Populate references if configured
-    items, err = utils.PopulateIfNeeded(ctx, container, "HandleFilterDynamicModelItem", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
     if err != nil {
         return utils.SendErrorResponse(c, err, "Failed to populate items")
     }
@@ -2225,7 +2376,6 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
     // 7.5) Filter fields based on user role authorization
     // 7.5) Filter fields based on user role authorization
     items = utils.FilterDocuments(items, container.Fields, userRole)
-    log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
     // 8) Send response (with pagination metadata if applicable)
     if pager.Enabled {
@@ -2243,10 +2393,17 @@ func GetPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     // Fetching the schema name and pipeline name from the query params
     schemaName := c.Query("schemaName")
     pipelineName := c.Query("pipelineName")
-	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s", schemaName, pipelineName)
+	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s (tenant: %s, project: %s)", schemaName, pipelineName, tenantID, projectID)
 
     // Validate schemaName and pipelineName
     if schemaName == "" || pipelineName == "" {
@@ -2265,8 +2422,7 @@ func GetPipeline(c *fiber.Ctx) error {
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
-        var err error
-        container, err = utils.GetContainerModel(schemaName)
+        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
         if err != nil {
             return utils.SendErrorResponse(c, err, "Failed to fetch container model")
         }
@@ -2290,9 +2446,9 @@ func GetPipeline(c *fiber.Ctx) error {
         })
     }
     pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
-    currentCollection := configs.GetCollection( schemaName)
+    currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-    redisKey, shouldCache := utils.GeneratePipelineRedisKey(schemaName, pipelineName, container)
+    redisKey, shouldCache := utils.GeneratePipelineRedisKey(tenantID, projectID, schemaName, pipelineName, container)
 
     // Check if query has changed
     queryChanged := false
@@ -2356,6 +2512,13 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
 
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     // 2. Load container (ensures schemaName present & fetches model)
     container, err := utils.FetchContainerModel(c)
     if err != nil {
@@ -2383,9 +2546,9 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
     if hasRowAccess {
         // Append userID to query string or key to ensure private cache
-         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString + "&_uid=" + userID)
+         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString + "&_uid=" + userID)
     } else {
-         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", container.SchemaName, container, queryString)
+         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString)
     }
 
 	if shouldCache {
@@ -2481,7 +2644,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
 	// 6. Query and decode results
 	opts := utils.BuildFindOptions(sortDoc, pager)
-	items, err := utils.QueryAndDecode(ctx, c.Query("schemaName"), filter, opts, &pager)
+	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, c.Query("schemaName"), filter, opts, &pager)
 	if err != nil {
 		log.Printf("Query failed for schema %q: %v", c.Query("schemaName"), err)
 		return utils.SendErrorResponse(c, err, "Failed to fetch items")
@@ -2491,7 +2654,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
     utils.StripHashed(container.Fields, items)
 
     // 8. Populate if configured
-    items, err = utils.PopulateIfNeeded(ctx, container, "GetAllDynamicModelItemsWithPagination", items)
+    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
     if err != nil {
         log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
         return utils.SendErrorResponse(c, err, "Failed to populate items")
@@ -2500,7 +2663,6 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	// 8.5. Filter fields based on user role authorization
 // 8.5. Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
-	log.Printf("Filtered fields for role %q in schema: %s", userRole, container.SchemaName)
 
     // 9. Build response
     var response fiber.Map
@@ -2534,6 +2696,14 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 func ExecuteDynamicCode(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     schemaName := c.Query("schemaName")
     functionName := c.Query("functionName")
 
@@ -2544,8 +2714,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
-        var err error
-        container, err = utils.GetContainerModel(schemaName)
+        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
         if err != nil {
               return utils.SendErrorResponse(c, err, "Failed to fetch container model")
         }
@@ -2555,7 +2724,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
     fileName := "temp_" + functionName + ".go"
 
     // generate new redis key
-    redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(schemaName, functionName, container)
+    redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName, container)
 
         // Check if query has changed
     queryChanged := false
@@ -2695,10 +2864,18 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 func TestPipeline(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     schemaName := c.Query("schemaName")
     
     // Fetch the container model for filtering
-    container, err := utils.GetContainerModel(schemaName)
+    container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
     if err != nil {
          return utils.SendErrorResponse(c, err, "Failed to fetch container model")
     }
@@ -2709,7 +2886,7 @@ func TestPipeline(c *fiber.Ctx) error {
         return utils.SendErrorResponse(c, err, "Invalid request body")
     }
     requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
-    currentCollection := configs.GetCollection( schemaName)
+    currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
     // Execute the dynamic pipeline
     items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)
@@ -2740,6 +2917,14 @@ func TestPipeline(c *fiber.Ctx) error {
 func ExecuteDynamicAPI(c *fiber.Ctx) error {
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
+
+    // Extract tenant and project context
+    tenantID, projectID, err := getProjectContext(c)
+    if err != nil {
+        log.Printf("Project context error: %v", err)
+        return utils.SendErrorResponse(c, err, err.Error())
+    }
+
     schemaName := c.Query("schemaName")
     apiName := c.Query("apiName")
 
@@ -2748,8 +2933,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
     if storedContainer := c.Locals("containerModel"); storedContainer != nil {
         container, _ = storedContainer.(*models.ContainerModel)
     } else {
-        var err error
-        container, err = utils.GetContainerModel(schemaName)
+        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
         if err != nil {
             return utils.SendErrorResponse(c, err, "Failed to fetch container model")
         }
@@ -2796,7 +2980,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
     }
 
     // Generate Redis key for caching
-    redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(schemaName, apiName, container)
+    redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(tenantID, projectID, schemaName, apiName, container)
     // Attempt to fetch from cache if enabled
     if dynamicApi.IsRedisCached {
         cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
@@ -2966,6 +3150,13 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
 	// 1. Parse Request Body
 	type ExportRequest struct {
 		SchemaName string                 `json:"schemaName"`
@@ -2990,7 +3181,7 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	}
 
 	// 2. Load Container Model
-	container, err := utils.GetContainerModel(req.SchemaName)
+	container, err := utils.GetContainerModel(tenantID, projectID, req.SchemaName)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to fetch container model")
 	}
@@ -3042,8 +3233,8 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 		}
 	}
 
-	// 5. Query Data with optional pagination
-	currentCollection := configs.GetCollection(req.SchemaName)
+	// 5. Query Data with optional pagination from project-specific collection
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, req.SchemaName)
 	
 	// Build find options with pagination if page and limit are provided
 	findOpts := options.Find()
@@ -3066,7 +3257,7 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 
 	// 6. Populate and Strip Hashed
 	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, container, "ExportDynamicModelItems", items)
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to populate items")
 	}

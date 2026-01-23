@@ -20,6 +20,7 @@ import (
 var ErrNoSchemaName = errors.New("schemaName is required")
 
 // FetchContainerModel tries fiber.Locals first, then falls back to DB.
+// Requires tenantID and projectID from c.Locals() for project-specific access
 func FetchContainerModel(c *fiber.Ctx) (*models.ContainerModel, error) {
     name := c.Query("schemaName")
     if name == "" {
@@ -30,7 +31,15 @@ func FetchContainerModel(c *fiber.Ctx) (*models.ContainerModel, error) {
             return cm, nil
         }
     }
-    return GetContainerModel(name)
+    
+    // Extract tenant and project IDs from context
+    tenantID, _ := c.Locals("tenantID").(string)
+    projectID, _ := c.Locals("projectID").(string)
+    if tenantID == "" || projectID == "" {
+        return nil, errors.New("missing tenant or project context")
+    }
+    
+    return GetContainerModel(tenantID, projectID, name)
 }
 
 // Pager holds pagination parameters & metadata.
@@ -94,14 +103,18 @@ func BuildFindOptions(sort bson.D, pager Pager) *options.FindOptions {
 }
 
 // QueryAndDecode runs `.Find()` + `DecodeCursor`, and if pager.Enabled, also counts total.
+// Now requires tenantID and projectID for project-specific collection access
 func QueryAndDecode(
     ctx context.Context,
+    tenantID string,
+    projectID string,
     collName string,
     filter bson.M,
     opts *options.FindOptions,
     pager *Pager,
 ) ([]map[string]interface{}, error) {
-    coll := configs.GetCollection(collName)
+    // Get project-specific collection
+    coll := GetDynamicCollectionForProject(tenantID, projectID, collName)
     
     // Execute query ONCE
     cur, err := coll.Find(ctx, filter, opts)
@@ -161,18 +174,28 @@ func StripHashed(fields []models.Field, items []map[string]interface{}) {
     }
 }
 
-// PopulateIfNeeded calls PopulateItems if the route is in PopulatedRoutes.
+// PopulateIfNeeded calls PopulateItems if any field has PopulationSettings configured.
+// This automatically populates fields that are configured for population, regardless of the route.
 func PopulateIfNeeded(
     ctx context.Context,
+    tenantID, projectID string,
     container *models.ContainerModel,
-    routeName string,
     items []map[string]interface{},
 ) ([]map[string]interface{}, error) {
-    for _, r := range container.PopulatedRoutes {
-        if r == routeName {
-            return PopulateItems(ctx, container, items)
+    // Check if any field has population settings configured
+    hasPopulationSettings := false
+    for _, field := range container.Fields {
+        if field.PopulationSettings != nil {
+            hasPopulationSettings = true
+            break
         }
     }
+    
+    // If any field has population settings, populate the items
+    if hasPopulationSettings {
+        return PopulateItems(ctx, tenantID, projectID, container, items)
+    }
+    
     return items, nil
 }
 

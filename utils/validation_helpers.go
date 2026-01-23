@@ -2,7 +2,16 @@ package utils
 
 import (
 	"strings"
+
+	"github.com/go-playground/validator"
 )
+
+var validate = validator.New()
+
+// ValidateStruct validates a struct using struct tags
+func ValidateStruct(s interface{}) error {
+	return validate.Struct(s)
+}
 
 // isValidCreditCard validates a credit card number using the Luhn algorithm
 func isValidCreditCard(number string) bool {

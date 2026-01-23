@@ -5,6 +5,8 @@ import "go.mongodb.org/mongo-driver/bson/primitive"
 // AuditLog represents a record in the audit_logs collection.
 type AuditLog struct {
 	ID          primitive.ObjectID `bson:"_id,omitempty"`
+	TenantID    string             `bson:"tenantId,omitempty"`   // Project tenant ID
+	ProjectID   string             `bson:"projectId,omitempty"`  // Project ID
 	Timestamp   primitive.DateTime `bson:"timestamp"`
 	UserID      primitive.ObjectID `bson:"userId,omitempty"`
 	UserEmail   string             `bson:"userEmail,omitempty"`
@@ -19,9 +21,10 @@ type AuditLog struct {
 	UserAgent   string             `bson:"userAgent,omitempty"`
 }
 
-// User represents the user context for audit logging.
+// AuditUser represents the user context for audit logging.
 // This is used in the helper functions to pass user information.
-type User struct {
+// This is separate from the tenant User model and represents project-level user context.
+type AuditUser struct {
 	ID    primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
 	Email string             `json:"email,omitempty" bson:"email,omitempty"`
 	Roles []string           `json:"roles,omitempty" bson:"roles,omitempty"`

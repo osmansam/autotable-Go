@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Google OAuth</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 50px auto;
+        padding: 20px;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      button {
+        background: #4285f4;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      button:hover {
+        background: #357ae8;
+      }
+      .info {
+        background: #f0f0f0;
+        padding: 15px;
+        border-radius: 4px;
+        margin-top: 20px;
+      }
+      .error {
+        background: #ffebee;
+        color: #c62828;
+        padding: 15px;
+        border-radius: 4px;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🧪 Test Google OAuth</h1>
+
+    <div class="info">
+      <p><strong>Before testing:</strong></p>
+      <ol>
+        <li>
+          Make sure you have created a tenant and project in your database
+        </li>
+        <li>Enter the tenant and project <strong>slugs</strong> below</li>
+        <li>Make sure your backend is running on port 3002</li>
+        <li>
+          Make sure Google Cloud Console has this redirect URI:<br />
+          <code>http://localhost:3002/api/v1/auth/google/callback</code>
+        </li>
+      </ol>
+    </div>
+
+    <form id="oauthForm">
+      <div class="form-group">
+        <label for="tenantSlug">Tenant Slug:</label>
+        <input type="text" id="tenantSlug" placeholder="e.g., acme" required />
+      </div>
+
+      <div class="form-group">
+        <label for="projectSlug">Project Slug:</label>
+        <input
+          type="text"
+          id="projectSlug"
+          placeholder="e.g., web-app"
+          required
+        />
+      </div>
+
+      <button type="submit">🔐 Sign in with Google</button>
+    </form>
+
+    <div class="info" style="margin-top: 30px">
+      <h3>How to create a tenant/project:</h3>
+      <p>1. Use your tenant auth API to create a tenant</p>
+      <p>2. Create a project under that tenant</p>
+      <p>3. Note the slug values (not the IDs)</p>
+      <p>4. Enter them above and test</p>
+    </div>
+
+    <script>
+      document
+        .getElementById("oauthForm")
+        .addEventListener("submit", function (e) {
+          e.preventDefault();
+
+          const tenantSlug = document.getElementById("tenantSlug").value.trim();
+          const projectSlug = document
+            .getElementById("projectSlug")
+            .value.trim();
+
+          if (!tenantSlug || !projectSlug) {
+            alert("Please enter both tenant and project slugs");
+            return;
+          }
+
+          // Construct the Google login URL
+          const baseUrl = "http://localhost:3002/api/v1";
+          const googleLoginUrl = `${baseUrl}/${tenantSlug}/${projectSlug}/auth/google/login`;
+
+          console.log("Redirecting to:", googleLoginUrl);
+
+          // Redirect to Google OAuth
+          window.location.href = googleLoginUrl;
+        });
+    </script>
+  </body>
+</html>

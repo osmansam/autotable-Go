@@ -3,27 +3,73 @@ package routes
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
+	"github.com/osmansam/autotableGo/middlewares"
+	"github.com/osmansam/autotableGo/models"
 )
 
-// func ContainerRoutes(baseUrl string, app *fiber.App) {
-// 	containerGroup := app.Group(baseUrl)
-// 	containerGroup.Post("/", middlewares.ContainerAuthenticate("CreateContainer"), controllers.CreateContainer)
-// 	containerGroup.Get("/", middlewares.ContainerAuthenticate("GetAllContainers"), controllers.GetAllContainers)
-// 	containerGroup.Patch("/dynamicFunctions/:id", middlewares.ContainerAuthenticate("UpdateDynamicFunctions"), controllers.UpdateDynamicFunctions)
-// 	containerGroup.Patch("/pipelines/:id", middlewares.ContainerAuthenticate("UpdatePipelines"), controllers.UpdatePipelines)
-// 	containerGroup.Get("/:id", middlewares.ContainerAuthenticate("GetContainer"), controllers.GetContainer)
-// 	containerGroup.Delete("/:id", middlewares.ContainerAuthenticate("DeleteContainer"), controllers.DeleteContainer)
-// 	containerGroup.Patch("/:id", middlewares.ContainerAuthenticate("UpdateContainer"), controllers.UpdateContainer)
-// }
+// ContainerRoutes sets up all container management routes
+// These routes require tenant authentication and project scope
 func ContainerRoutes(baseUrl string, app *fiber.App) {
+	// All container routes require tenant authentication and project scope
+		app.Get(baseUrl, controllers.GetAllContainers)
 	containerGroup := app.Group(baseUrl)
-	containerGroup.Post("/", controllers.CreateContainer)
-	containerGroup.Post("/reset-redis", controllers.ResetRedis)
-	containerGroup.Get("/", controllers.GetAllContainers)
+	containerGroup.Use(middlewares.TenantAuthenticate)
+	containerGroup.Use(middlewares.RequireProjectScope)
+	
+	// Create container - requires project admin or developer role
+	containerGroup.Post("/", 
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+		}), 
+		controllers.CreateContainer,
+	)
+	
+	// Reset Redis cache - requires project admin role
+	containerGroup.Post("/reset-redis", 
+		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}), 
+		controllers.ResetRedis,
+	)
+	
+	// Get all containers-tenantlevel - any project member can view
+	containerGroup.Get("/tenant", controllers.GetAllContainers)
+	
+	// Get container types - any project member can view
 	containerGroup.Get("/types", controllers.GetAllContainerTypes)
-	containerGroup.Patch("/dynamicFunctions/:id", controllers.UpdateDynamicFunctions)
-	containerGroup.Patch("/pipelines/:id", controllers.UpdatePipelines)
+	
+	// Update dynamic functions - requires project admin or developer role
+	containerGroup.Patch("/dynamicFunctions/:id", 
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+		}), 
+		controllers.UpdateDynamicFunctions,
+	)
+	
+	// Update pipelines - requires project admin or developer role
+	containerGroup.Patch("/pipelines/:id", 
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+		}), 
+		controllers.UpdatePipelines,
+	)
+	
+	// Get single container - any project member can view
 	containerGroup.Get("/:id", controllers.GetContainer)
-	containerGroup.Delete("/:id", controllers.DeleteContainer)
-	containerGroup.Patch("/:id", controllers.UpdateContainer)
+	
+	// Delete container - requires project admin role
+	containerGroup.Delete("/:id", 
+		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}), 
+		controllers.DeleteContainer,
+	)
+	
+	// Update container - requires project admin or developer role
+	containerGroup.Patch("/:id", 
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin, 
+			models.ProjectRoleDeveloper,
+		}), 
+		controllers.UpdateContainer,
+	)
 }

@@ -10,8 +10,9 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`   // always "invalidate"
+	Type      string `json:"type"`   // "invalidate", "pageChanged", "containerChanged"
 	Schema    string `json:"schema"` // schema name
+	UserId    string `json:"userId,omitempty"` // user who triggered the event
 	Timestamp int64  `json:"ts"`
 }
 
@@ -62,28 +63,31 @@ func HandleWS(c *websocket.Conn) {
 }
 
 // EmitInvalidate pushes an invalidate event to all clients.
-func EmitInvalidate(schema string) {
+func EmitInvalidate(schema string, userId string) {
 	Broadcast <- Event{
 		Type:      "invalidate",
 		Schema:    schema,
+		UserId:    userId,
 		Timestamp: time.Now().Unix(),
 	}
 }
 
 // EmitPageChanged pushes a pageChanged event to all clients.
-func EmitPageChanged() {
+func EmitPageChanged(userId string) {
 	Broadcast <- Event{
 		Type:      "pageChanged",
 		Schema:    "pages",
+		UserId:    userId,
 		Timestamp: time.Now().Unix(),
 	}
 }
 
 // EmitContainerChanged pushes a containerChanged event to all clients.
-func EmitContainerChanged() {
+func EmitContainerChanged(userId string) {
 	Broadcast <- Event{
 		Type:      "containerChanged",
 		Schema:    "containers",
+		UserId:    userId,
 		Timestamp: time.Now().Unix(),
 	}
 }
