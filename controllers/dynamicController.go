@@ -515,12 +515,11 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				}
 
 				if len(files) != len(items) {
-					msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
-					log.Printf(msg)
-					return utils.SendErrorResponse(c, fmt.Errorf(msg), msg)
-				}
-
-				// Loop over the files so that each item gets its corresponding image.
+msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
+log.Printf("%s", msg)
+return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
+}
+// Loop over the files so that each item gets its corresponding image.				// Loop over the files so that each item gets its corresponding image.
 				for _, file := range files {
 					tempFilePath := "./temp/" + file.Filename
 					if err := c.SaveFile(file, tempFilePath); err != nil {
@@ -669,7 +668,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				// Check duplicates within the same request.
 				if _, exists := valueSet[fieldValue]; exists {
 					msg := fmt.Sprintf("Duplicate value for unique field '%s' in item index %d", field.Name, i)
-					log.Printf(msg)
+					log.Printf("%s", msg)
 					return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 						"status":  http.StatusBadRequest,
 						"message": msg,
@@ -689,7 +688,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				}
 				if count > 0 {
 					msg := fmt.Sprintf("A document with the same '%s' already exists.", field.Name)
-					log.Printf(msg)
+					log.Printf("%s", msg)
 					return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 						"status":  http.StatusBadRequest,
 						"message": msg,
@@ -1718,8 +1717,8 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				// Make sure we have one file per item.
 				if len(files) != len(items) {
 					msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
-					log.Printf(msg)
-					return utils.SendErrorResponse(c, fmt.Errorf(msg), msg)
+					log.Printf("%s", msg)
+					return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 				}
 				// Loop over the files so that each item gets its corresponding image.
 				for _, file := range files {

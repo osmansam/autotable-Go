@@ -130,7 +130,7 @@ func validateUniqueSchemaNames(containers []models.ContainerModel) error {
 	if len(empties) > 0 {
 		msg = append(msg, fmt.Sprintf("Empty schema names at indices: %v", empties))
 	}
-	return fmt.Errorf(strings.Join(msg, " | "))
+	return fmt.Errorf("%s", strings.Join(msg, " | "))
 }
 
 func extractSchemaNames(containers []models.ContainerModel) []string {
