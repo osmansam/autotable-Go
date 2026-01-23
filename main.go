@@ -64,6 +64,15 @@ func main() {
 	// WS endpoint
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
+	
+	// Health check endpoint
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"status": "ok",
+			"message": "Server is healthy",
+		})
+	})
+	
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes
