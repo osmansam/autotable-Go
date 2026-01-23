@@ -1,38 +1,54 @@
 version: "3.8"
+
 services:
-  autoapi-redis-staging:
-    image: redis:latest
-    container_name: autoapi-redis-staging
-    restart: always
+  redis:
+    image: redis:7-alpine
+    container_name: autotable-redis
+    restart: unless-stopped
     ports:
-      - "6381:6379"
-  autoapi-redis-production:
-    image: redis:latest
-    container_name: autoapi-redis-production
-    restart: always
-    ports:
-      - "6382:6379"
-  autoapi-production:
-    build:
-      context: ./
-      dockerfile: ./Dockerfile.production
-    container_name: autoapi-production
-    restart: always
-    depends_on:
-      - autoapi-redis-production
-    ports:
-      - "8020:4000"
+      - "6379:6379"
     volumes:
-      - ./logs:/autoapi/logs
-  autoapi-staging:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  app:
     build:
-      context: ./
-      dockerfile: ./Dockerfile.staging
-    container_name: autoapi-staging
-    restart: always
+      context: .
+      dockerfile: Dockerfile
+    container_name: autotable-app
+    restart: unless-stopped
     depends_on:
-      - autoapi-redis-staging
+      redis:
+        condition: service_healthy
     ports:
-      - "8030:4000"
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
     volumes:
-      - ./logs:/autoapi/logs-staging
+      - ./logs:/app/logs
+      - ./temp:/app/temp
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:4000/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  redis-data:
+    driver: local

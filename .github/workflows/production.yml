@@ -1,0 +1,99 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches: ["main"] # Deploy when pushing to main branch
+  workflow_dispatch: # Allow manual deployment
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.DROPLET_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          PORT_NUMBER=${{ secrets.PORT_NUMBER }}
+          MONGO_URI_BASE=${{ secrets.MONGO_URI_BASE }}
+          COLLECTION_NAME=${{ secrets.COLLECTION_NAME }}
+          MONGO_URI_SUFFIX=${{ secrets.MONGO_URI_SUFFIX }}
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          CONTAINER_JWT_SECRET=${{ secrets.CONTAINER_JWT_SECRET }}
+          CLOUD_NAME=${{ secrets.CLOUD_NAME }}
+          CLOUD_API_KEY=${{ secrets.CLOUD_API_KEY }}
+          CLOUD_API_SECRET=${{ secrets.CLOUD_API_SECRET }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URL=${{ secrets.GOOGLE_REDIRECT_URL }}
+          BACKEND_BASE_URL=${{ secrets.BACKEND_BASE_URL }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          TENANT_JWT_SECRET=${{ secrets.TENANT_JWT_SECRET }}
+          NODE_ENV=production
+          EOF
+
+      - name: Deploy to Digital Ocean
+        env:
+          DROPLET_IP: ${{ secrets.DROPLET_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          # Create app directory on server if it doesn't exist
+          ssh -i ~/.ssh/id_rsa $SSH_USER@$DROPLET_IP "mkdir -p ~/autotable"
+
+          # Copy files to server
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_rsa" \
+            --exclude='.git' \
+            --exclude='loadtest' \
+            --exclude='temp' \
+            --exclude='logs' \
+            ./ $SSH_USER@$DROPLET_IP:~/autotable/
+
+          # Deploy with docker-compose
+          ssh -i ~/.ssh/id_rsa $SSH_USER@$DROPLET_IP << 'ENDSSH'
+            cd ~/autotable
+            
+            # Stop and remove old containers
+            docker-compose down || true
+            
+            # Pull latest images and rebuild
+            docker-compose build --no-cache
+            
+            # Start services
+            docker-compose up -d
+            
+            # Clean up old images
+            docker image prune -af || true
+            
+            # Show running containers
+            docker-compose ps
+          ENDSSH
+
+      - name: Health check
+        env:
+          DROPLET_IP: ${{ secrets.DROPLET_IP }}
+        run: |
+          echo "Waiting for application to start..."
+          sleep 20
+
+          # Check if the application is responding
+          curl -f http://$DROPLET_IP:4000/health || echo "Health check endpoint not available"
+
+          echo "Deployment completed successfully!"

@@ -1,7 +1,7 @@
 {
   "redis": {
     "port": "6379",
-    "host": "autoapi-redis-production"
+    "host": "redis"
   },
   "app": {
     "port": 4000
