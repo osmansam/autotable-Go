@@ -79,11 +79,22 @@ jobs:
             # Start services
             docker compose up -d
             
+            # Wait a moment for containers to start
+            sleep 10
+            
+            # Show container status
+            echo "=== Container Status ==="
+            docker compose ps -a
+            
+            # Show recent logs
+            echo "=== Application Logs ==="
+            docker compose logs --tail=50 app || true
+            
+            echo "=== Redis Logs ==="
+            docker compose logs --tail=20 redis || true
+            
             # Clean up old images
             docker image prune -af || true
-            
-            # Show running containers
-            docker compose ps
           ENDSSH
 
       - name: Health check
