@@ -9,6 +9,6 @@
   "panel": {
     "host": "http://localhost:3000"
   },
-  "corsWhitelist": [],
+  "corsWhitelist": ["https://tenant.autoapi.org"],
   "migrationEnabled": false
 }
