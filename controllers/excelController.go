@@ -318,7 +318,6 @@ func detectFieldType(samples []string) string {
 	}
 
 	total := len(nonEmptySamples)
-	threshold := total // 100% match required for strong types
 
 	// Priority: bool > int > float > uuid > ip > url > email > date > string
 	// Require all samples to match for numeric/bool types (strict)
