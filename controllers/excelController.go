@@ -267,85 +267,84 @@ func detectFieldType(samples []string) string {
 		return "string"
 	}
 
-	allInt := true
-	allFloat := true
-	allBool := true
-	allEmail := true
-	allDate := true
-	allURL := true
-	allUUID := true
-	allIP := true
-
-	for _, sample := range samples {
-		if sample == "" {
-			continue
-		}
-
-		// Check if boolean
-		if !isBool(sample) {
-			allBool = false
-		}
-
-		// Check if integer
-		if !isInteger(sample) {
-			allInt = false
-		}
-
-		// Check if float (but not integer)
-		if !isNumeric(sample) {
-			allFloat = false
-		}
-
-		// Check if email
-		if !isEmail(sample) {
-			allEmail = false
-		}
-
-		// Check if URL
-		if !isURL(sample) {
-			allURL = false
-		}
-
-		// Check if UUID
-		if !isUUID(sample) {
-			allUUID = false
-		}
-
-		// Check if IP address
-		if !isIPAddress(sample) {
-			allIP = false
-		}
-
-		// Check if date
-		if !isDate(sample) {
-			allDate = false
+	// Filter out empty samples
+	var nonEmptySamples []string
+	for _, s := range samples {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			nonEmptySamples = append(nonEmptySamples, trimmed)
 		}
 	}
 
-	// Priority: bool > uuid > ip > url > email > date > int > float > string
-	if allBool {
+	if len(nonEmptySamples) == 0 {
+		return "string"
+	}
+
+	// Count matches for each type
+	intCount := 0
+	floatCount := 0
+	boolCount := 0
+	emailCount := 0
+	dateCount := 0
+	urlCount := 0
+	uuidCount := 0
+	ipCount := 0
+
+	for _, sample := range nonEmptySamples {
+		if isBool(sample) {
+			boolCount++
+		}
+		if isInteger(sample) {
+			intCount++
+		} else if isNumeric(sample) {
+			// Only count as float if it's NOT an integer
+			floatCount++
+		}
+		if isEmail(sample) {
+			emailCount++
+		}
+		if isURL(sample) {
+			urlCount++
+		}
+		if isUUID(sample) {
+			uuidCount++
+		}
+		if isIPAddress(sample) {
+			ipCount++
+		}
+		if isDate(sample) {
+			dateCount++
+		}
+	}
+
+	total := len(nonEmptySamples)
+	threshold := total // 100% match required for strong types
+
+	// Priority: bool > int > float > uuid > ip > url > email > date > string
+	// Require all samples to match for numeric/bool types (strict)
+	if boolCount == total {
 		return "bool"
 	}
-	if allUUID {
-		return "uuid"
-	}
-	if allIP {
-		return "ip"
-	}
-	if allURL {
-		return "url"
-	}
-	if allEmail {
-		return "string" // email is validated via tag, type is still string
-	}
-	if allDate {
-		return "date"
-	}
-	if allInt {
+	if intCount == total {
 		return "int"
 	}
-	if allFloat {
+	if floatCount == total {
 		return "float"
+	}
+	if uuidCount == total {
+		return "uuid"
+	}
+	if ipCount == total {
+		return "ip"
+	}
+	if urlCount == total {
+		return "url"
+	}
+	if emailCount == total {
+		return "string" // email is validated via tag, type is still string
+	}
+	if dateCount == total {
+		return "date"
 	}
 
 	return "string"
@@ -381,12 +380,20 @@ func isBool(s string) bool {
 
 // isInteger checks if a string is a valid integer
 func isInteger(s string) bool {
-	_, err := strconv.Atoi(s)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	_, err := strconv.ParseInt(s, 10, 64)
 	return err == nil
 }
 
 // isNumeric checks if a string is a valid number (int or float)
 func isNumeric(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
 	_, err := strconv.ParseFloat(s, 64)
 	return err == nil
 }
