@@ -420,7 +420,7 @@ if container.Redis.IsRedisCached {
     }
 }
     // Emit WebSocket invalidate event for this schema
-    ws.EmitInvalidate(schemaName, userIDStr)
+    ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
     
     // Strip hashed fields from response
     utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
@@ -752,12 +752,12 @@ return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 				continue
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema, userIDStr)
+			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName, userIDStr)
+	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -1076,7 +1076,7 @@ if container.Redis.IsRedisCached {
     }
 }
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName, userIDStr)
+	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	
 	// Convert deletedDoc to map[string]interface{} for response
 	responseItem := make(map[string]interface{})
@@ -1311,7 +1311,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema, userIDStr)
+			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
 		}
 	}
 
@@ -1322,7 +1322,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	}
 	// Emit WebSocket invalidate event for this schema if there were any successful deletions
 	if len(successfulDeletes) > 0 {
-		ws.EmitInvalidate(schemaName, userIDStr)
+		ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	}
 
     // Log Bulk Audit
@@ -1620,12 +1620,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 			continue
 		}
 		// Emit WebSocket invalidate event for triggered schema
-		ws.EmitInvalidate(triggeredSchema, userIDStr)
+		ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
 		}
 	}
 
 	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName, userIDStr)
+	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 
 	// Convert existingItem to map[string]interface{} for response
 	responseItem := make(map[string]interface{})
@@ -2020,7 +2020,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
 			}
 			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema, userIDStr)
+			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
 		}
 	}
 
@@ -2032,7 +2032,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Emit WebSocket invalidate event for this schema if there were any successful updates
 	if len(successfulUpdates) > 0 {
-		ws.EmitInvalidate(schemaName, userIDStr)
+		ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	}
 	
 	log.Printf("Multiple items update completed for schema: %s", schemaName)

@@ -62,7 +62,7 @@ func CreatePage(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for page change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitPageChanged(userIDStr)
+	ws.EmitPageChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Page successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -299,7 +299,7 @@ func UpdatePage(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for page change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitPageChanged(userIDStr)
+	ws.EmitPageChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Page successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -352,7 +352,7 @@ func DeletePage(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for page change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitPageChanged(userIDStr)
+	ws.EmitPageChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Page successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{

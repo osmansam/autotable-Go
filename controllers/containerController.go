@@ -236,7 +236,7 @@ func CreateContainer(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for container change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Container successfully created")
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
@@ -382,7 +382,7 @@ func DeleteContainer(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for container change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Container and its corresponding collection successfully deleted")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -515,7 +515,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for container change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
 	log.Println("Container successfully updated")
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -584,7 +584,7 @@ func UpdatePipelines(c *fiber.Ctx) error {
 
     // Emit WebSocket event for container change
     userIDStr, _ := c.Locals("userID").(string)
-    ws.EmitContainerChanged(userIDStr)
+    ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
     log.Println("Pipelines successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{
@@ -653,7 +653,7 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
 
     // Emit WebSocket event for container change
     userIDStr, _ := c.Locals("userID").(string)
-    ws.EmitContainerChanged(userIDStr)
+    ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
     log.Println("DynamicFunctions successfully updated")
     return c.Status(http.StatusOK).JSON(fiber.Map{

@@ -162,7 +162,7 @@ func UploadExcel(c *fiber.Ctx) error {
 
 	// Emit WebSocket event for container change
 	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
 	// Create dynamic collection for data
 	dataCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)

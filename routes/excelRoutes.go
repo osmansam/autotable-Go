@@ -16,4 +16,5 @@ func SetupExcelRoutes(app *fiber.App, baseURL string) {
 	excelGroup.Use(middlewares.RequireProjectScope)
 	
 	excelGroup.Post("/upload", controllers.UploadExcel)
+	excelGroup.Post("/upload-multiple", controllers.UploadMultipleExcel)
 }
