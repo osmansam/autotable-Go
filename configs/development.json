@@ -16,8 +16,16 @@
     "maxExportLimit": 50000,
     "maxBulkWriteLimit": 1000,
     "maxBulkUpdateLimit": 1000,
-    "maxBulkDeleteLimit": 1000
+    "maxBulkDeleteLimit": 1000,
+    "bodySizeLimits": {
+      "defaultBodySizeBytes": 1048576,
+      "bulkWriteBodySizeBytes": 10485760,
+      "bulkUpdateBodySizeBytes": 10485760,
+      "bulkDeleteBodySizeBytes": 2097152,
+      "exportBodySizeBytes": 1048576,
+      "uploadBodySizeBytes": 26214400
+    }
   },
-  "corsWhitelist": [],
+  "corsWhitelist": ["http://localhost:3000"],
   "migrationEnabled": false
 }

@@ -16,6 +16,6 @@ func SetupExcelRoutes(app *fiber.App, baseURL string) {
 	excelGroup.Use(middlewares.GeneralRateLimit())
 	excelGroup.Use(middlewares.RequireProjectScope)
 
-	excelGroup.Post("/upload", middlewares.UploadRateLimit(), controllers.UploadExcel)
-	excelGroup.Post("/upload-multiple", middlewares.UploadRateLimit(), controllers.UploadMultipleExcel)
+	excelGroup.Post("/upload", middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadExcel)
+	excelGroup.Post("/upload-multiple", middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadMultipleExcel)
 }
