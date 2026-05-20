@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -33,8 +34,111 @@ type Config struct {
 	Panel struct {
 		Host string `json:"host"`
 	} `json:"panel"`
-	CorsWhitelist    []string `json:"corsWhitelist"`
-	MigrationEnabled bool     `json:"migrationEnabled"`
+	Limits           LimitsConfig `json:"limits"`
+	CorsWhitelist    []string     `json:"corsWhitelist"`
+	MigrationEnabled bool         `json:"migrationEnabled"`
+}
+
+type LimitsConfig struct {
+	DefaultPageLimit      int `json:"defaultPageLimit"`
+	MaxPageLimit          int `json:"maxPageLimit"`
+	MaxUnboundedReadLimit int `json:"maxUnboundedReadLimit"`
+	MaxExportLimit        int `json:"maxExportLimit"`
+	MaxBulkWriteLimit     int `json:"maxBulkWriteLimit"`
+	MaxBulkUpdateLimit    int `json:"maxBulkUpdateLimit"`
+	MaxBulkDeleteLimit    int `json:"maxBulkDeleteLimit"`
+}
+
+const (
+	DefaultPageLimit      = 20
+	MaxPageLimit          = 100
+	MaxUnboundedReadLimit = 5000
+	MaxExportLimit        = 50000
+	MaxBulkWriteLimit     = 1000
+	MaxBulkUpdateLimit    = 1000
+	MaxBulkDeleteLimit    = 1000
+)
+
+var (
+	appConfig     *Config
+	appConfigOnce sync.Once
+)
+
+func configFileForEnv() string {
+	env := os.Getenv("NODE_ENV")
+	if env == "" {
+		env = "development"
+	}
+	return fmt.Sprintf("configs/%s.json", env)
+}
+
+func GetAppConfig() *Config {
+	appConfigOnce.Do(func() {
+		cfg, err := LoadConfig(configFileForEnv())
+		if err != nil {
+			log.Printf("Error loading app config, using defaults: %v", err)
+			cfg = &Config{}
+		}
+		appConfig = cfg
+	})
+
+	return appConfig
+}
+
+func GetDefaultPageLimit() int {
+	limit := GetAppConfig().Limits.DefaultPageLimit
+	if limit < 1 {
+		return DefaultPageLimit
+	}
+	return limit
+}
+
+func GetMaxPageLimit() int {
+	limit := GetAppConfig().Limits.MaxPageLimit
+	if limit < 1 {
+		return MaxPageLimit
+	}
+	return limit
+}
+
+func GetMaxUnboundedReadLimit() int {
+	limit := GetAppConfig().Limits.MaxUnboundedReadLimit
+	if limit < 1 {
+		return MaxUnboundedReadLimit
+	}
+	return limit
+}
+
+func GetMaxExportLimit() int {
+	limit := GetAppConfig().Limits.MaxExportLimit
+	if limit < 1 {
+		return MaxExportLimit
+	}
+	return limit
+}
+
+func GetMaxBulkWriteLimit() int {
+	limit := GetAppConfig().Limits.MaxBulkWriteLimit
+	if limit < 1 {
+		return MaxBulkWriteLimit
+	}
+	return limit
+}
+
+func GetMaxBulkUpdateLimit() int {
+	limit := GetAppConfig().Limits.MaxBulkUpdateLimit
+	if limit < 1 {
+		return MaxBulkUpdateLimit
+	}
+	return limit
+}
+
+func GetMaxBulkDeleteLimit() int {
+	limit := GetAppConfig().Limits.MaxBulkDeleteLimit
+	if limit < 1 {
+		return MaxBulkDeleteLimit
+	}
+	return limit
 }
 
 // LoadConfig reads a JSON configuration file and unmarshals it into a Config struct.
@@ -56,7 +160,6 @@ func LoadConfig(path string) (*Config, error) {
 
 // ctx is a package-level context used for Redis operations.
 var ctx = context.Background()
-
 
 // ConnectDB connects to MongoDB using the URI from the environment.
 func ConnectDB() *mongo.Client {
@@ -84,20 +187,11 @@ func ConnectDB() *mongo.Client {
 // ConnectRedis loads the appropriate configuration file based on NODE_ENV
 // and creates a Redis client.
 func ConnectRedis() *redis.Client {
-	// Determine the environment; default to "staging" if not set.
-	env := os.Getenv("NODE_ENV")
-	if env == "" {
-		env = "development"
-	}
-	// Construct the configuration file name (e.g., "staging.json", "production.json").
-	configFile := fmt.Sprintf("configs/%s.json", env)
+	configFile := configFileForEnv()
 	log.Printf("Using config file: %s", configFile)
 
 	// Load the configuration from the JSON file.
-	cfg, err := LoadConfig(configFile)
-	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
-	}
+	cfg := GetAppConfig()
 
 	// Construct the Redis address using the host and port from the config.
 	redisAddress := fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port)
@@ -110,7 +204,7 @@ func ConnectRedis() *redis.Client {
 	})
 
 	// Test the connection.
-	if _, err = rdb.Ping(ctx).Result(); err != nil {
+	if _, err := rdb.Ping(ctx).Result(); err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 
@@ -120,9 +214,9 @@ func ConnectRedis() *redis.Client {
 
 // Global variables to hold our database connections.
 var (
-	DB          *mongo.Client
-	RedisClient *redis.Client
-	database    *mongo.Database
+	DB            *mongo.Client
+	RedisClient   *redis.Client
+	database      *mongo.Database
 	dbInitialized bool
 )
 

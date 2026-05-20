@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,12 +37,71 @@ func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	
+
 	if tenantID == "" || projectID == "" {
 		return "", "", fmt.Errorf("missing tenant or project context - ensure you are authenticated and have switched to a project")
 	}
-	
+
 	return tenantID, projectID, nil
+}
+
+func rejectBatchLimitExceeded(c *fiber.Ctx, operation, schemaName, tenantID, projectID string, requested, max int) error {
+	log.Printf("%s limit exceeded for schema=%s tenant=%s project=%s requested=%d max=%d", operation, schemaName, tenantID, projectID, requested, max)
+	return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+		Status:  http.StatusBadRequest,
+		Message: fmt.Sprintf("%s limit exceeded. Maximum allowed items is %d.", operation, max),
+		Data: fiber.Map{
+			"requested": requested,
+			"max":       max,
+		},
+	})
+}
+
+func parseLimitedItems(data []byte, max int) ([]map[string]interface{}, bool, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false, err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return nil, false, errors.New("expected JSON array")
+	}
+
+	items := make([]map[string]interface{}, 0, max)
+	for decoder.More() {
+		if len(items) >= max {
+			return items, true, nil
+		}
+
+		var item map[string]interface{}
+		if err := decoder.Decode(&item); err != nil {
+			return nil, false, err
+		}
+		items = append(items, item)
+	}
+
+	token, err = decoder.Token()
+	if err != nil {
+		return nil, false, err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != ']' {
+		return nil, false, errors.New("expected end of JSON array")
+	}
+
+	return items, false, nil
+}
+
+func parseLimitedBatchItems(c *fiber.Ctx, data []byte, operation, schemaName, tenantID, projectID string, max int) ([]map[string]interface{}, error) {
+	items, exceeded, err := parseLimitedItems(data, max)
+	if err != nil {
+		log.Printf("Failed to parse %s items for schema: %s, error: %v", operation, schemaName, err)
+		return nil, utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+	if exceeded {
+		return nil, rejectBatchLimitExceeded(c, operation, schemaName, tenantID, projectID, max+1, max)
+	}
+	return items, nil
 }
 
 // convertFormFieldTypes converts string values from multipart forms to their appropriate types
@@ -51,7 +111,7 @@ func convertFormFieldTypes(itemMap map[string]interface{}, container *models.Con
 		if !exists {
 			continue
 		}
-		
+
 		// Only convert if the value is a string
 		strValue, isString := value.(string)
 		if !isString {
@@ -73,7 +133,7 @@ func convertFormFieldTypes(itemMap map[string]interface{}, container *models.Con
 			}
 			continue
 		}
-		
+
 		switch field.Type {
 		case "bool", "boolean":
 			// Convert "true"/"false" strings to boolean
@@ -134,12 +194,12 @@ func convertNestedFields(objMap map[string]interface{}, fields []models.Field) {
 		if !exists {
 			continue
 		}
-		
+
 		strValue, isString := value.(string)
 		if !isString {
 			continue
 		}
-		
+
 		switch field.Type {
 		case "bool", "boolean":
 			if strValue == "true" {
@@ -188,23 +248,23 @@ func convertNestedFields(objMap map[string]interface{}, fields []models.Field) {
 
 // create an item for a given collection
 func CreateDynamicModelItem(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    
-    // Extract userID for WebSocket events
-    userIDStr, _ := c.Locals("userID").(string)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
 
-    schemaName := c.Query("schemaName")
-    log.Printf("Creating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // Fetch the associated container model
+	schemaName := c.Query("schemaName")
+	log.Printf("Creating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
+
+	// Fetch the associated container model
 	var container *models.ContainerModel
 
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
@@ -215,79 +275,79 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-	return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-                Status:  http.StatusInternalServerError,
-                Message: "Failed to fetch container model",
-                Data:    err.Error(),
-            })
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to fetch container model",
+				Data:    err.Error(),
+			})
 		}
 	}
 
-    // Check if there is an image field in the container
-    hasImageField := false
-    for _, field := range container.Fields {
-        if field.Type == "image" {
-            hasImageField = true
-            break
-        }
-    }
+	// Check if there is an image field in the container
+	hasImageField := false
+	for _, field := range container.Fields {
+		if field.Type == "image" {
+			hasImageField = true
+			break
+		}
+	}
 
-    var itemMap map[string]interface{}
-    fileURLs := make(map[string]string)
+	var itemMap map[string]interface{}
+	fileURLs := make(map[string]string)
 
-    // Check if request is multipart form
-    contentType := c.Get("Content-Type")
-    if hasImageField || strings.Contains(contentType, "multipart/form-data") {
-        // Parse multipart form for image fields or when explicitly sent as multipart
-        form, err := c.MultipartForm()
-        if err != nil {
-            log.Printf("Error parsing form for schema: %s, error: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Error parsing form.")
-        }
-        itemMap = utils.ProcessFormFields(form.Value)
+	// Check if request is multipart form
+	contentType := c.Get("Content-Type")
+	if hasImageField || strings.Contains(contentType, "multipart/form-data") {
+		// Parse multipart form for image fields or when explicitly sent as multipart
+		form, err := c.MultipartForm()
+		if err != nil {
+			log.Printf("Error parsing form for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Error parsing form.")
+		}
+		itemMap = utils.ProcessFormFields(form.Value)
 
-        // Convert form field types (string to bool, int, float) based on schema
-        convertFormFieldTypes(itemMap, container)
+		// Convert form field types (string to bool, int, float) based on schema
+		convertFormFieldTypes(itemMap, container)
 
-        // Process image fields
-        for fieldName, files := range form.File {
-            for _, file := range files {
-                tempFilePath := "./temp/" + file.Filename
-                if err := c.SaveFile(file, tempFilePath); err != nil {
-                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.",  Data: err.Error()})
-                }
-                imageURL, err := utils.UploadToCloudinary(tempFilePath)
-                os.Remove(tempFilePath) // Clean up temp file
-                if err != nil {
-                    log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
-                    return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary.")
-                }
-                fileURLs[fieldName] = imageURL
-            }
-        }
-    } else {
-        // Parse the provided item from request body
-        if err := c.BodyParser(&itemMap); err != nil {
-            log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Failed to parse body.")
-        }
-    }
-    // Create a set of allowed field names
-    allowedFields := make(map[string]struct{})
-    for _, field := range container.Fields {
-        allowedFields[field.Name] = struct{}{}
-    }
+		// Process image fields
+		for fieldName, files := range form.File {
+			for _, file := range files {
+				tempFilePath := "./temp/" + file.Filename
+				if err := c.SaveFile(file, tempFilePath); err != nil {
+					return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.", Data: err.Error()})
+				}
+				imageURL, err := utils.UploadToCloudinary(tempFilePath)
+				os.Remove(tempFilePath) // Clean up temp file
+				if err != nil {
+					log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
+					return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary.")
+				}
+				fileURLs[fieldName] = imageURL
+			}
+		}
+	} else {
+		// Parse the provided item from request body
+		if err := c.BodyParser(&itemMap); err != nil {
+			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to parse body.")
+		}
+	}
+	// Create a set of allowed field names
+	allowedFields := make(map[string]struct{})
+	for _, field := range container.Fields {
+		allowedFields[field.Name] = struct{}{}
+	}
 
-    // Filter out fields not in container.Fields
-    for key := range itemMap {
-        if _, exists := allowedFields[key]; !exists {
-            delete(itemMap, key)
-        }
-    }
-    // Replace file fields with URLs
-    for fieldName, url := range fileURLs {
-        itemMap[fieldName] = url
-    }
+	// Filter out fields not in container.Fields
+	for key := range itemMap {
+		if _, exists := allowedFields[key]; !exists {
+			delete(itemMap, key)
+		}
+	}
+	// Replace file fields with URLs
+	for fieldName, url := range fileURLs {
+		itemMap[fieldName] = url
+	}
 
 	// Automatically set createdAt and updatedAt if they are defined in the container schema.
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -304,73 +364,73 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 
-    // Calculate equation fields
-    for _, field := range container.Fields {
-        if field.Equation != "" {
-            ctx := &utils.EquationContext{
-                TenantID:  tenantID,
-                ProjectID: projectID,
-                Data:      itemMap,
-            }
-            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
-            if err != nil {
-                log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
-                return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-                    Status:  http.StatusBadRequest,
-                    Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
-                    Data:    err.Error(),
-                })
-            }
-            itemMap[field.Name] = val
-        }
-    }
+	// Calculate equation fields
+	for _, field := range container.Fields {
+		if field.Equation != "" {
+			ctx := &utils.EquationContext{
+				TenantID:  tenantID,
+				ProjectID: projectID,
+				Data:      itemMap,
+			}
+			val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
+			if err != nil {
+				log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
+				return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+					Status:  http.StatusBadRequest,
+					Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
+					Data:    err.Error(),
+				})
+			}
+			itemMap[field.Name] = val
+		}
+	}
 
-    // Validation
-   err = utils.ValidateContainerModel(itemMap, *container)
+	// Validation
+	err = utils.ValidateContainerModel(itemMap, *container)
 	if err != nil {
 		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
 		return utils.SendErrorResponse(c, err, "Validation failed.")
 	}
 
-    // Convert fields that should be ObjectId to ObjectId type
-    for _, field := range container.Fields {
-        if (field.Type == "objectId") {
-            if strId, ok := itemMap[field.Name].(string); ok {
-                objId, err := primitive.ObjectIDFromHex(strId)
-                if err == nil {
-                    itemMap[field.Name] = objId
-                }
-            }
-        }
-    }
+	// Convert fields that should be ObjectId to ObjectId type
+	for _, field := range container.Fields {
+		if field.Type == "objectId" {
+			if strId, ok := itemMap[field.Name].(string); ok {
+				objId, err := primitive.ObjectIDFromHex(strId)
+				if err == nil {
+					itemMap[field.Name] = objId
+				}
+			}
+		}
+	}
 
-    // Get the project-specific collection for this schema
-    var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	// Get the project-specific collection for this schema
+	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-    // Checking for Unique fields
-    for _, field := range container.Fields {
-        if field.Unique {
-            fieldValue, found := itemMap[field.Name]
-            if !found {
-                continue 
-            }
+	// Checking for Unique fields
+	for _, field := range container.Fields {
+		if field.Unique {
+			fieldValue, found := itemMap[field.Name]
+			if !found {
+				continue
+			}
 
-            count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
-            if err != nil {
-                log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
-                return utils.SendErrorResponse(c, err, "Error checking existing field value.")
-            }
+			count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
+			if err != nil {
+				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
+				return utils.SendErrorResponse(c, err, "Error checking existing field value.")
+			}
 
-            if count > 0 {
-                log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
-                return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-                    "status":  http.StatusBadRequest,
-                    "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
-                    "data":    nil,
-                })
-            }
-        }
-    }
+			if count > 0 {
+				log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
+				return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+					"status":  http.StatusBadRequest,
+					"message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
+					"data":    nil,
+				})
+			}
+		}
+	}
 
 	// Generate auto-increment id if defined and not provided
 	for _, field := range container.Fields {
@@ -385,51 +445,51 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 			}
 		}
 	}
-    // Save the validated item into its associated collection
-    result, err := currentCollection.InsertOne(ctx, itemMap)
-    if err != nil {
-        log.Printf("Failed to save item for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to save item.")
-    }
+	// Save the validated item into its associated collection
+	result, err := currentCollection.InsertOne(ctx, itemMap)
+	if err != nil {
+		log.Printf("Failed to save item for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to save item.")
+	}
 
-    // Capture the generated ID
-    if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
-        itemMap["_id"] = oid
-    }
+	// Capture the generated ID
+	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+		itemMap["_id"] = oid
+	}
 
-    // Log audit
-    if err := utils.LogCreateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), itemMap); err != nil {
-        log.Printf("Failed to log create action: %v", err)
-    }
+	// Log audit
+	if err := utils.LogCreateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), itemMap); err != nil {
+		log.Printf("Failed to log create action: %v", err)
+	}
 	// Delete the cache for this schema
-if container.Redis.IsRedisCached {
-    err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
-    if err != nil {
-        log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
-    }
+	if container.Redis.IsRedisCached {
+		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
+		if err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
+		}
 
-    // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-    for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-        err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
-        if err != nil {
-        // Log the error and continue with the next iteration
-        log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-        continue
-    }
-    }
-}
-    // Emit WebSocket invalidate event for this schema
-    ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
-    
-    // Strip hashed fields from response
-    utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
-    
-    // Successfully saved the item
-    log.Printf("Item successfully created for schema: %s", schemaName)
-    return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-        Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
-    })
+		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
+			if err != nil {
+				// Log the error and continue with the next iteration
+				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+				continue
+			}
+		}
+	}
+	// Emit WebSocket invalidate event for this schema
+	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
+
+	// Strip hashed fields from response
+	utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
+
+	// Successfully saved the item
+	log.Printf("Item successfully created for schema: %s", schemaName)
+	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
+		Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
+	})
 }
 func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Set up a context with timeout.
@@ -438,7 +498,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-	
+
 	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
@@ -494,10 +554,10 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, fmt.Errorf("missing items field"), "Missing items JSON field.")
 		}
 
-		// Parse the JSON array into our items slice.
-		if err := json.Unmarshal([]byte(itemsJSON[0]), &items); err != nil {
-			log.Printf("Error parsing items JSON for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error parsing items JSON.")
+		maxBulkWrite := configs.GetMaxBulkWriteLimit()
+		items, err = parseLimitedBatchItems(c, []byte(itemsJSON[0]), "bulk write", schemaName, tenantID, projectID, maxBulkWrite)
+		if err != nil {
+			return err
 		}
 
 		// Process each image field.
@@ -515,11 +575,11 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				}
 
 				if len(files) != len(items) {
-msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
-log.Printf("%s", msg)
-return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
-}
-// Loop over the files so that each item gets its corresponding image.				// Loop over the files so that each item gets its corresponding image.
+					msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
+					log.Printf("%s", msg)
+					return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
+				}
+				// Loop over the files so that each item gets its corresponding image.				// Loop over the files so that each item gets its corresponding image.
 				for _, file := range files {
 					tempFilePath := "./temp/" + file.Filename
 					if err := c.SaveFile(file, tempFilePath); err != nil {
@@ -541,9 +601,10 @@ return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 		}
 	} else {
 		// Not a multipart request; parse the JSON array directly from the request body.
-		if err := c.BodyParser(&items); err != nil {
-			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to parse request body.")
+		maxBulkWrite := configs.GetMaxBulkWriteLimit()
+		items, err = parseLimitedBatchItems(c, c.Body(), "bulk write", schemaName, tenantID, projectID, maxBulkWrite)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -585,30 +646,29 @@ return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 		items[i] = item
 	}
 
-
-    // Calculate equation fields for each item
-    for i, item := range items {
-        for _, field := range container.Fields {
-            if field.Equation != "" {
-                ctx := &utils.EquationContext{
-                    TenantID:  tenantID,
-                    ProjectID: projectID,
-                    Data:      item,
-                }
-                val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
-                if err != nil {
-                    log.Printf("Error evaluating equation for field %s in item %d: %v", field.Name, i, err)
-                    return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-                        Status:  http.StatusBadRequest,
-                        Message: fmt.Sprintf("Error evaluating equation for field %s in item %d", field.Name, i),
-                        Data:    err.Error(),
-                    })
-                }
-                item[field.Name] = val
-            }
-        }
-        items[i] = item
-    }
+	// Calculate equation fields for each item
+	for i, item := range items {
+		for _, field := range container.Fields {
+			if field.Equation != "" {
+				ctx := &utils.EquationContext{
+					TenantID:  tenantID,
+					ProjectID: projectID,
+					Data:      item,
+				}
+				val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
+				if err != nil {
+					log.Printf("Error evaluating equation for field %s in item %d: %v", field.Name, i, err)
+					return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+						Status:  http.StatusBadRequest,
+						Message: fmt.Sprintf("Error evaluating equation for field %s in item %d", field.Name, i),
+						Data:    err.Error(),
+					})
+				}
+				item[field.Name] = val
+			}
+		}
+		items[i] = item
+	}
 
 	// Validate each item against the container model.
 	for i, item := range items {
@@ -758,7 +818,7 @@ return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 
 	// Emit WebSocket invalidate event for this schema
 	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
-	
+
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
@@ -769,181 +829,191 @@ return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
 
 // GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
-    // 1. Context with timeout
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	// 1. Context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // 2. Load container model (requires schemaName)
-    container, err := utils.FetchContainerModel(c)
-    if err != nil {
-        if err == utils.ErrNoSchemaName {
-            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-        }
-        return utils.SendErrorResponse(c, err, "Failed to load container model")
-    }
-    schema := container.SchemaName
+	// 2. Load container model (requires schemaName)
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	}
+	schema := container.SchemaName
 
-    // 3. Determine caching
-    redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", tenantID, projectID, schema, container)
-    if shouldCache {
-        		if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+	// 3. Determine caching
+	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", tenantID, projectID, schema, container)
+	if shouldCache {
+		if data, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 			var items []map[string]interface{}
 			if json.Unmarshal([]byte(data), &items) == nil {
 				log.Printf("Fetched items from cache for schema: %s", schema)
+				if maxUnboundedRead := configs.GetMaxUnboundedReadLimit(); len(items) > maxUnboundedRead {
+					log.Printf("Unbounded read limit exceeded from cache for schema=%s tenant=%s project=%s requested=%d max=%d", schema, tenantID, projectID, len(items), maxUnboundedRead)
+					items = items[:maxUnboundedRead]
+				}
 				// Filter fields based on user role before returning cached data
 				userRole, _ := c.Locals("userRole").(string)
 				items = utils.FilterDocuments(items, container.Fields, userRole)
 				return c.JSON(items)
 			}
 		}
-    }
+	}
 
-    // 4. Query database (no pagination)
-    pager := utils.Pager{Enabled: false}
-    opts := options.Find() // no skip/limit
-    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schema, bson.M{}, opts, &pager)
-    if err != nil {
-        log.Printf("DB query failed for schema %q: %v", schema, err)
-        return utils.SendErrorResponse(c, err, "Failed to fetch items")
-    }
+	// 4. Query database with a configured safety cap for unbounded reads.
+	maxUnboundedRead := configs.GetMaxUnboundedReadLimit()
+	pager := utils.Pager{Enabled: false}
+	opts := options.Find().SetLimit(int64(maxUnboundedRead + 1))
+	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schema, bson.M{}, opts, &pager)
+	if err != nil {
+		log.Printf("DB query failed for schema %q: %v", schema, err)
+		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+	}
+	if len(items) > maxUnboundedRead {
+		log.Printf("Unbounded read limit exceeded for schema=%s tenant=%s project=%s max=%d", schema, tenantID, projectID, maxUnboundedRead)
+		items = items[:maxUnboundedRead]
+	}
 
-    // 5. Strip hashed fields
-    utils.StripHashed(container.Fields, items)
+	// 5. Strip hashed fields
+	utils.StripHashed(container.Fields, items)
 
-    // 6. Populate if needed
-    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-    if err != nil {
-        log.Printf("Population failed for schema %q: %v", schema, err)
-        return utils.SendErrorResponse(c, err, "Failed to populate items")
-    }
+	// 6. Populate if needed
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
+	if err != nil {
+		log.Printf("Population failed for schema %q: %v", schema, err)
+		return utils.SendErrorResponse(c, err, "Failed to populate items")
+	}
 
-    // 6.5. Filter fields based on user role authorization
-    userRole, _ := c.Locals("userRole").(string)
-    items = utils.FilterDocuments(items, container.Fields, userRole)
+	// 6.5. Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	items = utils.FilterDocuments(items, container.Fields, userRole)
 
+	// 7. Cache the result if enabled
+	if shouldCache {
+		if payload, err := json.Marshal(items); err == nil {
+			ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+			configs.RedisClient.Set(ctx, redisKey, payload, ttl)
+		}
+	}
 
-    // 7. Cache the result if enabled
-    if shouldCache {
-        if payload, err := json.Marshal(items); err == nil {
-            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
-            configs.RedisClient.Set(ctx, redisKey, payload, ttl)
-        }
-    }
-
-    // 8. Return final response
-    log.Printf("Fetched items from DB for schema: %s", schema)
-    return c.JSON(items)
+	// 8. Return final response
+	log.Printf("Fetched items from DB for schema: %s", schema)
+	return c.JSON(items)
 }
 
 // GetItemsForSelection retrieves items with only _id and the specified fieldName for a schema
 func GetItemsForSelection(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // Get schema name and field name from query params
-    schemaName := c.Query("schemaName")
-    fieldName := c.Query("fieldName")
+	// Get schema name and field name from query params
+	schemaName := c.Query("schemaName")
+	fieldName := c.Query("fieldName")
 
-    if schemaName == "" || fieldName == "" {
-        return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
-            Message: "schemaName and fieldName are required",
-            Data:    nil,
-        })
-    }
+	if schemaName == "" || fieldName == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName and fieldName are required",
+			Data:    nil,
+		})
+	}
 
-    log.Printf("Getting items for selection: schema=%s, field=%s (tenant: %s, project: %s)", schemaName, fieldName, tenantID, projectID)
+	log.Printf("Getting items for selection: schema=%s, field=%s (tenant: %s, project: %s)", schemaName, fieldName, tenantID, projectID)
 
-    // Load container model to check if field is hashed
-    container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
-    if err != nil {
-        log.Printf("Failed to get container model for schema %s: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to load schema configuration")
-    }
+	// Load container model to check if field is hashed
+	container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
+	if err != nil {
+		log.Printf("Failed to get container model for schema %s: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to load schema configuration")
+	}
 
-    // Check if the requested field is hashed or restricted
-    for _, field := range container.Fields {
-        if field.Name == fieldName {
-             // Check Authorization
-             userRole, _ := c.Locals("userRole").(string)
-             if len(field.AuthorizeRole) > 0 {
-                  authorized := false
-                  for _, r := range field.AuthorizeRole {
-                      if r == userRole { authorized = true; break }
-                  }
-                  if !authorized {
-                      return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
-                          Status:  http.StatusForbidden,
-                          Message: "Access to this field is restricted",
-                          Data:    nil,
-                      })
-                  }
-             }
+	// Check if the requested field is hashed or restricted
+	for _, field := range container.Fields {
+		if field.Name == fieldName {
+			// Check Authorization
+			userRole, _ := c.Locals("userRole").(string)
+			if len(field.AuthorizeRole) > 0 {
+				authorized := false
+				for _, r := range field.AuthorizeRole {
+					if r == userRole {
+						authorized = true
+						break
+					}
+				}
+				if !authorized {
+					return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+						Status:  http.StatusForbidden,
+						Message: "Access to this field is restricted",
+						Data:    nil,
+					})
+				}
+			}
 
-            if field.IsHashed {
-                log.Printf("Attempted to access hashed field %s in schema %s", fieldName, schemaName)
-                return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
-                    Status:  http.StatusForbidden,
-                    Message: "Cannot access hashed fields",
-                    Data:    nil,
-                })
-            }
-        }
-    }
+			if field.IsHashed {
+				log.Printf("Attempted to access hashed field %s in schema %s", fieldName, schemaName)
+				return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+					Status:  http.StatusForbidden,
+					Message: "Cannot access hashed fields",
+					Data:    nil,
+				})
+			}
+		}
+	}
 
-    // Query the project-specific collection with projection for only _id and fieldName
-    collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-    projection := bson.M{
-        "_id":     1,
-        fieldName: 1,
-    }
+	// Query the project-specific collection with projection for only _id and fieldName
+	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	projection := bson.M{
+		"_id":     1,
+		fieldName: 1,
+	}
 
-    cursor, err := collection.Find(ctx, bson.M{}, options.Find().SetProjection(projection))
-    if err != nil {
-        log.Printf("Failed to query collection %s: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to fetch items")
-    }
-    defer cursor.Close(ctx)
+	cursor, err := collection.Find(ctx, bson.M{}, options.Find().SetProjection(projection))
+	if err != nil {
+		log.Printf("Failed to query collection %s: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+	}
+	defer cursor.Close(ctx)
 
-    var items []map[string]interface{}
-    if err = cursor.All(ctx, &items); err != nil {
-        log.Printf("Failed to decode items from collection %s: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to decode items")
-    }
+	var items []map[string]interface{}
+	if err = cursor.All(ctx, &items); err != nil {
+		log.Printf("Failed to decode items from collection %s: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to decode items")
+	}
 
-    log.Printf("Successfully fetched %d items for selection", len(items))
-    // Filter fields based on user role authorization
-    userRole, _ := c.Locals("userRole").(string)
-    items = utils.FilterDocuments(items, container.Fields, userRole)
+	log.Printf("Successfully fetched %d items for selection", len(items))
+	// Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	items = utils.FilterDocuments(items, container.Fields, userRole)
 
-    return c.JSON(items)
+	return c.JSON(items)
 }
-
 
 // TODO: performance will be improved by adding a field in the container as usedSchemas (which will be updated when the new schema added with objectId of the currentSchema) and instead of getting all containers we will only check the neccessary containers and if the usedSchemas are empty we will not waste time with getting all containers
 
-//delete an item from the collection
+// delete an item from the collection
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-	
+
 	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
@@ -954,8 +1024,8 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	// Fetching the schema name from the query params
 	schemaName := c.Query("schemaName")
 	log.Printf("Deleting item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
-    
-    // Attempting to convert the ID from string to ObjectID
+
+	// Attempting to convert the ID from string to ObjectID
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
 	if err != nil {
@@ -978,12 +1048,12 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	}
 	defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
 
-    //check if schema is used as objectId in other containers
-    allContainers, err := utils.GetAllContainerModels()
-        if err != nil {
-			log.Printf("Failed to retrieve container models for schema: %s, error: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Failed to retrieve container models.")
-        }
+	//check if schema is used as objectId in other containers
+	allContainers, err := utils.GetAllContainerModels()
+	if err != nil {
+		log.Printf("Failed to retrieve container models for schema: %s, error: %v", schemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to retrieve container models.")
+	}
 	// First check if any reference prevents deletion
 	for _, container := range allContainers {
 		if container.SchemaName != schemaName { // Skip the current schema
@@ -1023,27 +1093,27 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		}
 	}
 	var container *models.ContainerModel
-    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        // Use the container model from the context if availabl
-        container, _ = storedContainer.(*models.ContainerModel)
-    } else {
-        // Fetch container model if not available in context
-        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-        if err != nil {
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		// Use the container model from the context if availabl
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		// Fetch container model if not available in context
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
+		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-              return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-        }
-    }
-	
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+		}
+	}
+
 	// Using the project-specific collection for this schema
 	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-    // Fetch item before deletion for audit
-    var deletedDoc bson.M
-    if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
-        log.Printf("Failed to fetch item before delete for schema: %s, error: %v", schemaName, err)
-    }
-	
+	// Fetch item before deletion for audit
+	var deletedDoc bson.M
+	if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
+		log.Printf("Failed to fetch item before delete for schema: %s, error: %v", schemaName, err)
+	}
+
 	// Attempting to delete the item with the given ID from the specified collection
 	_, err = currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 	if err != nil {
@@ -1051,33 +1121,33 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to delete the item from the specified collection.")
 	}
 
-    // Log audit
-    if deletedDoc != nil {
-         if err := utils.LogDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), deletedDoc); err != nil {
-            log.Printf("Failed to log delete action: %v", err)
-         }
-    }
+	// Log audit
+	if deletedDoc != nil {
+		if err := utils.LogDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), deletedDoc); err != nil {
+			log.Printf("Failed to log delete action: %v", err)
+		}
+	}
 	// Now attempting to delete the related cache
-if container.Redis.IsRedisCached {
-    err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
-    if err != nil {
-		log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
-    }
+	if container.Redis.IsRedisCached {
+		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
+		if err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
+			return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
+		}
 
-    // Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-    for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-        err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
-        if err != nil {
-        // Log the error and continue with the next iteration
-        log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-        continue
-    }
-    }
-}
+		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
+			if err != nil {
+				// Log the error and continue with the next iteration
+				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+				continue
+			}
+		}
+	}
 	// Emit WebSocket invalidate event for this schema
 	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
-	
+
 	// Convert deletedDoc to map[string]interface{} for response
 	responseItem := make(map[string]interface{})
 	if deletedDoc != nil {
@@ -1087,13 +1157,13 @@ if container.Redis.IsRedisCached {
 		// Strip hashed fields from response
 		utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
 	}
-	
+
 	// Successfully deleted the item
 	log.Printf("Item successfully deleted for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Item successfully deleted from the specified collection.",
-		Data:   responseItem,
+		Data:    responseItem,
 	})
 }
 
@@ -1103,10 +1173,10 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-	
+
 	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
-	
+
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1117,9 +1187,10 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Parse the request body as a JSON array.
 	var items []map[string]interface{}
-	if err := c.BodyParser(&items); err != nil {
-		log.Printf("Failed to parse request body for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	maxBulkDelete := configs.GetMaxBulkDeleteLimit()
+	items, err = parseLimitedBatchItems(c, c.Body(), "bulk delete", schemaName, tenantID, projectID, maxBulkDelete)
+	if err != nil {
+		return err
 	}
 
 	// Retrieve all container models (to check for references).
@@ -1147,7 +1218,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Slices to keep track of successful and failed deletions.
 	var successfulDeletes []interface{}
 	var failedDeletes []map[string]interface{}
-    var bulkDeletedDocs []interface{}
+	var bulkDeletedDocs []interface{}
 
 	// Iterate over each deletion request.
 	for _, item := range items {
@@ -1264,11 +1335,11 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 
 		// Attempt deletion from the current collection.
-        // Fetch audit doc
-        var deletedDoc bson.M
-        if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
-            log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", schemaName, err)
-        }
+		// Fetch audit doc
+		var deletedDoc bson.M
+		if err := currentCollection.FindOne(ctx, bson.M{"_id": deleteId}).Decode(&deletedDoc); err != nil {
+			log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", schemaName, err)
+		}
 
 		result, err := currentCollection.DeleteOne(ctx, bson.M{"_id": deleteId})
 		// Release the lock immediately.
@@ -1295,9 +1366,9 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 			"id":     idStr,
 			"result": result,
 		})
-        if deletedDoc != nil {
-            bulkDeletedDocs = append(bulkDeletedDocs, deletedDoc)
-        }
+		if deletedDoc != nil {
+			bulkDeletedDocs = append(bulkDeletedDocs, deletedDoc)
+		}
 
 	}
 
@@ -1325,13 +1396,13 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	}
 
-    // Log Bulk Audit
-    if len(bulkDeletedDocs) > 0 {
-         if err := utils.LogBulkDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkDeletedDocs); err != nil {
-             log.Printf("Failed to log bulk delete: %v", err)
-         }
-    }
-	
+	// Log Bulk Audit
+	if len(bulkDeletedDocs) > 0 {
+		if err := utils.LogBulkDeleteAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkDeletedDocs); err != nil {
+			log.Printf("Failed to log bulk delete: %v", err)
+		}
+	}
+
 	log.Printf("Multiple deletion process completed for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -1339,47 +1410,48 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		Data:    responseData,
 	})
 }
-//update an item in the collection
+
+// update an item in the collection
 func UpdateDynamicModelItem(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    
-    // Extract userID for WebSocket events
-    userIDStr, _ := c.Locals("userID").(string)
-    log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
-    
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
 
-    schemaName := c.Query("schemaName")
-    log.Printf("Updating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
-    updateIdStr := c.Params("id")
-    updateId, err := primitive.ObjectIDFromHex(updateIdStr)
-    if err != nil {
+	// Extract userID for WebSocket events
+	userIDStr, _ := c.Locals("userID").(string)
+	log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
+
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
+	schemaName := c.Query("schemaName")
+	log.Printf("Updating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
+	updateIdStr := c.Params("id")
+	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
+	if err != nil {
 		log.Printf("Provided ID is not in the valid format for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
-    }
-    // Define Redis Lock Key to prevent concurrent updates of the same item
-    lockKey := fmt.Sprintf("lock:update:%s:%s", schemaName, updateId.Hex())
+		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
+	}
+	// Define Redis Lock Key to prevent concurrent updates of the same item
+	lockKey := fmt.Sprintf("lock:update:%s:%s", schemaName, updateId.Hex())
 
-    // Acquire Redis Lock (expires in 10 seconds)
-    lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
-    if !locked {
+	// Acquire Redis Lock (expires in 10 seconds)
+	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+	if !locked {
 		log.Printf("Another process is already updating this item for schema: %s", schemaName)
-        return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
-            Status:  http.StatusConflict,
-            Message: "Another process is already updating this item",
-            Data:    nil,
-        })
-    }
-    defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
+		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
+			Status:  http.StatusConflict,
+			Message: "Another process is already updating this item",
+			Data:    nil,
+		})
+	}
+	defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
 
-    // Fetch the associated container model
+	// Fetch the associated container model
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		// Use the container model from the context if available
@@ -1389,217 +1461,217 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
 		if err != nil {
 			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			  return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
 		}
 	}
 
-    // Check if there is an image field in the container
-    hasImageField := false
-    for _, field := range container.Fields {
-        if field.Type == "image" {
-            hasImageField = true
-            break
-        }
-    }
+	// Check if there is an image field in the container
+	hasImageField := false
+	for _, field := range container.Fields {
+		if field.Type == "image" {
+			hasImageField = true
+			break
+		}
+	}
 
-    var updatedItemMap map[string]interface{}
-    fileURLs := make(map[string]string)
+	var updatedItemMap map[string]interface{}
+	fileURLs := make(map[string]string)
 
-    // Check if request is multipart form
-    contentType := c.Get("Content-Type")
-    if hasImageField || strings.Contains(contentType, "multipart/form-data") {
-        // Handle multipart form data
-        form, err := c.MultipartForm()
-        if err != nil {
+	// Check if request is multipart form
+	contentType := c.Get("Content-Type")
+	if hasImageField || strings.Contains(contentType, "multipart/form-data") {
+		// Handle multipart form data
+		form, err := c.MultipartForm()
+		if err != nil {
 			log.Printf("Error in multipart form for schema: %s, error: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Error in multipart form")
-        }
-        updatedItemMap = utils.ProcessFormFields(form.Value)
+			return utils.SendErrorResponse(c, err, "Error in multipart form")
+		}
+		updatedItemMap = utils.ProcessFormFields(form.Value)
 
-        // Convert form field types (string to bool, int, float) based on schema
-        convertFormFieldTypes(updatedItemMap, container)
+		// Convert form field types (string to bool, int, float) based on schema
+		convertFormFieldTypes(updatedItemMap, container)
 
-        // Process image fields
-        for fieldName, files := range form.File {
-            for _, file := range files {
-                tempFilePath := "./temp/" + file.Filename
-                if err := c.SaveFile(file, tempFilePath); err != nil {
-                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file",  Data: err.Error()})
-                }
-                imageURL, err := utils.UploadToCloudinary(tempFilePath)
-                os.Remove(tempFilePath)
-                if err != nil {
+		// Process image fields
+		for fieldName, files := range form.File {
+			for _, file := range files {
+				tempFilePath := "./temp/" + file.Filename
+				if err := c.SaveFile(file, tempFilePath); err != nil {
+					return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file", Data: err.Error()})
+				}
+				imageURL, err := utils.UploadToCloudinary(tempFilePath)
+				os.Remove(tempFilePath)
+				if err != nil {
 					log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
-                    return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary")
-                }
-                fileURLs[fieldName] = imageURL
-            }
-        }
-    } else {
-        // Handle JSON body
-        if err := c.BodyParser(&updatedItemMap); err != nil {
+					return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary")
+				}
+				fileURLs[fieldName] = imageURL
+			}
+		}
+	} else {
+		// Handle JSON body
+		if err := c.BodyParser(&updatedItemMap); err != nil {
 			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-            return utils.SendErrorResponse(c, err, "Failed to parse body")
-        }
-    }
-    // Create a set of allowed field names
-    allowedFields := make(map[string]struct{})
-    for _, field := range container.Fields {
-        allowedFields[field.Name] = struct{}{}
-    }
+			return utils.SendErrorResponse(c, err, "Failed to parse body")
+		}
+	}
+	// Create a set of allowed field names
+	allowedFields := make(map[string]struct{})
+	for _, field := range container.Fields {
+		allowedFields[field.Name] = struct{}{}
+	}
 
-    // Filter out fields not in container.Fields
-    for key := range updatedItemMap {
-        if _, exists := allowedFields[key]; !exists {
-            delete(updatedItemMap, key)
-        }
-    }
-    // Replace file fields with URLs
-    for fieldName, url := range fileURLs {
-        updatedItemMap[fieldName] = url
-    }
-    
-    // Automatically update the updatedAt field if defined in the container schema.
-    now := time.Now().UTC().Format(time.RFC3339)
-    for _, field := range container.Fields {
-        if field.Name == "updatedAt" {
-            updatedItemMap["updatedAt"] = now
-        }
-    }
-    
-    // Validate only the fields being updated (partial validation)
-    err = utils.ValidatePartialUpdate(updatedItemMap, *container)
-    if err != nil {
+	// Filter out fields not in container.Fields
+	for key := range updatedItemMap {
+		if _, exists := allowedFields[key]; !exists {
+			delete(updatedItemMap, key)
+		}
+	}
+	// Replace file fields with URLs
+	for fieldName, url := range fileURLs {
+		updatedItemMap[fieldName] = url
+	}
+
+	// Automatically update the updatedAt field if defined in the container schema.
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, field := range container.Fields {
+		if field.Name == "updatedAt" {
+			updatedItemMap["updatedAt"] = now
+		}
+	}
+
+	// Validate only the fields being updated (partial validation)
+	err = utils.ValidatePartialUpdate(updatedItemMap, *container)
+	if err != nil {
 		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Validation failed")
-    }
-    
-    // Fetch the existing item from project-specific collection
-    var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-    var existingItem bson.M
-    err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
-    if err != nil {
+		return utils.SendErrorResponse(c, err, "Validation failed")
+	}
+
+	// Fetch the existing item from project-specific collection
+	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	var existingItem bson.M
+	err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
+	if err != nil {
 		log.Printf("Failed to fetch item for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to fetch item")
-    }
+		return utils.SendErrorResponse(c, err, "Failed to fetch item")
+	}
 
-    // Create a copy for audit logging (Before state)
-    beforeDoc := make(map[string]interface{})
-    for k, v := range existingItem {
-        beforeDoc[k] = v
-    }
-    
-    // Apply updates from updatedItemMap to existingItem
-    for key, value := range updatedItemMap {
-        existingItem[key] = value
-    }
+	// Create a copy for audit logging (Before state)
+	beforeDoc := make(map[string]interface{})
+	for k, v := range existingItem {
+		beforeDoc[k] = v
+	}
 
-    // Calculate equation fields based on the merged existingItem
-    for _, field := range container.Fields {
-        if field.Equation != "" {
-            // We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
-            // bson.M is map[string]interface{}, so it should be fine.
-            ctx := &utils.EquationContext{
-                TenantID:  tenantID,
-                ProjectID: projectID,
-                Data:      existingItem,
-            }
-            val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
-            if err != nil {
-                log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
-                 return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-                    Status:  http.StatusBadRequest,
-                    Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
-                    Data:    err.Error(),
-                })
-            }
-            existingItem[field.Name] = val
-        }
-    }
-        // Checking for Unique fields
-    for _, field := range container.Fields {
-        if field.Unique {
-            fieldValue, found := updatedItemMap[field.Name]
-            if !found {
-                continue 
-            }
+	// Apply updates from updatedItemMap to existingItem
+	for key, value := range updatedItemMap {
+		existingItem[key] = value
+	}
 
-            // Exclude the current document from the uniqueness check
-            filter := bson.M{
-                field.Name: fieldValue,
-                "_id": bson.M{"$ne": updateId}, // Exclude current document
-            }
-            count, err := currentCollection.CountDocuments(ctx, filter)
-            if err != nil {
+	// Calculate equation fields based on the merged existingItem
+	for _, field := range container.Fields {
+		if field.Equation != "" {
+			// We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
+			// bson.M is map[string]interface{}, so it should be fine.
+			ctx := &utils.EquationContext{
+				TenantID:  tenantID,
+				ProjectID: projectID,
+				Data:      existingItem,
+			}
+			val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
+			if err != nil {
+				log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
+				return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+					Status:  http.StatusBadRequest,
+					Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
+					Data:    err.Error(),
+				})
+			}
+			existingItem[field.Name] = val
+		}
+	}
+	// Checking for Unique fields
+	for _, field := range container.Fields {
+		if field.Unique {
+			fieldValue, found := updatedItemMap[field.Name]
+			if !found {
+				continue
+			}
+
+			// Exclude the current document from the uniqueness check
+			filter := bson.M{
+				field.Name: fieldValue,
+				"_id":      bson.M{"$ne": updateId}, // Exclude current document
+			}
+			count, err := currentCollection.CountDocuments(ctx, filter)
+			if err != nil {
 				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
-                return utils.SendErrorResponse(c, err, "Error checking existing field value.")
-            }
+				return utils.SendErrorResponse(c, err, "Error checking existing field value.")
+			}
 
-            if count > 0 {
+			if count > 0 {
 				log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
-                return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-                    "status":  http.StatusBadRequest,
-                    "message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
-                    "data":    nil,
-                })
-            }
-        }
-    }
+				return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+					"status":  http.StatusBadRequest,
+					"message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
+					"data":    nil,
+				})
+			}
+		}
+	}
 
-    // Convert fields that should be ObjectId or ObjectIdArray to proper types
-    for _, field := range container.Fields {
-        if field.Type == "objectId" {
-            if strVal, ok := existingItem[field.Name].(string); ok {
-                if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-                    existingItem[field.Name] = objId
-                }
-            }
-        } else if field.Type == "objectIdArray" {
-            // Handle objectIdArray conversion
-            if val, exists := existingItem[field.Name]; exists && val != nil {
-                // Try []interface{} first (common from JSON parsing)
-                if arrInterface, ok := val.([]interface{}); ok {
-                    objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
-                    for _, item := range arrInterface {
-                        if strVal, ok := item.(string); ok {
-                            if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-                                objIdArray = append(objIdArray, objId)
-                            }
-                        } else if objId, ok := item.(primitive.ObjectID); ok {
-                            objIdArray = append(objIdArray, objId)
-                        }
-                    }
-                    existingItem[field.Name] = objIdArray
-                } else if arrString, ok := val.([]string); ok {
-                    // Handle []string
-                    objIdArray := make([]primitive.ObjectID, 0, len(arrString))
-                    for _, strVal := range arrString {
-                        if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-                            objIdArray = append(objIdArray, objId)
-                        }
-                    }
-                    existingItem[field.Name] = objIdArray
-                }
-            }
-        }
-    }
+	// Convert fields that should be ObjectId or ObjectIdArray to proper types
+	for _, field := range container.Fields {
+		if field.Type == "objectId" {
+			if strVal, ok := existingItem[field.Name].(string); ok {
+				if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+					existingItem[field.Name] = objId
+				}
+			}
+		} else if field.Type == "objectIdArray" {
+			// Handle objectIdArray conversion
+			if val, exists := existingItem[field.Name]; exists && val != nil {
+				// Try []interface{} first (common from JSON parsing)
+				if arrInterface, ok := val.([]interface{}); ok {
+					objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
+					for _, item := range arrInterface {
+						if strVal, ok := item.(string); ok {
+							if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+								objIdArray = append(objIdArray, objId)
+							}
+						} else if objId, ok := item.(primitive.ObjectID); ok {
+							objIdArray = append(objIdArray, objId)
+						}
+					}
+					existingItem[field.Name] = objIdArray
+				} else if arrString, ok := val.([]string); ok {
+					// Handle []string
+					objIdArray := make([]primitive.ObjectID, 0, len(arrString))
+					for _, strVal := range arrString {
+						if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
+							objIdArray = append(objIdArray, objId)
+						}
+					}
+					existingItem[field.Name] = objIdArray
+				}
+			}
+		}
+	}
 
-    // Update in collection
-    updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
-    if err != nil {
+	// Update in collection
+	updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
+	if err != nil {
 		log.Printf("Failed to update item for schema: %s, error: %v", schemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to update item")
-    }
+		return utils.SendErrorResponse(c, err, "Failed to update item")
+	}
 
-    // Log audit
-    if err := utils.LogUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
-        log.Printf("Failed to log update action: %v", err)
-    }
+	// Log audit
+	if err := utils.LogUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
+		log.Printf("Failed to log update action: %v", err)
+	}
 
-    if updateResult.MatchedCount == 0 {
+	if updateResult.MatchedCount == 0 {
 		log.Printf("No item found with specified ID for schema: %s", schemaName)
-        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
-    }
+		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
+	}
 	// Now attempting to delete the related cache
 	if container.Redis.IsRedisCached {
 		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
@@ -1615,12 +1687,12 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
 			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
 			if err != nil {
-			// Log the error and continue with the next iteration
-			log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-			continue
-		}
-		// Emit WebSocket invalidate event for triggered schema
-		ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
+				// Log the error and continue with the next iteration
+				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
+				continue
+			}
+			// Emit WebSocket invalidate event for triggered schema
+			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
 		}
 	}
 
@@ -1637,7 +1709,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
-    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Set a timeout for the operation.
@@ -1646,10 +1718,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-	
+
 	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
-	
+
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1698,9 +1770,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		if !exists || len(itemsJSON) == 0 {
 			return utils.SendErrorResponse(c, fmt.Errorf("missing items field"), "Missing items JSON field")
 		}
-		if err := json.Unmarshal([]byte(itemsJSON[0]), &items); err != nil {
-			log.Printf("Error parsing items JSON for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error parsing items JSON")
+		maxBulkUpdate := configs.GetMaxBulkUpdateLimit()
+		items, err = parseLimitedBatchItems(c, []byte(itemsJSON[0]), "bulk update", schemaName, tenantID, projectID, maxBulkUpdate)
+		if err != nil {
+			return err
 		}
 
 		// Process image fields if any.
@@ -1722,10 +1795,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 				}
 				// Loop over the files so that each item gets its corresponding image.
 				for _, file := range files {
-                tempFilePath := "./temp/" + file.Filename
-                if err := c.SaveFile(file, tempFilePath); err != nil {
-                    return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.",  Data: err.Error()})
-                }
+					tempFilePath := "./temp/" + file.Filename
+					if err := c.SaveFile(file, tempFilePath); err != nil {
+						return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.", Data: err.Error()})
+					}
 					imageURL, err := utils.UploadToCloudinary(tempFilePath)
 					// Clean up the temp file.
 					os.Remove(tempFilePath)
@@ -1739,9 +1812,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		}
 	} else {
 		// Otherwise, assume a JSON array in the request body.
-		if err := c.BodyParser(&items); err != nil {
-			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to parse request body")
+		maxBulkUpdate := configs.GetMaxBulkUpdateLimit()
+		items, err = parseLimitedBatchItems(c, c.Body(), "bulk update", schemaName, tenantID, projectID, maxBulkUpdate)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -1754,8 +1828,8 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	// Prepare slices for successful and failed update results.
 	var successfulUpdates []interface{}
 	var failedUpdates []map[string]interface{}
-    var bulkBeforeDocs []interface{}
-    var bulkAfterDocs []interface{}
+	var bulkBeforeDocs []interface{}
+	var bulkAfterDocs []interface{}
 
 	// Get the project-specific collection for this schema.
 	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
@@ -1863,43 +1937,43 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			continue
 		}
 
-        // Clone for audit (Before state)
-        beforeDoc := make(map[string]interface{})
-        for k, v := range existingItem {
-             beforeDoc[k] = v
-        }
+		// Clone for audit (Before state)
+		beforeDoc := make(map[string]interface{})
+		for k, v := range existingItem {
+			beforeDoc[k] = v
+		}
 
 		// Merge update fields into the existing document.
 		for key, value := range item {
 			existingItem[key] = value
 		}
 
-        // Calculate equation fields based on the merged existingItem
-        equationError := false
-        for _, field := range container.Fields {
-            if field.Equation != "" {
-                eqCtx := &utils.EquationContext{
-                    TenantID:  tenantID,
-                    ProjectID: projectID,
-                    Data:      existingItem,
-                }
-                val, err := utils.EvaluateEquationWithContext(field.Equation, eqCtx)
-                if err != nil {
-                    utils.ReleaseLock(lockKey, lockID)
-                    failedUpdates = append(failedUpdates, map[string]interface{}{
-                        "id":    idStr,
-                        "item":  item,
-                        "error": fmt.Sprintf("Error evaluating equation for field %s: %v", field.Name, err),
-                    })
-                    equationError = true
-                    break
-                }
-                existingItem[field.Name] = val
-            }
-        }
-        if equationError {
-            continue
-        }
+		// Calculate equation fields based on the merged existingItem
+		equationError := false
+		for _, field := range container.Fields {
+			if field.Equation != "" {
+				eqCtx := &utils.EquationContext{
+					TenantID:  tenantID,
+					ProjectID: projectID,
+					Data:      existingItem,
+				}
+				val, err := utils.EvaluateEquationWithContext(field.Equation, eqCtx)
+				if err != nil {
+					utils.ReleaseLock(lockKey, lockID)
+					failedUpdates = append(failedUpdates, map[string]interface{}{
+						"id":    idStr,
+						"item":  item,
+						"error": fmt.Sprintf("Error evaluating equation for field %s: %v", field.Name, err),
+					})
+					equationError = true
+					break
+				}
+				existingItem[field.Name] = val
+			}
+		}
+		if equationError {
+			continue
+		}
 
 		// Check unique constraints for updated fields.
 		for _, field := range container.Fields {
@@ -1997,16 +2071,16 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 			"id":     idStr,
 			"result": updateResult,
 		})
-        bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
-        bulkAfterDocs = append(bulkAfterDocs, existingItem)
+		bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
+		bulkAfterDocs = append(bulkAfterDocs, existingItem)
 	}
 
-    // Log Bulk Audit
-    if len(bulkAfterDocs) > 0 {
-         if err := utils.LogBulkUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
-             log.Printf("Failed to log bulk update: %v", err)
-         }
-    }
+	// Log Bulk Audit
+	if len(bulkAfterDocs) > 0 {
+		if err := utils.LogBulkUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
+			log.Printf("Failed to log bulk update: %v", err)
+		}
+	}
 
 	// After processing all items, clear the cache for the schema.
 	if container.Redis.IsRedisCached {
@@ -2034,7 +2108,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if len(successfulUpdates) > 0 {
 		ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
 	}
-	
+
 	log.Printf("Multiple items update completed for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -2044,104 +2118,104 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 }
 
 func GetDynamicModelItem(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // 1) Load and validate schemaName
-    container, err := utils.FetchContainerModel(c)
-    if err != nil {
-        if err == utils.ErrNoSchemaName {
-            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-        }
-        return utils.SendErrorResponse(c, err, "Failed to load container model")
-    }
-    schema := container.SchemaName
+	// 1) Load and validate schemaName
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	}
+	schema := container.SchemaName
 
-    // 2) Build the filter based on :id param
-    idParam := c.Params("id")
-    var filter bson.M
+	// 2) Build the filter based on :id param
+	idParam := c.Params("id")
+	var filter bson.M
 
-    // Check if there's an autoIncrementId field in this container
-    var autoIncField string
-    for _, f := range container.Fields {
-        if f.Type == "autoIncrementId" {
-            autoIncField = f.Name
-            break
-        }
-    }
+	// Check if there's an autoIncrementId field in this container
+	var autoIncField string
+	for _, f := range container.Fields {
+		if f.Type == "autoIncrementId" {
+			autoIncField = f.Name
+			break
+		}
+	}
 
-    if autoIncField != "" {
-        // Try parse as integer first
-        if idInt, parseErr := strconv.Atoi(idParam); parseErr == nil {
-            filter = bson.M{autoIncField: idInt}
-        } else if objID, parseErr := primitive.ObjectIDFromHex(idParam); parseErr == nil {
-            // Fallback: valid ObjectID
-            filter = bson.M{"_id": objID}
-        } else {
-            // Neither integer nor ObjectID
-            return utils.SendErrorResponse(c, errors.New("invalid id format"), "Invalid ID")
-        }
-    } else {
-        // No autoIncrementId → must be a Mongo ObjectID
-        objID, parseErr := primitive.ObjectIDFromHex(idParam)
-        if parseErr != nil {
-            return utils.SendErrorResponse(c, parseErr, "Invalid ID")
-        }
-        filter = bson.M{"_id": objID}
-    }
+	if autoIncField != "" {
+		// Try parse as integer first
+		if idInt, parseErr := strconv.Atoi(idParam); parseErr == nil {
+			filter = bson.M{autoIncField: idInt}
+		} else if objID, parseErr := primitive.ObjectIDFromHex(idParam); parseErr == nil {
+			// Fallback: valid ObjectID
+			filter = bson.M{"_id": objID}
+		} else {
+			// Neither integer nor ObjectID
+			return utils.SendErrorResponse(c, errors.New("invalid id format"), "Invalid ID")
+		}
+	} else {
+		// No autoIncrementId → must be a Mongo ObjectID
+		objID, parseErr := primitive.ObjectIDFromHex(idParam)
+		if parseErr != nil {
+			return utils.SendErrorResponse(c, parseErr, "Invalid ID")
+		}
+		filter = bson.M{"_id": objID}
+	}
 
-    // 3) Try cache
-    redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", tenantID, projectID, schema, container, idParam)
-    if shouldCache {
-        if raw, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
-            var item map[string]interface{}
-            if json.Unmarshal([]byte(raw), &item) == nil {
-                // strip hashed & populate
-                utils.StripHashed(container.Fields, []map[string]interface{}{item})
-                pop, _ := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
-                if len(pop) > 0 {
-                    item = pop[0]
-                }
-                source := "cache"
-                return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
-                    "item":   item,
-                    "source": &source,
-                })
-            }
-        }
-    }
+	// 3) Try cache
+	redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", tenantID, projectID, schema, container, idParam)
+	if shouldCache {
+		if raw, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+			var item map[string]interface{}
+			if json.Unmarshal([]byte(raw), &item) == nil {
+				// strip hashed & populate
+				utils.StripHashed(container.Fields, []map[string]interface{}{item})
+				pop, _ := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
+				if len(pop) > 0 {
+					item = pop[0]
+				}
+				source := "cache"
+				return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
+					"item":   item,
+					"source": &source,
+				})
+			}
+		}
+	}
 
-    // 4) Fetch from Mongo using project-specific collection
-    coll := utils.GetDynamicCollectionForProject(tenantID, projectID, schema)
-    var rawDoc bson.M
-    if err := coll.FindOne(ctx, filter).Decode(&rawDoc); err != nil {
-        return utils.SendErrorResponse(c, err, "Item not found")
-    }
+	// 4) Fetch from Mongo using project-specific collection
+	coll := utils.GetDynamicCollectionForProject(tenantID, projectID, schema)
+	var rawDoc bson.M
+	if err := coll.FindOne(ctx, filter).Decode(&rawDoc); err != nil {
+		return utils.SendErrorResponse(c, err, "Item not found")
+	}
 
-    // convert to map[string]interface{}
-    item := make(map[string]interface{}, len(rawDoc))
-    for k, v := range rawDoc {
-        item[k] = v
-    }
+	// convert to map[string]interface{}
+	item := make(map[string]interface{}, len(rawDoc))
+	for k, v := range rawDoc {
+		item[k] = v
+	}
 
-    // 5) Strip hashed fields
-    utils.StripHashed(container.Fields, []map[string]interface{}{item})
+	// 5) Strip hashed fields
+	utils.StripHashed(container.Fields, []map[string]interface{}{item})
 
-    // 6) Populate if needed
-    pop, err := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to populate item")
-    }
-    if len(pop) > 0 {
-        item = pop[0]
-    }
+	// 6) Populate if needed
+	pop, err := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to populate item")
+	}
+	if len(pop) > 0 {
+		item = pop[0]
+	}
 
 	// 6.5) Filter fields based on user role authorization
 	userRole, _ := c.Locals("userRole").(string)
@@ -2150,17 +2224,18 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 		item = filteredItems[0]
 	}
 
-    // 7) Cache the result
-    if shouldCache {
-        if blob, err := json.Marshal(item); err == nil {
-            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
-            configs.RedisClient.Set(ctx, redisKey, blob, ttl)
-        }
-    }
+	// 7) Cache the result
+	if shouldCache {
+		if blob, err := json.Marshal(item); err == nil {
+			ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+			configs.RedisClient.Set(ctx, redisKey, blob, ttl)
+		}
+	}
 
-    // 8) Return
-    return c.JSON(item)
+	// 8) Return
+	return c.JSON(item)
 }
+
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2213,40 +2288,40 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "invalid pagination params")
 	}
 
-    // Apply Row Access Logic
-    userRole, _ := c.Locals("userRole").(string)
-    // We need the full user object. Locals("user") might be set by middleware? 
-    // Assuming simple-auth middleware sets "user" or "userID". 
-    // If only userID is available, we might need to fetch user, or just pass map with ID if that's all needed.
-    // For now, let's construct a minimal user map from locals if available, or fetch full user if needed.
-    // Assuming "user" is NOT explicitly in locals as a map, but we have userID and userRole.
-    // If row access relies on other user fields (e.g. email, companyId), we need to fetch the user.
-    // Let's defer strict user fetching for performance unless necessary or use what's available.
-    // Ideally Middleware should set "user" context. 
-    // Let's create a helper or assume middleware sets it. 
-    // HACK: Constructing a pseudo-user map from likely available claims.
-    userID, _ := c.Locals("userID").(string)
-    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
-    // If strict fetching needed: userMap, _ = utils.GetUser(userID) 
+	// Apply Row Access Logic
+	userRole, _ := c.Locals("userRole").(string)
+	// We need the full user object. Locals("user") might be set by middleware?
+	// Assuming simple-auth middleware sets "user" or "userID".
+	// If only userID is available, we might need to fetch user, or just pass map with ID if that's all needed.
+	// For now, let's construct a minimal user map from locals if available, or fetch full user if needed.
+	// Assuming "user" is NOT explicitly in locals as a map, but we have userID and userRole.
+	// If row access relies on other user fields (e.g. email, companyId), we need to fetch the user.
+	// Let's defer strict user fetching for performance unless necessary or use what's available.
+	// Ideally Middleware should set "user" context.
+	// Let's create a helper or assume middleware sets it.
+	// HACK: Constructing a pseudo-user map from likely available claims.
+	userID, _ := c.Locals("userID").(string)
+	userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole}
+	// If strict fetching needed: userMap, _ = utils.GetUser(userID)
 
-    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
-    if err != nil {
-         log.Printf("Error building row access filter: %v", err)
-         return utils.SendErrorResponse(c, err, "row access error")
-    }
-    if rowAccessFilter != nil {
-        if len(filter) > 0 {
-             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-        } else {
-             filter = rowAccessFilter
-        }
-    }
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return utils.SendErrorResponse(c, err, "row access error")
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
 
 	// 5) query
 	opts := utils.BuildFindOptions(sortDoc, pager)
 
-    // Apply Row Access Logic
-    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, &pager)
+	// Apply Row Access Logic
+	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, &pager)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "query failed")
 	}
@@ -2259,7 +2334,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	}
 
 	// 6.5) Filter fields based on user role authorization
-// 6.5) Filter fields based on user role authorization
+	// 6.5) Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
 
 	// 7) response
@@ -2276,286 +2351,288 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
-    // 1) Context + load containerModel (ensures schemaName is present)
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	// 1) Context + load containerModel (ensures schemaName is present)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    container, err := utils.FetchContainerModel(c)
-    if err != nil {
-        if err == utils.ErrNoSchemaName {
-            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-        }
-        return utils.SendErrorResponse(c, err, "Failed to load container model")
-    }
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	}
 
-    // 2) Build the filter from query parameters
-    filter, err := utils.BuildFilterFromQuery(c, container)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid filter parameter")
-    }
+	// 2) Build the filter from query parameters
+	filter, err := utils.BuildFilterFromQuery(c, container)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+	}
 
-    // 3) Add search functionality if search parameter is provided
-    searchKey := c.Query("search")
-    if searchKey != "" {
-        // Build search OR clauses with references
-        orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Failed to build search filter")
-        }
-        
-        if len(orClauses) > 0 {
-            // Combine existing filter with search using $and
-            if len(filter) > 0 {
-                filter = bson.M{
-                    "$and": []bson.M{
-                        filter,
-                        {"$or": orClauses},
-                    },
-                }
-            } else {
-                // No existing filter, just use search
-                filter = bson.M{"$or": orClauses}
-            }
-        }
-    }
+	// 3) Add search functionality if search parameter is provided
+	searchKey := c.Query("search")
+	if searchKey != "" {
+		// Build search OR clauses with references
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to build search filter")
+		}
 
-    // 4) Parse sort & pagination
-    sortDoc, err := utils.ParseSort(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid sort parameters")
-    }
-    pager, err := utils.ParsePager(c)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
-    }
+		if len(orClauses) > 0 {
+			// Combine existing filter with search using $and
+			if len(filter) > 0 {
+				filter = bson.M{
+					"$and": []bson.M{
+						filter,
+						{"$or": orClauses},
+					},
+				}
+			} else {
+				// No existing filter, just use search
+				filter = bson.M{"$or": orClauses}
+			}
+		}
+	}
 
-    // 5) Execute the query
-    opts := utils.BuildFindOptions(sortDoc, pager)
+	// 4) Parse sort & pagination
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+	}
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+	}
 
-    // Apply Row Access Logic
-    userRole, _ := c.Locals("userRole").(string)
-    userID, _ := c.Locals("userID").(string)
-    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
+	// 5) Execute the query
+	opts := utils.BuildFindOptions(sortDoc, pager)
 
-    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
-    if err != nil {
-         log.Printf("Error building row access filter: %v", err)
-         return utils.SendErrorResponse(c, err, "row access error")
-    }
-    if rowAccessFilter != nil {
-        if len(filter) > 0 {
-             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-        } else {
-             filter = rowAccessFilter
-        }
-    }
+	// Apply Row Access Logic
+	userRole, _ := c.Locals("userRole").(string)
+	userID, _ := c.Locals("userID").(string)
+	userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole}
 
-    items, err := utils.QueryAndDecode(ctx, tenantID, projectID, container.SchemaName, filter, opts, &pager)
-    if err != nil {
-        log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
-        return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
-    }
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return utils.SendErrorResponse(c, err, "row access error")
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
 
-    // 6) Strip out hashed fields
-    utils.StripHashed(container.Fields, items)
+	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, container.SchemaName, filter, opts, &pager)
+	if err != nil {
+		log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
+	}
 
-    // 7) Populate references if configured
-    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to populate items")
-    }
+	// 6) Strip out hashed fields
+	utils.StripHashed(container.Fields, items)
 
-    // 7.5) Filter fields based on user role authorization
-    // 7.5) Filter fields based on user role authorization
-    items = utils.FilterDocuments(items, container.Fields, userRole)
+	// 7) Populate references if configured
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to populate items")
+	}
 
-    // 8) Send response (with pagination metadata if applicable)
-    if pager.Enabled {
-        return c.JSON(fiber.Map{
-            "items":       items,
-            "totalItems":  pager.TotalItems,
-            "totalPages":  pager.TotalPages,
-            "currentPage": pager.Page,
-        })
-    }
-    return c.JSON(items)
+	// 7.5) Filter fields based on user role authorization
+	// 7.5) Filter fields based on user role authorization
+	items = utils.FilterDocuments(items, container.Fields, userRole)
+
+	// 8) Send response (with pagination metadata if applicable)
+	if pager.Enabled {
+		return c.JSON(fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		})
+	}
+	return c.JSON(items)
 }
-//get all item for given collection
+
+// get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // Fetching the schema name and pipeline name from the query params
-    schemaName := c.Query("schemaName")
-    pipelineName := c.Query("pipelineName")
+	// Fetching the schema name and pipeline name from the query params
+	schemaName := c.Query("schemaName")
+	pipelineName := c.Query("pipelineName")
 	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s (tenant: %s, project: %s)", schemaName, pipelineName, tenantID, projectID)
 
-    // Validate schemaName and pipelineName
-    if schemaName == "" || pipelineName == "" {
-        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  http.StatusBadRequest,
-            Message: "schemaName and pipelineName are required",
-            Data:    nil,
-        })
-    }
+	// Validate schemaName and pipelineName
+	if schemaName == "" || pipelineName == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName and pipelineName are required",
+			Data:    nil,
+		})
+	}
 
-    // Serialize the current query parameters
-    currentQuery := c.OriginalURL()
+	// Serialize the current query parameters
+	currentQuery := c.OriginalURL()
 
-    // Get the container model for the schema
-    var container *models.ContainerModel
-    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        container, _ = storedContainer.(*models.ContainerModel)
-    } else {
-        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-        }
-    }
+	// Get the container model for the schema
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+		}
+	}
 
-    // Find the pipeline stage with the given name
-    var pipelineStage models.PipelineStage
-    found := false
-    for _, stage := range container.Pipelines {
-        if stage.Name == pipelineName {
-            pipelineStage = stage
-            found = true
-            break
-        }
-    }
-    if !found {
-        return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
-            Status:  http.StatusNotFound,
-            Message: "Pipeline not found",
-            Data:    nil,
-        })
-    }
-    pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
-    currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	// Find the pipeline stage with the given name
+	var pipelineStage models.PipelineStage
+	found := false
+	for _, stage := range container.Pipelines {
+		if stage.Name == pipelineName {
+			pipelineStage = stage
+			found = true
+			break
+		}
+	}
+	if !found {
+		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+			Status:  http.StatusNotFound,
+			Message: "Pipeline not found",
+			Data:    nil,
+		})
+	}
+	pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-    redisKey, shouldCache := utils.GeneratePipelineRedisKey(tenantID, projectID, schemaName, pipelineName, container)
+	redisKey, shouldCache := utils.GeneratePipelineRedisKey(tenantID, projectID, schemaName, pipelineName, container)
 
-    // Check if query has changed
-    queryChanged := false
-    if shouldCache {
-        storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
-        if err == nil && storedQuery != currentQuery {
-            queryChanged = true
-        }
-    }
+	// Check if query has changed
+	queryChanged := false
+	if shouldCache {
+		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
+		if err == nil && storedQuery != currentQuery {
+			queryChanged = true
+		}
+	}
 
-    // Fetch from cache if query hasn't changed and cache is available
-    if shouldCache && !queryChanged {
-        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-        if err == nil {
-            var items []map[string]interface{}
-            if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
-                // Filter fields based on user role authorization
-                // userRole, _ := c.Locals("userRole").(string)
-                // items = utils.FilterDocuments(items, container.Fields, userRole)
-                return c.JSON(items)
-            }
-        }
-    }
+	// Fetch from cache if query hasn't changed and cache is available
+	if shouldCache && !queryChanged {
+		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+		if err == nil {
+			var items []map[string]interface{}
+			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
+				// Filter fields based on user role authorization
+				// userRole, _ := c.Locals("userRole").(string)
+				// items = utils.FilterDocuments(items, container.Fields, userRole)
+				return c.JSON(items)
+			}
+		}
+	}
 
-    // Execute the dynamic pipeline
-    items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to execute dynamic pipeline")
-    }
+	// Execute the dynamic pipeline
+	items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to execute dynamic pipeline")
+	}
 
-    // Convert []bson.M to []map[string]interface{} for filtering
-    var resultItems []map[string]interface{}
-    for _, doc := range items {
-        resultItems = append(resultItems, map[string]interface{}(doc))
-    }
+	// Convert []bson.M to []map[string]interface{} for filtering
+	var resultItems []map[string]interface{}
+	for _, doc := range items {
+		resultItems = append(resultItems, map[string]interface{}(doc))
+	}
 
-    // Filter fields based on user role authorization
-    // userRole, _ := c.Locals("userRole").(string)
-    // resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+	// Filter fields based on user role authorization
+	// userRole, _ := c.Locals("userRole").(string)
+	// resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
 
-    // Cache the new data and query if shouldCache is true
-    if shouldCache {
-        dataToCache, _ := json.Marshal(resultItems)
-        var expiration time.Duration
-        if pipelineStage.CacheTime > 0 {
-            expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
-        } else {
-            expiration = 0 //the key will never expire.
-        }
-        configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-    }
+	// Cache the new data and query if shouldCache is true
+	if shouldCache {
+		dataToCache, _ := json.Marshal(resultItems)
+		var expiration time.Duration
+		if pipelineStage.CacheTime > 0 {
+			expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
+		} else {
+			expiration = 0 //the key will never expire.
+		}
+		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+		configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+	}
 
-    // Return the results
+	// Return the results
 	log.Printf("Pipeline results successfully fetched and filtered for schema: %s with pipeline name: %s", schemaName, pipelineName)
-    return c.JSON(resultItems)
+	return c.JSON(resultItems)
 }
+
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
-    // 1. Context with timeout
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	// 1. Context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    // 2. Load container (ensures schemaName present & fetches model)
-    container, err := utils.FetchContainerModel(c)
-    if err != nil {
-        if err == utils.ErrNoSchemaName {
-            return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-        }
-        return utils.SendErrorResponse(c, err, "Failed to load container model")
-    }
+	// 2. Load container (ensures schemaName present & fetches model)
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	}
 
-    	// 2.6 Try Redis cache for paginated results (Skip if Row Access is potentially active - refined check below)
+	// 2.6 Try Redis cache for paginated results (Skip if Row Access is potentially active - refined check below)
 	queryString := string(c.Request().URI().QueryString())
-    // Note: If Row Access is active, we should NOT return shared cache unless key includes user. 
-    // Checking row access first to decide on cache key would be better but requires more change.
-    // For now, let's proceed and if we find row access is needed, we will invalidate attempting to use shared cache 
-    // or we append userID to key if row access rules exist.
-    
-    // Check if container has row access rules
-    hasRowAccess := container.RowAccess != nil && len(container.RowAccess.Conditions) > 0
-    
-    userRole, _ := c.Locals("userRole").(string)
-    userID, _ := c.Locals("userID").(string)
-    
-    var redisKey string
-    var shouldCache bool
+	// Note: If Row Access is active, we should NOT return shared cache unless key includes user.
+	// Checking row access first to decide on cache key would be better but requires more change.
+	// For now, let's proceed and if we find row access is needed, we will invalidate attempting to use shared cache
+	// or we append userID to key if row access rules exist.
 
-    if hasRowAccess {
-        // Append userID to query string or key to ensure private cache
-         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString + "&_uid=" + userID)
-    } else {
-         redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString)
-    }
+	// Check if container has row access rules
+	hasRowAccess := container.RowAccess != nil && len(container.RowAccess.Conditions) > 0
+
+	userRole, _ := c.Locals("userRole").(string)
+	userID, _ := c.Locals("userID").(string)
+
+	var redisKey string
+	var shouldCache bool
+
+	if hasRowAccess {
+		// Append userID to query string or key to ensure private cache
+		redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString+"&_uid="+userID)
+	} else {
+		redisKey, shouldCache = utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", tenantID, projectID, container.SchemaName, container, queryString)
+	}
 
 	if shouldCache {
 		if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
 			var response fiber.Map
 			if json.Unmarshal([]byte(cachedData), &response) == nil {
 				log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
-				
+
 				// Filter fields based on user role before returning cached data
 				if itemsInterface, ok := response["items"].([]interface{}); ok {
 					var items []map[string]interface{}
@@ -2564,11 +2641,11 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 							items = append(items, itemMap)
 						}
 					}
-					
+
 					items = utils.FilterDocuments(items, container.Fields, userRole)
 					response["items"] = items
 				}
-				
+
 				return c.JSON(response)
 			}
 		}
@@ -2598,7 +2675,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		if err != nil {
 			return utils.SendErrorResponse(c, err, "Failed to build search filter")
 		}
-		
+
 		if len(orClauses) > 0 {
 			// Combine existing filter with search using $and
 			if len(filter) > 0 {
@@ -2627,19 +2704,19 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	}
 
 	// Apply Row Access Logic (Last step of filtering)
-    userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole} 
-    rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
-    if err != nil {
-         log.Printf("Error building row access filter: %v", err)
-         return utils.SendErrorResponse(c, err, "row access error")
-    }
-    if rowAccessFilter != nil {
-        if len(filter) > 0 {
-             filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-        } else {
-             filter = rowAccessFilter
-        }
-    }
+	userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole}
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return utils.SendErrorResponse(c, err, "row access error")
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
 
 	// 6. Query and decode results
 	opts := utils.BuildFindOptions(sortDoc, pager)
@@ -2649,382 +2726,383 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to fetch items")
 	}
 
-    // 7. Strip hashed fields
-    utils.StripHashed(container.Fields, items)
+	// 7. Strip hashed fields
+	utils.StripHashed(container.Fields, items)
 
-    // 8. Populate if configured
-    items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-    if err != nil {
-        log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
-        return utils.SendErrorResponse(c, err, "Failed to populate items")
-    }
+	// 8. Populate if configured
+	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
+	if err != nil {
+		log.Printf("Population failed for schema %q: %v", c.Query("schemaName"), err)
+		return utils.SendErrorResponse(c, err, "Failed to populate items")
+	}
 
 	// 8.5. Filter fields based on user role authorization
-// 8.5. Filter fields based on user role authorization
+	// 8.5. Filter fields based on user role authorization
 	items = utils.FilterDocuments(items, container.Fields, userRole)
 
-    // 9. Build response
-    var response fiber.Map
-    if pager.Enabled {
-        response = fiber.Map{
-            "items":       items,
-            "totalItems":  pager.TotalItems,
-            "totalPages":  pager.TotalPages,
-            "currentPage": pager.Page,
-        }
-    } else {
-        response = fiber.Map{"items": items}
-    }
+	// 9. Build response
+	var response fiber.Map
+	if pager.Enabled {
+		response = fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		}
+	} else {
+		response = fiber.Map{"items": items}
+	}
 
-    // 10. Cache the response if enabled
-    if shouldCache {
-        if payload, err := json.Marshal(response); err == nil {
-            ttl := time.Duration(container.Redis.CacheTime) * time.Minute
-            configs.RedisClient.Set(ctx, redisKey, payload, ttl)
-            log.Printf("Cached paginated items for schema: %s", container.SchemaName)
-        }
-    }
+	// 10. Cache the response if enabled
+	if shouldCache {
+		if payload, err := json.Marshal(response); err == nil {
+			ttl := time.Duration(container.Redis.CacheTime) * time.Minute
+			configs.RedisClient.Set(ctx, redisKey, payload, ttl)
+			log.Printf("Cached paginated items for schema: %s", container.SchemaName)
+		}
+	}
 
-    // 11. Return response
-    if pager.Enabled {
-        return c.JSON(response)
-    }
-    return c.JSON(items)
+	// 11. Return response
+	if pager.Enabled {
+		return c.JSON(response)
+	}
+	return c.JSON(items)
 }
+
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    schemaName := c.Query("schemaName")
-    functionName := c.Query("functionName")
+	schemaName := c.Query("schemaName")
+	functionName := c.Query("functionName")
 
-     // Serialize the current query parameters
-    currentQuery := c.OriginalURL()
-    // Fetch the associated container model from context
-    var container *models.ContainerModel
-    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        container, _ = storedContainer.(*models.ContainerModel)
-    } else {
-        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-        if err != nil {
-              return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-        }
-    }
+	// Serialize the current query parameters
+	currentQuery := c.OriginalURL()
+	// Fetch the associated container model from context
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+		}
+	}
 
-    pluginFileName := "temp_" + functionName + ".so"
-    fileName := "temp_" + functionName + ".go"
+	pluginFileName := "temp_" + functionName + ".so"
+	fileName := "temp_" + functionName + ".go"
 
-    // generate new redis key
-    redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName, container)
+	// generate new redis key
+	redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName, container)
 
-        // Check if query has changed
-    queryChanged := false
-    if shouldCache {
-        storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
-        if err == nil && storedQuery != currentQuery {
-            queryChanged = true
-        }
-    }
-  // Fetch from cache if query hasn't changed and cache is available
-    if shouldCache && !queryChanged {
-        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-        if err == nil {
-            var result interface{}
-            if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
-                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-                    Status:  http.StatusOK,
-                    Message: "Function result fetched from cache",
-                    Data:    result,
-                    Source:  utils.PointerToString("cache"),
-                })
-            }
-        }
-    }
-    // Check if plugin exists
-    p, err := plugin.Open(pluginFileName)
-    if err == nil {
-        // Plugin exists, try to lookup the function
-        f, err := p.Lookup(functionName)
-        if err == nil {
-            // Function found, execute it
-            if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
-                result, err := executeFunc(c)
-                if err != nil {
-                    return utils.SendErrorResponse(c, err, "Failed to execute function")
-                }
-                // Cache result if query hasn't changed and cache is available
-                if shouldCache  {
-                    var expiration time.Duration
-                    if container.Redis.CacheTime > 0 {
-                        expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-                    } else {
-                        expiration = 0 //the key will never expire.
-                    }
-                    resultJSON, err := json.Marshal(result)
-                    if err == nil {
-                        configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
-                        configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-                    }
-                }
-                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-                    Status:  http.StatusOK,
-                    Message: "Function result fetched from plugin",
-                    Data:    result,
-                    Source:  utils.PointerToString("plugin"),
-                })
-            }
-        }
-    }
+	// Check if query has changed
+	queryChanged := false
+	if shouldCache {
+		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
+		if err == nil && storedQuery != currentQuery {
+			queryChanged = true
+		}
+	}
+	// Fetch from cache if query hasn't changed and cache is available
+	if shouldCache && !queryChanged {
+		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+		if err == nil {
+			var result interface{}
+			if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
+				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+					Status:  http.StatusOK,
+					Message: "Function result fetched from cache",
+					Data:    result,
+					Source:  utils.PointerToString("cache"),
+				})
+			}
+		}
+	}
+	// Check if plugin exists
+	p, err := plugin.Open(pluginFileName)
+	if err == nil {
+		// Plugin exists, try to lookup the function
+		f, err := p.Lookup(functionName)
+		if err == nil {
+			// Function found, execute it
+			if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
+				result, err := executeFunc(c)
+				if err != nil {
+					return utils.SendErrorResponse(c, err, "Failed to execute function")
+				}
+				// Cache result if query hasn't changed and cache is available
+				if shouldCache {
+					var expiration time.Duration
+					if container.Redis.CacheTime > 0 {
+						expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+					} else {
+						expiration = 0 //the key will never expire.
+					}
+					resultJSON, err := json.Marshal(result)
+					if err == nil {
+						configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
+						configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+					}
+				}
+				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+					Status:  http.StatusOK,
+					Message: "Function result fetched from plugin",
+					Data:    result,
+					Source:  utils.PointerToString("plugin"),
+				})
+			}
+		}
+	}
 
-    // Function not found in existing plugin, fetch or generate new code
-    var dynamicFuncCode string
-    // Check if function is defined in container model
-    functionExists := false
-    for _, dynamicFunc := range container.DynamicFunctions {
-        if dynamicFunc.Name == functionName {
-            dynamicFuncCode = dynamicFunc.CodeJSON
-            functionExists = true
-            break
-        }
-    }
-    if !functionExists {
-        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  fiber.StatusBadRequest,
-            Message: "Function not found",
-            Data:    nil,
-        })
-    }
+	// Function not found in existing plugin, fetch or generate new code
+	var dynamicFuncCode string
+	// Check if function is defined in container model
+	functionExists := false
+	for _, dynamicFunc := range container.DynamicFunctions {
+		if dynamicFunc.Name == functionName {
+			dynamicFuncCode = dynamicFunc.CodeJSON
+			functionExists = true
+			break
+		}
+	}
+	if !functionExists {
+		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Function not found",
+			Data:    nil,
+		})
+	}
 
-    // Write new code to file
-    err = ioutil.WriteFile(fileName, []byte(dynamicFuncCode), 0644)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to write code to file")
-    }
+	// Write new code to file
+	err = ioutil.WriteFile(fileName, []byte(dynamicFuncCode), 0644)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to write code to file")
+	}
 
-    // Compile new code into plugin
-    out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
-    if err != nil {
-        return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
-            Status:  http.StatusInternalServerError,
-            Message: "Failed to compile code into plugin",
-            Data:    string(out),
-        })
-    }
-    // Load new plugin
-    p, err = plugin.Open(pluginFileName)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to load new plugin")
-    }
+	// Compile new code into plugin
+	out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to compile code into plugin",
+			Data:    string(out),
+		})
+	}
+	// Load new plugin
+	p, err = plugin.Open(pluginFileName)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to load new plugin")
+	}
 
-    // Lookup function in new plugin
-    f, err := p.Lookup(functionName)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to lookup function in new plugin")
-    }
+	// Lookup function in new plugin
+	f, err := p.Lookup(functionName)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to lookup function in new plugin")
+	}
 
-    // Execute the function and cache the result if caching is enabled
-    if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
-        result, err := executeFunc(c)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Failed to execute function")
-        }
+	// Execute the function and cache the result if caching is enabled
+	if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
+		result, err := executeFunc(c)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to execute function")
+		}
 
-        // Cache the result
-        if shouldCache {
-            dataToCache, _ := json.Marshal(result)
-            var expiration time.Duration
-            if container.Redis.CacheTime > 0 {
-                expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-            } else {
-                expiration = 0 //the key will never expire.
-            }
-            configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-            configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-        }
+		// Cache the result
+		if shouldCache {
+			dataToCache, _ := json.Marshal(result)
+			var expiration time.Duration
+			if container.Redis.CacheTime > 0 {
+				expiration = time.Duration(container.Redis.CacheTime) * time.Minute
+			} else {
+				expiration = 0 //the key will never expire.
+			}
+			configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
+			configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+		}
 
-        return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-            Status:  http.StatusOK,
-            Message: "Function result fetched from new plugin",
-            Data:    result,
-            Source:  utils.PointerToString("new plugin"),
-        })
-    } else {
-        return utils.SendErrorResponse(c, err, "Failed to execute function")
-    }
+		return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+			Status:  http.StatusOK,
+			Message: "Function result fetched from new plugin",
+			Data:    result,
+			Source:  utils.PointerToString("new plugin"),
+		})
+	} else {
+		return utils.SendErrorResponse(c, err, "Failed to execute function")
+	}
 }
 func TestPipeline(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    schemaName := c.Query("schemaName")
-    
-    // Fetch the container model for filtering
-    container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
-    if err != nil {
-         return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-    }
+	schemaName := c.Query("schemaName")
 
-    // Parse request body
-    var requestBody models.TestPipelineRequestBody
-    if err := c.BodyParser(&requestBody); err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid request body")
-    }
-    requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
-    currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	// Fetch the container model for filtering
+	container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+	}
 
-    // Execute the dynamic pipeline
-    items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)
-    if err != nil {
-        // Log the error; do not fail the server
-        log.Printf("Error executing test pipeline: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to execute test pipeline")
-    }
+	// Parse request body
+	var requestBody models.TestPipelineRequestBody
+	if err := c.BodyParser(&requestBody); err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid request body")
+	}
+	requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
+	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-    // Convert []bson.M to []map[string]interface{} for filtering
-    var resultItems []map[string]interface{}
-    for _, doc := range items {
-        resultItems = append(resultItems, map[string]interface{}(doc))
-    }
+	// Execute the dynamic pipeline
+	items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)
+	if err != nil {
+		// Log the error; do not fail the server
+		log.Printf("Error executing test pipeline: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to execute test pipeline")
+	}
 
-    // Filter fields based on user role authorization
-    userRole, _ := c.Locals("userRole").(string)
-    resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+	// Convert []bson.M to []map[string]interface{} for filtering
+	var resultItems []map[string]interface{}
+	for _, doc := range items {
+		resultItems = append(resultItems, map[string]interface{}(doc))
+	}
 
-    // Return the results
-    return c.Status(fiber.StatusOK).JSON(fiber.Map{
-        "status":  fiber.StatusOK,
-        "message": "Test pipeline executed and filtered successfully",
-        "data":    resultItems,
-    })
+	// Filter fields based on user role authorization
+	userRole, _ := c.Locals("userRole").(string)
+	resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
+
+	// Return the results
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"status":  fiber.StatusOK,
+		"message": "Test pipeline executed and filtered successfully",
+		"data":    resultItems,
+	})
 }
+
 // TODO:redis generate key and delete key will added into this function and then the route will be added and tested again
 func ExecuteDynamicAPI(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context
-    tenantID, projectID, err := getProjectContext(c)
-    if err != nil {
-        log.Printf("Project context error: %v", err)
-        return utils.SendErrorResponse(c, err, err.Error())
-    }
+	// Extract tenant and project context
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
-    schemaName := c.Query("schemaName")
-    apiName := c.Query("apiName")
+	schemaName := c.Query("schemaName")
+	apiName := c.Query("apiName")
 
-    // Fetch the associated container model from context
-    var container *models.ContainerModel
-    if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-        container, _ = storedContainer.(*models.ContainerModel)
-    } else {
-        container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-        if err != nil {
-            return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-        }
-    }
+	// Fetch the associated container model from context
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	} else {
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
+		}
+	}
 
-    // Check if API is defined in container model
-    var dynamicApi *models.DynamicApiModel
-    apiExists := false
-    for _, api := range container.DynamicApis {
-        if api.Name == apiName {
-            dynamicApi = &api
-            apiExists = true
-            break
-        }
-    }
-    if !apiExists {
-        return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-            Status:  fiber.StatusBadRequest,
-            Message: "API not found",
-            Data:    nil,
-        })
-    }
+	// Check if API is defined in container model
+	var dynamicApi *models.DynamicApiModel
+	apiExists := false
+	for _, api := range container.DynamicApis {
+		if api.Name == apiName {
+			dynamicApi = &api
+			apiExists = true
+			break
+		}
+	}
+	if !apiExists {
+		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "API not found",
+			Data:    nil,
+		})
+	}
 
-  // Validate dependencies if they exist
-    var requestBody map[string]interface{}
-    if err := c.BodyParser(&requestBody); err != nil {
-        return utils.SendErrorResponse(c, err, "Invalid request body")
-    }
+	// Validate dependencies if they exist
+	var requestBody map[string]interface{}
+	if err := c.BodyParser(&requestBody); err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid request body")
+	}
 
-    if dynamicApi.Dependencies != nil && len(dynamicApi.Dependencies) > 0 {
-        missingDependencies := []string{}
-        for _, dependency := range dynamicApi.Dependencies {
-            if value, ok := requestBody[dependency]; !ok || value == nil {
-                missingDependencies = append(missingDependencies, dependency)
-            }
-        }
-        if len(missingDependencies) > 0 {
-            return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-                "status":  fiber.StatusBadRequest,
-                "message": "Missing dependencies",
-                "data":    missingDependencies,
-            })
-        }
-    }
+	if dynamicApi.Dependencies != nil && len(dynamicApi.Dependencies) > 0 {
+		missingDependencies := []string{}
+		for _, dependency := range dynamicApi.Dependencies {
+			if value, ok := requestBody[dependency]; !ok || value == nil {
+				missingDependencies = append(missingDependencies, dependency)
+			}
+		}
+		if len(missingDependencies) > 0 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  fiber.StatusBadRequest,
+				"message": "Missing dependencies",
+				"data":    missingDependencies,
+			})
+		}
+	}
 
-    // Generate Redis key for caching
-    redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(tenantID, projectID, schemaName, apiName, container)
-    // Attempt to fetch from cache if enabled
-    if dynamicApi.IsRedisCached {
-        cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-        if err == nil {
-            var result interface{}
-            if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
-                return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-                    Status:  http.StatusOK,
-                    Message: "API result fetched from cache",
-                    Data:    result,
-                    Source:  utils.PointerToString("cache"),
-                })
-            }
-        }
-    }
+	// Generate Redis key for caching
+	redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(tenantID, projectID, schemaName, apiName, container)
+	// Attempt to fetch from cache if enabled
+	if dynamicApi.IsRedisCached {
+		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
+		if err == nil {
+			var result interface{}
+			if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
+				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+					Status:  http.StatusOK,
+					Message: "API result fetched from cache",
+					Data:    result,
+					Source:  utils.PointerToString("cache"),
+				})
+			}
+		}
+	}
 
-    apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicApi.Method, dynamicApi.Url, requestBody)
-    if err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to execute API call")
-    }
+	apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicApi.Method, dynamicApi.Url, requestBody)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to execute API call")
+	}
 
-    var apiResult interface{}
-    if err := json.Unmarshal(apiResultBytes, &apiResult); err != nil {
-        return utils.SendErrorResponse(c, err, "Failed to unmarshal API response")
-    }
-    // Cache the result if enabled
-    if shouldCache {
-        var expiration time.Duration
-        if dynamicApi.CacheTime > 0 {
-            expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
-        } else {
-            expiration = 0 //the key will never expire.
-        }
-        resultJSON, _ := json.Marshal(apiResult)
-        configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
-    }
+	var apiResult interface{}
+	if err := json.Unmarshal(apiResultBytes, &apiResult); err != nil {
+		return utils.SendErrorResponse(c, err, "Failed to unmarshal API response")
+	}
+	// Cache the result if enabled
+	if shouldCache {
+		var expiration time.Duration
+		if dynamicApi.CacheTime > 0 {
+			expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
+		} else {
+			expiration = 0 //the key will never expire.
+		}
+		resultJSON, _ := json.Marshal(apiResult)
+		configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
+	}
 
-    return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-        Status:  http.StatusOK,
-        Message: "API result fetched",
-        Data:    apiResult,
-        Source:  utils.PointerToString("API call"),
-    })
+	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "API result fetched",
+		Data:    apiResult,
+		Source:  utils.PointerToString("API call"),
+	})
 }
-
 
 // Helper function to check if a slice contains a given string.
 func contains(slice []string, item string) bool {
@@ -3035,7 +3113,6 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
-
 
 // formatPopulatedValue extracts and formats display fields from a populated object or array
 func formatPopulatedValue(val interface{}, displayFields []string) string {
@@ -3049,7 +3126,7 @@ func formatPopulatedValue(val interface{}, displayFields []string) string {
 		}
 		return strings.Join(parts, " ")
 	}
-	
+
 	// Handle bson.M (alternative map type from MongoDB) - single object
 	if populatedObj, ok := val.(bson.M); ok {
 		var parts []string
@@ -3060,7 +3137,7 @@ func formatPopulatedValue(val interface{}, displayFields []string) string {
 		}
 		return strings.Join(parts, " ")
 	}
-	
+
 	// Handle []map[string]interface{} (what MongoDB actually returns for populated arrays)
 	if populatedArray, ok := val.([]map[string]interface{}); ok {
 		var arrayParts []string
@@ -3077,7 +3154,7 @@ func formatPopulatedValue(val interface{}, displayFields []string) string {
 		}
 		return strings.Join(arrayParts, ", ")
 	}
-	
+
 	// Handle populated array (objectIdArray) - []interface{}
 	if populatedArray, ok := val.([]interface{}); ok {
 		var arrayParts []string
@@ -3108,7 +3185,7 @@ func formatPopulatedValue(val interface{}, displayFields []string) string {
 		}
 		return strings.Join(arrayParts, ", ")
 	}
-	
+
 	// Handle primitive.A (MongoDB array type)
 	if populatedArray, ok := val.(primitive.A); ok {
 		var arrayParts []string
@@ -3139,7 +3216,7 @@ func formatPopulatedValue(val interface{}, displayFields []string) string {
 		}
 		return strings.Join(arrayParts, ", ")
 	}
-	
+
 	// Fallback: return the value as-is
 	return fmt.Sprintf("%v", val)
 }
@@ -3190,10 +3267,10 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	// Since BuildFilterFromQuery uses c.QueryParser, we'll manually build the filter here
 	// reusing logic similar to BuildFilterFromQuery but for the map.
 	filter := bson.M{}
-	
+
 	// Apply filters from request
 	if len(req.Filters) > 0 {
-		// This is a simplified version. For full compatibility with complex filters 
+		// This is a simplified version. For full compatibility with complex filters
 		// (like ranges, etc.) we might need to replicate BuildFilterFromQuery logic fully.
 		// For now, assuming direct value matching or simple operators if passed in the map.
 		// If the frontend sends the same structure as query params, we can iterate and build.
@@ -3202,7 +3279,7 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 			if strVal, ok := value.(string); ok && strVal == "" {
 				continue
 			}
-			
+
 			// Check if field exists in container
 			isValidField := false
 			for _, f := range container.Fields {
@@ -3234,15 +3311,30 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 
 	// 5. Query Data with optional pagination from project-specific collection
 	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, req.SchemaName)
-	
+
 	// Build find options with pagination if page and limit are provided
+	maxExportLimit := configs.GetMaxExportLimit()
 	findOpts := options.Find()
-	if req.Page > 0 && req.Limit > 0 {
-		skip := int64((req.Page - 1) * req.Limit)
-		findOpts.SetSkip(skip)
-		findOpts.SetLimit(int64(req.Limit))
+	if req.Limit > maxExportLimit {
+		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s requested=%d max=%d", req.SchemaName, tenantID, projectID, req.Limit, maxExportLimit)
+		req.Limit = maxExportLimit
 	}
-	
+	if req.Page > 0 || req.Limit > 0 {
+		page := req.Page
+		if page < 1 {
+			page = 1
+		}
+		limit := req.Limit
+		if limit < 1 {
+			limit = maxExportLimit
+		}
+		skip := int64((page - 1) * limit)
+		findOpts.SetSkip(skip)
+		findOpts.SetLimit(int64(limit))
+	} else {
+		findOpts.SetLimit(int64(maxExportLimit + 1))
+	}
+
 	cursor, err := currentCollection.Find(ctx, filter, findOpts)
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to fetch items")
@@ -3252,6 +3344,10 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	var items []map[string]interface{}
 	if err = cursor.All(ctx, &items); err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to decode items")
+	}
+	if len(items) > maxExportLimit {
+		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s max=%d", req.SchemaName, tenantID, projectID, maxExportLimit)
+		items = items[:maxExportLimit]
 	}
 
 	// 6. Populate and Strip Hashed
@@ -3266,9 +3362,9 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	sheetName := "Sheet1"
 	index, err := f.NewSheet(sheetName)
 	if err != nil {
-         return utils.SendErrorResponse(c, err, "Failed to create sheet")
-    }
-    f.SetActiveSheet(index)
+		return utils.SendErrorResponse(c, err, "Failed to create sheet")
+	}
+	f.SetActiveSheet(index)
 
 	// Determine columns to export
 	var exportFields []models.Field

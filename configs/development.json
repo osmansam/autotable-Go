@@ -9,6 +9,15 @@
   "panel": {
     "host": "http://localhost:3000"
   },
+  "limits": {
+    "defaultPageLimit": 20,
+    "maxPageLimit": 100,
+    "maxUnboundedReadLimit": 5000,
+    "maxExportLimit": 50000,
+    "maxBulkWriteLimit": 1000,
+    "maxBulkUpdateLimit": 1000,
+    "maxBulkDeleteLimit": 1000
+  },
   "corsWhitelist": [],
   "migrationEnabled": false
 }
