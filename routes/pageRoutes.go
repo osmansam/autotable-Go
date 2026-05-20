@@ -12,51 +12,55 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 	// Public route with conditional authentication based on page settings
 	// Users will see pages based on IsAuthenticated/IsAuthorized settings
 	// Apply conditional auth middleware to extract user role if token is present
-	app.Get(baseUrl+"/public", middlewares.ConditionalAuthenticationForPages, controllers.GetAllPagesPublic)
-	
+	app.Get(baseUrl+"/public", middlewares.ConditionalAuthenticationForPages, middlewares.PublicRateLimit(), middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllPagesPublic)
+
 	// Tenant-authenticated routes (project scope required)
 	pageGroup := app.Group(baseUrl)
 	pageGroup.Use(middlewares.TenantAuthenticate)
+	pageGroup.Use(middlewares.GeneralRateLimit())
 	pageGroup.Use(middlewares.RequireProjectScope)
-	
+
 	// Create page - requires project admin, developer, or editor role
-	pageGroup.Post("/", 
+	pageGroup.Post("/",
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 			models.ProjectRoleEditor,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.CreatePage,
 	)
-	
+
 	// Get all pages - tenant access (any project member can view)
-	pageGroup.Get("/",middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
-			models.ProjectRoleDeveloper,
-			models.ProjectRoleEditor,
-		}),  controllers.GetAllPages)
-	
+	pageGroup.Get("/", middlewares.TenantAuthorize([]string{
+		models.ProjectRoleAdmin,
+		models.ProjectRoleDeveloper,
+		models.ProjectRoleEditor,
+	}), middlewares.SearchRateLimit(), controllers.GetAllPages)
+
 	// Get single page - any project member can view
 	pageGroup.Get("/:id",
-	middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
-			models.ProjectRoleDeveloper,
-			models.ProjectRoleEditor,
-		}),  controllers.GetPage)
-	
-	// Update page - requires project admin, developer, or editor role
-	pageGroup.Patch("/:id", 
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 			models.ProjectRoleEditor,
-		}), 
+		}), middlewares.SearchRateLimit(), controllers.GetPage)
+
+	// Update page - requires project admin, developer, or editor role
+	pageGroup.Patch("/:id",
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin,
+			models.ProjectRoleDeveloper,
+			models.ProjectRoleEditor,
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.UpdatePage,
 	)
-	
+
 	// Delete page - requires project admin role
-	pageGroup.Delete("/:id", 
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}), 
+	pageGroup.Delete("/:id",
+		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+		middlewares.WriteRateLimit(),
 		controllers.DeletePage,
 	)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/controllers"
+	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/routes"
 	"github.com/osmansam/autotableGo/ws"
 )
@@ -22,20 +23,20 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
-	
+
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	app := fiber.New()
-	
+
 	// Enable pprof for performance profiling
 	app.Use(pprof.New())
-	
+
 	// Initialize custom metrics
 	initMetrics()
-	
+
 	// Create a new directory if not exists to store images
-		if _, err := os.Stat("./temp"); os.IsNotExist(err) {
-    os.Mkdir("./temp", 0755)
-}
+	if _, err := os.Stat("./temp"); os.IsNotExist(err) {
+		os.Mkdir("./temp", 0755)
+	}
 	// Global rate limiting middleware - COMMENTED OUT FOR LOAD TESTING
 	// app.Use(limiter.New(limiter.Config{
 	// 	Max:        100, // Set the maximum number of requests per client
@@ -48,13 +49,12 @@ func main() {
 	// 	},
 	// }))
 
-	
 	//cors
 	app.Use(cors.New())
 	//run database
 	configs.InitDB()
 
-//websocket wiring
+	//websocket wiring
 	app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
@@ -64,24 +64,24 @@ func main() {
 	// WS endpoint
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
-	
+
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
-			"status": "ok",
+			"status":  "ok",
 			"message": "Server is healthy",
 		})
 	})
-	
+
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes
-	
+
 	// Global OAuth callback route (doesn't require tenant/project in URL)
 	// This is the fixed URL registered in Google Cloud Console
 	// Tenant/project context is retrieved from Redis state
-	app.Get("/api/v1/auth/google/callback", controllers.GoogleCallback)
-	
+	app.Get("/api/v1/auth/google/callback", middlewares.PublicRateLimit(), controllers.GoogleCallback)
+
 	// Project-scoped routes with tenant and project slugs in URL
 	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
 	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
@@ -89,7 +89,7 @@ func main() {
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
-	routes.SetupExcelRoutes(app, "api/v1") // Excel upload routes
+	routes.SetupExcelRoutes(app, "api/v1")                          // Excel upload routes
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
@@ -103,7 +103,7 @@ func initMetrics() {
 	expvar.Publish("goroutines", expvar.Func(func() interface{} {
 		return runtime.NumGoroutine()
 	}))
-	
+
 	// Publish memory statistics
 	expvar.Publish("memory", expvar.Func(func() interface{} {
 		var m runtime.MemStats
@@ -116,7 +116,7 @@ func initMetrics() {
 			"heap_objects":   m.HeapObjects,
 		}
 	}))
-	
+
 	// Publish CPU count
 	expvar.Publish("num_cpu", expvar.Func(func() interface{} {
 		return runtime.NumCPU()
