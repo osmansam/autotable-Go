@@ -23,6 +23,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreateContainer,
 	)
@@ -46,6 +47,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateDynamicFunctions,
 	)
@@ -56,6 +58,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdatePipelines,
 	)
@@ -76,6 +79,7 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateContainer,
 	)

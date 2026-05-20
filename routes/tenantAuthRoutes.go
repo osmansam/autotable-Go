@@ -12,13 +12,13 @@ func TenantAuthRoutes(app *fiber.App) {
 	tenantAuth := app.Group("/api/v1/tenant/auth")
 
 	// Register new user and create tenant
-	tenantAuth.Post("/register", middlewares.AuthRateLimit(), controllers.TenantRegister)
+	tenantAuth.Post("/register", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.TenantRegister)
 
 	// Login to tenant
-	tenantAuth.Post("/login", middlewares.AuthRateLimit(), controllers.TenantLogin)
+	tenantAuth.Post("/login", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.TenantLogin)
 
 	// Refresh access token
-	tenantAuth.Post("/refresh", middlewares.PublicRateLimit(), controllers.TenantRefreshToken)
+	tenantAuth.Post("/refresh", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.TenantRefreshToken)
 
 	// Protected routes (require authentication)
 	tenantAuthProtected := app.Group("/api/v1/tenant/auth")
@@ -26,11 +26,11 @@ func TenantAuthRoutes(app *fiber.App) {
 	tenantAuthProtected.Use(middlewares.GeneralRateLimit())
 
 	// Logout
-	tenantAuthProtected.Post("/logout", controllers.TenantLogout)
+	tenantAuthProtected.Post("/logout", middlewares.DefaultBodySizeLimit(), controllers.TenantLogout)
 
 	// Get current user info
 	tenantAuthProtected.Get("/me", controllers.GetCurrentUser)
 
 	// Switch to project context (requires tenant auth)
-	tenantAuthProtected.Post("/switch-project", controllers.SwitchToProject)
+	tenantAuthProtected.Post("/switch-project", middlewares.DefaultBodySizeLimit(), controllers.SwitchToProject)
 }

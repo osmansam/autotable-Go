@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
@@ -24,11 +26,14 @@ func main() {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
 
+	appConfig := configs.GetAppConfig()
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		BodyLimit: configs.GetMaxRequestBodySizeLimit(),
+	})
 
-	// Enable pprof for performance profiling
-	app.Use(pprof.New())
+	app.Use(requestid.New())
+	configurePprof(app, portNumber)
 
 	// Initialize custom metrics
 	initMetrics()
@@ -49,8 +54,7 @@ func main() {
 	// 	},
 	// }))
 
-	//cors
-	app.Use(cors.New())
+	app.Use(corsFromConfig(appConfig))
 	//run database
 	configs.InitDB()
 
@@ -92,9 +96,47 @@ func main() {
 	routes.SetupExcelRoutes(app, "api/v1")                          // Excel upload routes
 	routes.SwaggerRoutes(app)
 	log.Println("Server is running on port: ", portNumber)
-	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
 	log.Println("Metrics available at http://localhost" + portNumber + "/debug/vars")
 	app.Listen(portNumber)
+}
+
+func corsFromConfig(cfg *configs.Config) fiber.Handler {
+	allowedOrigins := make(map[string]struct{}, len(cfg.CorsWhitelist))
+	for _, origin := range cfg.CorsWhitelist {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		allowedOrigins[origin] = struct{}{}
+	}
+
+	if len(allowedOrigins) == 0 {
+		log.Println("CORS whitelist is empty; browser cross-origin requests will be denied")
+	} else {
+		log.Printf("CORS whitelist enabled for %d origin(s)", len(allowedOrigins))
+	}
+
+	return cors.New(cors.Config{
+		AllowOriginsFunc: func(origin string) bool {
+			_, ok := allowedOrigins[origin]
+			return ok
+		},
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+	})
+}
+
+func configurePprof(app *fiber.App, portNumber string) {
+	if isProduction() {
+		log.Println("pprof disabled in production")
+		return
+	}
+
+	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
+	app.Use(pprof.New())
+}
+
+func isProduction() bool {
+	return strings.EqualFold(os.Getenv("NODE_ENV"), "production")
 }
 
 // initMetrics initializes custom runtime metrics for monitoring

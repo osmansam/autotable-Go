@@ -21,6 +21,7 @@ func ProjectRoutes(app *fiber.App) {
 			models.TenantRoleOwner,
 			models.TenantRoleAdmin,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreateProject,
 	)
@@ -37,6 +38,7 @@ func ProjectRoutes(app *fiber.App) {
 			models.TenantRoleOwner,
 			models.TenantRoleAdmin,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateProject,
 	)

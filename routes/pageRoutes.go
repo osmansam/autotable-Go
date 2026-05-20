@@ -27,6 +27,7 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleDeveloper,
 			models.ProjectRoleEditor,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreatePage,
 	)
@@ -53,6 +54,7 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 			models.ProjectRoleDeveloper,
 			models.ProjectRoleEditor,
 		}),
+		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdatePage,
 	)

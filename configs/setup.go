@@ -40,13 +40,23 @@ type Config struct {
 }
 
 type LimitsConfig struct {
-	DefaultPageLimit      int `json:"defaultPageLimit"`
-	MaxPageLimit          int `json:"maxPageLimit"`
-	MaxUnboundedReadLimit int `json:"maxUnboundedReadLimit"`
-	MaxExportLimit        int `json:"maxExportLimit"`
-	MaxBulkWriteLimit     int `json:"maxBulkWriteLimit"`
-	MaxBulkUpdateLimit    int `json:"maxBulkUpdateLimit"`
-	MaxBulkDeleteLimit    int `json:"maxBulkDeleteLimit"`
+	DefaultPageLimit      int                  `json:"defaultPageLimit"`
+	MaxPageLimit          int                  `json:"maxPageLimit"`
+	MaxUnboundedReadLimit int                  `json:"maxUnboundedReadLimit"`
+	MaxExportLimit        int                  `json:"maxExportLimit"`
+	MaxBulkWriteLimit     int                  `json:"maxBulkWriteLimit"`
+	MaxBulkUpdateLimit    int                  `json:"maxBulkUpdateLimit"`
+	MaxBulkDeleteLimit    int                  `json:"maxBulkDeleteLimit"`
+	BodySizeLimits        BodySizeLimitsConfig `json:"bodySizeLimits"`
+}
+
+type BodySizeLimitsConfig struct {
+	DefaultBodySizeBytes    int `json:"defaultBodySizeBytes"`
+	BulkWriteBodySizeBytes  int `json:"bulkWriteBodySizeBytes"`
+	BulkUpdateBodySizeBytes int `json:"bulkUpdateBodySizeBytes"`
+	BulkDeleteBodySizeBytes int `json:"bulkDeleteBodySizeBytes"`
+	ExportBodySizeBytes     int `json:"exportBodySizeBytes"`
+	UploadBodySizeBytes     int `json:"uploadBodySizeBytes"`
 }
 
 const (
@@ -57,6 +67,13 @@ const (
 	MaxBulkWriteLimit     = 1000
 	MaxBulkUpdateLimit    = 1000
 	MaxBulkDeleteLimit    = 1000
+
+	DefaultBodySizeBytes    = 1 * 1024 * 1024
+	BulkWriteBodySizeBytes  = 10 * 1024 * 1024
+	BulkUpdateBodySizeBytes = 10 * 1024 * 1024
+	BulkDeleteBodySizeBytes = 2 * 1024 * 1024
+	ExportBodySizeBytes     = 1 * 1024 * 1024
+	UploadBodySizeBytes     = 25 * 1024 * 1024
 )
 
 var (
@@ -139,6 +156,76 @@ func GetMaxBulkDeleteLimit() int {
 		return MaxBulkDeleteLimit
 	}
 	return limit
+}
+
+func GetDefaultBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.DefaultBodySizeBytes
+	if limit < 1 {
+		return DefaultBodySizeBytes
+	}
+	return limit
+}
+
+func GetBulkWriteBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.BulkWriteBodySizeBytes
+	if limit < 1 {
+		return BulkWriteBodySizeBytes
+	}
+	return limit
+}
+
+func GetBulkUpdateBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.BulkUpdateBodySizeBytes
+	if limit < 1 {
+		return BulkUpdateBodySizeBytes
+	}
+	return limit
+}
+
+func GetBulkDeleteBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.BulkDeleteBodySizeBytes
+	if limit < 1 {
+		return BulkDeleteBodySizeBytes
+	}
+	return limit
+}
+
+func GetExportBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.ExportBodySizeBytes
+	if limit < 1 {
+		return ExportBodySizeBytes
+	}
+	return limit
+}
+
+func GetUploadBodySizeLimit() int {
+	limit := GetAppConfig().Limits.BodySizeLimits.UploadBodySizeBytes
+	if limit < 1 {
+		return UploadBodySizeBytes
+	}
+	return limit
+}
+
+func GetMaxRequestBodySizeLimit() int {
+	limits := []int{
+		GetDefaultBodySizeLimit(),
+		GetBulkWriteBodySizeLimit(),
+		GetBulkUpdateBodySizeLimit(),
+		GetBulkDeleteBodySizeLimit(),
+		GetExportBodySizeLimit(),
+		GetUploadBodySizeLimit(),
+	}
+
+	maxLimit := 0
+	for _, limit := range limits {
+		if limit > maxLimit {
+			maxLimit = limit
+		}
+	}
+	if maxLimit < 1 {
+		return UploadBodySizeBytes
+	}
+	return maxLimit
 }
 
 // LoadConfig reads a JSON configuration file and unmarshals it into a Config struct.
