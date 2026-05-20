@@ -11,65 +11,72 @@ import (
 // These routes require tenant authentication and project scope
 func ContainerRoutes(baseUrl string, app *fiber.App) {
 	// All container routes require tenant authentication and project scope
-		app.Get(baseUrl, controllers.GetAllContainers)
+	app.Get(baseUrl, middlewares.PublicRateLimit(), controllers.GetAllContainers)
 	containerGroup := app.Group(baseUrl)
 	containerGroup.Use(middlewares.TenantAuthenticate)
+	containerGroup.Use(middlewares.GeneralRateLimit())
 	containerGroup.Use(middlewares.RequireProjectScope)
-	
+
 	// Create container - requires project admin or developer role
-	containerGroup.Post("/", 
+	containerGroup.Post("/",
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.CreateContainer,
 	)
-	
+
 	// Reset Redis cache - requires project admin role
-	containerGroup.Post("/reset-redis", 
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}), 
+	containerGroup.Post("/reset-redis",
+		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+		middlewares.WriteRateLimit(),
 		controllers.ResetRedis,
 	)
-	
+
 	// Get all containers-tenantlevel - any project member can view
-	containerGroup.Get("/tenant", controllers.GetAllContainers)
-	
+	containerGroup.Get("/tenant", middlewares.SearchRateLimit(), controllers.GetAllContainers)
+
 	// Get container types - any project member can view
-	containerGroup.Get("/types", controllers.GetAllContainerTypes)
-	
+	containerGroup.Get("/types", middlewares.SearchRateLimit(), controllers.GetAllContainerTypes)
+
 	// Update dynamic functions - requires project admin or developer role
-	containerGroup.Patch("/dynamicFunctions/:id", 
+	containerGroup.Patch("/dynamicFunctions/:id",
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.UpdateDynamicFunctions,
 	)
-	
+
 	// Update pipelines - requires project admin or developer role
-	containerGroup.Patch("/pipelines/:id", 
+	containerGroup.Patch("/pipelines/:id",
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.UpdatePipelines,
 	)
-	
+
 	// Get single container - any project member can view
-	containerGroup.Get("/:id", controllers.GetContainer)
-	
+	containerGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetContainer)
+
 	// Delete container - requires project admin role
-	containerGroup.Delete("/:id", 
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}), 
+	containerGroup.Delete("/:id",
+		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+		middlewares.WriteRateLimit(),
 		controllers.DeleteContainer,
 	)
-	
+
 	// Update container - requires project admin or developer role
-	containerGroup.Patch("/:id", 
+	containerGroup.Patch("/:id",
 		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin, 
+			models.ProjectRoleAdmin,
 			models.ProjectRoleDeveloper,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.UpdateContainer,
 	)
 }

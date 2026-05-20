@@ -12,35 +12,39 @@ func ProjectRoutes(app *fiber.App) {
 	// All project routes require tenant authentication and tenant scope
 	projectGroup := app.Group("/api/v1/tenant/projects")
 	projectGroup.Use(middlewares.TenantAuthenticate)
+	projectGroup.Use(middlewares.GeneralRateLimit())
 	projectGroup.Use(middlewares.RequireTenantScope)
-	
+
 	// Create project - requires tenant admin or owner
-	projectGroup.Post("/", 
+	projectGroup.Post("/",
 		middlewares.TenantAuthorize([]string{
 			models.TenantRoleOwner,
 			models.TenantRoleAdmin,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.CreateProject,
 	)
-	
+
 	// List all projects in tenant - any tenant member can view
-	projectGroup.Get("/", controllers.GetAllProjects)
-	
+	projectGroup.Get("/", middlewares.SearchRateLimit(), controllers.GetAllProjects)
+
 	// Get single project - any tenant member can view
-	projectGroup.Get("/:id", controllers.GetProject)
-	
+	projectGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetProject)
+
 	// Update project - requires tenant admin or owner
-	projectGroup.Patch("/:id", 
+	projectGroup.Patch("/:id",
 		middlewares.TenantAuthorize([]string{
 			models.TenantRoleOwner,
 			models.TenantRoleAdmin,
-		}), 
+		}),
+		middlewares.WriteRateLimit(),
 		controllers.UpdateProject,
 	)
-	
+
 	// Delete project - requires tenant owner only
-	projectGroup.Delete("/:id", 
-		middlewares.TenantOwnerOnly, 
+	projectGroup.Delete("/:id",
+		middlewares.TenantOwnerOnly,
+		middlewares.WriteRateLimit(),
 		controllers.DeleteProject,
 	)
 }
