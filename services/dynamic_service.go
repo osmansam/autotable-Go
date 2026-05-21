@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/osmansam/autotableGo/requests"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/validators"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -114,6 +116,32 @@ type GetItemsForSelectionInput struct {
 	UserRole  string
 }
 
+type GetDynamicItemInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	ID        string
+	UserRole  string
+	Container *models.ContainerModel
+}
+
+type GetDynamicItemResult struct {
+	Item      map[string]interface{}
+	FromCache bool
+}
+
+type SearchDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	SearchKey string
+	UserID    string
+	UserRole  string
+	Sort      bson.D
+	Pager     utils.Pager
+	Container *models.ContainerModel
+}
+
 type DynamicService struct {
 	repository *repositories.DynamicRepository
 	parser     *requests.DynamicRequestParser
@@ -129,6 +157,10 @@ func NewDynamicService() *DynamicService {
 		cache:      cache.NewDynamicCache(),
 		events:     events.NewDynamicEvents(),
 	}
+}
+
+func (s *DynamicService) ParseSearchParams(c *fiber.Ctx) (requests.SearchParams, error) {
+	return s.parser.ParseSearchParams(c)
 }
 
 func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDynamicItemInput) (map[string]interface{}, error) {
@@ -782,6 +814,172 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 	return utils.FilterDocuments(items, container.Fields, input.UserRole), nil
 }
 
+func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicItemInput) (GetDynamicItemResult, error) {
+	container, err := s.resolveGetDynamicContainer(input)
+	if err != nil {
+		if input.Schema == "" {
+			return GetDynamicItemResult{}, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "schemaName is required",
+				Data:    nil,
+				Err:     err,
+			}
+		}
+		return GetDynamicItemResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to load container model",
+			Err:     err,
+		}
+	}
+
+	filter, err := buildGetDynamicItemFilter(container, input.ID)
+	if err != nil {
+		return GetDynamicItemResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Invalid ID",
+			Err:     err,
+		}
+	}
+
+	redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", input.TenantID, input.ProjectID, container.SchemaName, container, input.ID)
+	if shouldCache {
+		if item, ok := s.cache.GetItem(ctx, redisKey); ok {
+			utils.StripHashed(container.Fields, []map[string]interface{}{item})
+			populated, _ := utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, []map[string]interface{}{item})
+			if len(populated) > 0 {
+				item = populated[0]
+			}
+			return GetDynamicItemResult{Item: item, FromCache: true}, nil
+		}
+	}
+
+	rawDoc, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, container.SchemaName, filter)
+	if err != nil {
+		return GetDynamicItemResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Item not found",
+			Err:     err,
+		}
+	}
+
+	item := make(map[string]interface{}, len(rawDoc))
+	for k, v := range rawDoc {
+		item[k] = v
+	}
+
+	utils.StripHashed(container.Fields, []map[string]interface{}{item})
+	populated, err := utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, []map[string]interface{}{item})
+	if err != nil {
+		return GetDynamicItemResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to populate item",
+			Err:     err,
+		}
+	}
+	if len(populated) > 0 {
+		item = populated[0]
+	}
+
+	filtered := utils.FilterDocuments([]map[string]interface{}{item}, container.Fields, input.UserRole)
+	if len(filtered) > 0 {
+		item = filtered[0]
+	}
+
+	if shouldCache {
+		s.cache.SetItem(ctx, redisKey, item, container.Redis.CacheTime)
+	}
+
+	return GetDynamicItemResult{Item: item}, nil
+}
+
+func (s *DynamicService) SearchDynamicItems(ctx context.Context, input SearchDynamicItemsInput) (interface{}, error) {
+	container, err := s.resolveSearchContainer(input)
+	if err != nil {
+		if input.Schema == "" {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "schemaName is required",
+				Data:    nil,
+				Err:     err,
+			}
+		}
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "failed to load container",
+			Err:     err,
+		}
+	}
+
+	orClauses, err := utils.BuildSearchWithReferences(ctx, container, input.SearchKey)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "failed to build search filter",
+			Err:     err,
+		}
+	}
+
+	var filter bson.M
+	if input.SearchKey == "" {
+		filter = bson.M{}
+	} else if len(orClauses) == 0 {
+		return []interface{}{}, nil
+	} else {
+		filter = bson.M{"$or": orClauses}
+	}
+
+	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "row access error",
+			Err:     err,
+		}
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
+
+	pager := input.Pager
+	opts := utils.BuildFindOptions(input.Sort, pager)
+	items, err := s.repository.Query(ctx, input.TenantID, input.ProjectID, input.Schema, filter, opts, &pager)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "query failed",
+			Err:     err,
+		}
+	}
+
+	utils.StripHashed(container.Fields, items)
+	items, err = utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, items)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "population failed",
+			Err:     err,
+		}
+	}
+
+	items = utils.FilterDocuments(items, container.Fields, input.UserRole)
+	if pager.Enabled {
+		return fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		}, nil
+	}
+
+	return items, nil
+}
+
 type bulkUpdateItemResult struct {
 	Success interface{}
 	Failed  map[string]interface{}
@@ -1027,6 +1225,26 @@ func (s *DynamicService) resolveDeleteMultipleContainer(input DeleteMultipleDyna
 }
 
 func (s *DynamicService) resolveGetAllContainer(input GetAllDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	if input.Schema == "" {
+		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveGetDynamicContainer(input GetDynamicItemInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	if input.Schema == "" {
+		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveSearchContainer(input SearchDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
@@ -1348,6 +1566,32 @@ func parseBulkDeleteError(err error) *ServiceError {
 		Message: "Failed to parse request body",
 		Err:     err,
 	}
+}
+
+func buildGetDynamicItemFilter(container *models.ContainerModel, idParam string) (bson.M, error) {
+	var autoIncrementField string
+	for _, field := range container.Fields {
+		if field.Type == "autoIncrementId" {
+			autoIncrementField = field.Name
+			break
+		}
+	}
+
+	if autoIncrementField != "" {
+		if idInt, err := strconv.Atoi(idParam); err == nil {
+			return bson.M{autoIncrementField: idInt}, nil
+		}
+		if objID, err := primitive.ObjectIDFromHex(idParam); err == nil {
+			return bson.M{"_id": objID}, nil
+		}
+		return nil, errors.New("invalid id format")
+	}
+
+	objID, err := primitive.ObjectIDFromHex(idParam)
+	if err != nil {
+		return nil, err
+	}
+	return bson.M{"_id": objID}, nil
 }
 
 func extractBulkUpdateID(item map[string]interface{}) (string, string) {

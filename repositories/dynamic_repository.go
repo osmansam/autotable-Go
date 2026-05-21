@@ -62,10 +62,20 @@ func (r *DynamicRepository) FindByID(ctx context.Context, tenantID, projectID, s
 	return item, err
 }
 
+func (r *DynamicRepository) FindOne(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (bson.M, error) {
+	var item bson.M
+	err := r.GetCollection(tenantID, projectID, schemaName).FindOne(ctx, filter).Decode(&item)
+	return item, err
+}
+
 func (r *DynamicRepository) FindAll(ctx context.Context, tenantID, projectID, schemaName string, limit int64) ([]map[string]interface{}, error) {
 	pager := utils.Pager{Enabled: false}
 	opts := options.Find().SetLimit(limit)
 	return utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, bson.M{}, opts, &pager)
+}
+
+func (r *DynamicRepository) Query(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M, opts *options.FindOptions, pager *utils.Pager) ([]map[string]interface{}, error) {
+	return utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, pager)
 }
 
 func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string) ([]map[string]interface{}, error) {

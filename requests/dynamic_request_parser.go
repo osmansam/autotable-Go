@@ -12,10 +12,17 @@ import (
 	"github.com/osmansam/autotableGo/files"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type DynamicRequestParser struct {
 	uploadService *files.UploadService
+}
+
+type SearchParams struct {
+	SearchKey string
+	Sort      bson.D
+	Pager     utils.Pager
 }
 
 type BatchLimitError struct {
@@ -132,6 +139,24 @@ func (p *DynamicRequestParser) ParseUpdateItems(c *fiber.Ctx, container *models.
 
 func (p *DynamicRequestParser) ParseDeleteItems(c *fiber.Ctx, maxItems int) ([]map[string]interface{}, error) {
 	return parseLimitedItems(c.Body(), maxItems, "bulk delete")
+}
+
+func (p *DynamicRequestParser) ParseSearchParams(c *fiber.Ctx) (SearchParams, error) {
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return SearchParams{}, fmt.Errorf("invalid sort params: %w", err)
+	}
+
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return SearchParams{}, fmt.Errorf("invalid pagination params: %w", err)
+	}
+
+	return SearchParams{
+		SearchKey: c.Query("search"),
+		Sort:      sortDoc,
+		Pager:     pager,
+	}, nil
 }
 
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {

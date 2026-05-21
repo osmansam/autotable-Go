@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -552,119 +551,47 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	// 1) Load and validate schemaName
-	container, err := utils.FetchContainerModel(c)
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	}
+
+	userRole, _ := c.Locals("userRole").(string)
+	dynamicService := services.NewDynamicService()
+	result, err := dynamicService.GetDynamicItem(ctx, services.GetDynamicItemInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    c.Query("schemaName"),
+		ID:        c.Params("id"),
+		UserRole:  userRole,
+		Container: container,
+	})
 	if err != nil {
-		if err == utils.ErrNoSchemaName {
-			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
 		}
-		return utils.SendErrorResponse(c, err, "Failed to load container model")
-	}
-	schema := container.SchemaName
-
-	// 2) Build the filter based on :id param
-	idParam := c.Params("id")
-	var filter bson.M
-
-	// Check if there's an autoIncrementId field in this container
-	var autoIncField string
-	for _, f := range container.Fields {
-		if f.Type == "autoIncrementId" {
-			autoIncField = f.Name
-			break
-		}
-	}
-
-	if autoIncField != "" {
-		// Try parse as integer first
-		if idInt, parseErr := strconv.Atoi(idParam); parseErr == nil {
-			filter = bson.M{autoIncField: idInt}
-		} else if objID, parseErr := primitive.ObjectIDFromHex(idParam); parseErr == nil {
-			// Fallback: valid ObjectID
-			filter = bson.M{"_id": objID}
-		} else {
-			// Neither integer nor ObjectID
-			return utils.SendErrorResponse(c, errors.New("invalid id format"), "Invalid ID")
-		}
-	} else {
-		// No autoIncrementId → must be a Mongo ObjectID
-		objID, parseErr := primitive.ObjectIDFromHex(idParam)
-		if parseErr != nil {
-			return utils.SendErrorResponse(c, parseErr, "Invalid ID")
-		}
-		filter = bson.M{"_id": objID}
-	}
-
-	// 3) Try cache
-	redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", tenantID, projectID, schema, container, idParam)
-	if shouldCache {
-		if raw, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
-			var item map[string]interface{}
-			if json.Unmarshal([]byte(raw), &item) == nil {
-				// strip hashed & populate
-				utils.StripHashed(container.Fields, []map[string]interface{}{item})
-				pop, _ := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
-				if len(pop) > 0 {
-					item = pop[0]
-				}
-				source := "cache"
-				return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
-					"item":   item,
-					"source": &source,
-				})
-			}
-		}
-	}
-
-	// 4) Fetch from Mongo using project-specific collection
-	coll := utils.GetDynamicCollectionForProject(tenantID, projectID, schema)
-	var rawDoc bson.M
-	if err := coll.FindOne(ctx, filter).Decode(&rawDoc); err != nil {
 		return utils.SendErrorResponse(c, err, "Item not found")
 	}
 
-	// convert to map[string]interface{}
-	item := make(map[string]interface{}, len(rawDoc))
-	for k, v := range rawDoc {
-		item[k] = v
+	if result.FromCache {
+		source := "cache"
+		return utils.SendResponse(c, http.StatusOK, "Item found", fiber.Map{
+			"item":   result.Item,
+			"source": &source,
+		})
 	}
 
-	// 5) Strip hashed fields
-	utils.StripHashed(container.Fields, []map[string]interface{}{item})
-
-	// 6) Populate if needed
-	pop, err := utils.PopulateIfNeeded(ctx, tenantID, projectID, container, []map[string]interface{}{item})
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to populate item")
-	}
-	if len(pop) > 0 {
-		item = pop[0]
-	}
-
-	// 6.5) Filter fields based on user role authorization
-	userRole, _ := c.Locals("userRole").(string)
-	filteredItems := utils.FilterDocuments([]map[string]interface{}{item}, container.Fields, userRole)
-	if len(filteredItems) > 0 {
-		item = filteredItems[0]
-	}
-
-	// 7) Cache the result
-	if shouldCache {
-		if blob, err := json.Marshal(item); err == nil {
-			ttl := time.Duration(container.Redis.CacheTime) * time.Minute
-			configs.RedisClient.Set(ctx, redisKey, blob, ttl)
-		}
-	}
-
-	// 8) Return
-	return c.JSON(item)
+	return c.JSON(result.Item)
 }
 
 // handleSearch for a given collection
@@ -672,112 +599,51 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	// 1) load container (your original local-or-fetch logic is fine)
-	container, err := utils.FetchContainerModel(c)
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	}
+
+	dynamicService := services.NewDynamicService()
+	params, err := dynamicService.ParseSearchParams(c)
 	if err != nil {
-		if err == utils.ErrNoSchemaName {
-			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		if strings.HasPrefix(err.Error(), "invalid sort params") {
+			return utils.SendErrorResponse(c, err, "invalid sort params")
 		}
-		return utils.SendErrorResponse(c, err, "failed to load container")
-	}
-
-	searchKey := c.Query("search")
-	schemaName := c.Query("schemaName")
-
-	// 2) build OR clauses with references
-	orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "failed to build search filter")
-	}
-
-	// 3) finalize filter
-	var filter bson.M
-	if searchKey == "" {
-		// behavior choice A: return all docs when search is empty
-		filter = bson.M{}
-	} else if len(orClauses) == 0 {
-		// No searchable fields - return empty results
-		return c.JSON([]interface{}{})
-	} else {
-		filter = bson.M{"$or": orClauses}
-	}
-
-	// 4) sort + pagination
-	sortDoc, err := utils.ParseSort(c)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "invalid sort params")
-	}
-	pager, err := utils.ParsePager(c)
-	if err != nil {
 		return utils.SendErrorResponse(c, err, "invalid pagination params")
 	}
 
-	// Apply Row Access Logic
 	userRole, _ := c.Locals("userRole").(string)
-	// We need the full user object. Locals("user") might be set by middleware?
-	// Assuming simple-auth middleware sets "user" or "userID".
-	// If only userID is available, we might need to fetch user, or just pass map with ID if that's all needed.
-	// For now, let's construct a minimal user map from locals if available, or fetch full user if needed.
-	// Assuming "user" is NOT explicitly in locals as a map, but we have userID and userRole.
-	// If row access relies on other user fields (e.g. email, companyId), we need to fetch the user.
-	// Let's defer strict user fetching for performance unless necessary or use what's available.
-	// Ideally Middleware should set "user" context.
-	// Let's create a helper or assume middleware sets it.
-	// HACK: Constructing a pseudo-user map from likely available claims.
 	userID, _ := c.Locals("userID").(string)
-	userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole}
-	// If strict fetching needed: userMap, _ = utils.GetUser(userID)
-
-	rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+	result, err := dynamicService.SearchDynamicItems(ctx, services.SearchDynamicItemsInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    c.Query("schemaName"),
+		SearchKey: params.SearchKey,
+		UserID:    userID,
+		UserRole:  userRole,
+		Sort:      params.Sort,
+		Pager:     params.Pager,
+		Container: container,
+	})
 	if err != nil {
-		log.Printf("Error building row access filter: %v", err)
-		return utils.SendErrorResponse(c, err, "row access error")
-	}
-	if rowAccessFilter != nil {
-		if len(filter) > 0 {
-			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-		} else {
-			filter = rowAccessFilter
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
 		}
-	}
-
-	// 5) query
-	opts := utils.BuildFindOptions(sortDoc, pager)
-
-	// Apply Row Access Logic
-	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, &pager)
-	if err != nil {
 		return utils.SendErrorResponse(c, err, "query failed")
 	}
 
-	// 6) strip hashed, populate
-	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "population failed")
-	}
-
-	// 6.5) Filter fields based on user role authorization
-	// 6.5) Filter fields based on user role authorization
-	items = utils.FilterDocuments(items, container.Fields, userRole)
-
-	// 7) response
-	if pager.Enabled {
-		return c.JSON(fiber.Map{
-			"items":       items,
-			"totalItems":  pager.TotalItems,
-			"totalPages":  pager.TotalPages,
-			"currentPage": pager.Page,
-		})
-	}
-	return c.JSON(items)
+	return c.JSON(result)
 }
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.

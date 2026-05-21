@@ -35,8 +35,31 @@ func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]i
 	return items, true
 }
 
+func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]interface{}, bool) {
+	data, err := configs.RedisClient.Get(ctx, key).Result()
+	if err != nil {
+		return nil, false
+	}
+
+	var item map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		return nil, false
+	}
+
+	return item, true
+}
+
 func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[string]interface{}, ttlMinutes int) {
 	payload, err := json.Marshal(items)
+	if err != nil {
+		return
+	}
+	ttl := time.Duration(ttlMinutes) * time.Minute
+	configs.RedisClient.Set(ctx, key, payload, ttl)
+}
+
+func (d *DynamicCache) SetItem(ctx context.Context, key string, item map[string]interface{}, ttlMinutes int) {
+	payload, err := json.Marshal(item)
 	if err != nil {
 		return
 	}
