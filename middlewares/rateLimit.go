@@ -104,6 +104,10 @@ func RateLimit(policies ...RateLimitPolicy) fiber.Handler {
 			log.Println("rate limit skipped: Redis client is not initialized")
 			return c.Next()
 		}
+		if !configs.RedisCircuitAllow() {
+			log.Println("rate limit skipped: Redis circuit breaker is open")
+			return c.Next()
+		}
 
 		for _, policy := range policies {
 			if policy.Limit <= 0 || policy.Window <= 0 {
@@ -173,9 +177,11 @@ func incrementRateLimit(c *fiber.Ctx, policy RateLimitPolicy, identity string) (
 	pipe.Expire(ctx, key, policy.Window+time.Minute)
 
 	if _, err := pipe.Exec(ctx); err != nil {
+		configs.RedisCircuitRecordResult(err)
 		return 0, resetAt, err
 	}
 
+	configs.RedisCircuitRecordSuccess()
 	return incr.Val(), resetAt, nil
 }
 

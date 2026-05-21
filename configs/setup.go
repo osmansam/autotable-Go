@@ -25,8 +25,9 @@ func init() {
 // Config holds all the configuration data loaded from a JSON file.
 type Config struct {
 	Redis struct {
-		Port string `json:"port"`
-		Host string `json:"host"`
+		Port           string                    `json:"port"`
+		Host           string                    `json:"host"`
+		CircuitBreaker RedisCircuitBreakerConfig `json:"circuitBreaker"`
 	} `json:"redis"`
 	App struct {
 		Port int `json:"port"`
@@ -45,6 +46,12 @@ type CacheConfig struct {
 	CacheFillLockTTLSeconds           int `json:"cacheFillLockTTLSeconds"`
 	CacheFillWaitTimeoutMilliseconds  int `json:"cacheFillWaitTimeoutMilliseconds"`
 	CacheFillPollIntervalMilliseconds int `json:"cacheFillPollIntervalMilliseconds"`
+}
+
+type RedisCircuitBreakerConfig struct {
+	Enabled             bool `json:"enabled"`
+	FailureThreshold    int  `json:"failureThreshold"`
+	OpenDurationSeconds int  `json:"openDurationSeconds"`
 }
 
 type LimitsConfig struct {
@@ -79,6 +86,8 @@ const (
 	CacheFillLockTTLSeconds           = 15
 	CacheFillWaitTimeoutMilliseconds  = 800
 	CacheFillPollIntervalMilliseconds = 50
+	RedisCircuitFailureThreshold      = 3
+	RedisCircuitOpenDurationSeconds   = 30
 
 	DefaultBodySizeBytes    = 1 * 1024 * 1024
 	BulkWriteBodySizeBytes  = 10 * 1024 * 1024

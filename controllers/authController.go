@@ -270,7 +270,7 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 	role := ""
-	
+
 	// Try different possible role field names
 	if r, ok := storedUser["role"].(string); ok && r != "" {
 		role = r
@@ -287,11 +287,11 @@ func Login(c *fiber.Ctx) error {
 			role = roleOID.Hex()
 		}
 	}
-	
+
 	// Get tenant and project slugs from context
 	tenantSlug, _ := c.Locals("tenantSlug").(string)
 	projectSlug, _ := c.Locals("projectSlug").(string)
-	
+
 	// Generate tokens dynamically with tenant and project context
 	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
 	if err != nil {
@@ -306,29 +306,29 @@ func Login(c *fiber.Ctx) error {
 	// Remove any sensitive fields (like hashed passwords) before returning user data.
 	delete(storedUser, "password")
 
-    // Log Login Audit
-    authUser := &models.AuditUser{
-        ID: func() primitive.ObjectID {
-            if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
-                return oid
-            }
-            return primitive.NilObjectID
-        }(),
-        Roles: []string{role},
-        Email: func() string {
-            if email, ok := storedUser["email"].(string); ok {
-                return email
-            }
-            return ""
-        }(),
-    }
-    // IP and UserAgent
-    ip := c.IP()
-    userAgent := c.Get("User-Agent")
-    
-    if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
-        log.Printf("Failed to log login: %v", err)
-    }
+	// Log Login Audit
+	authUser := &models.AuditUser{
+		ID: func() primitive.ObjectID {
+			if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
+				return oid
+			}
+			return primitive.NilObjectID
+		}(),
+		Roles: []string{role},
+		Email: func() string {
+			if email, ok := storedUser["email"].(string); ok {
+				return email
+			}
+			return ""
+		}(),
+	}
+	// IP and UserAgent
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+
+	if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
+		log.Printf("Failed to log login: %v", err)
+	}
 
 	return c.JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -359,23 +359,28 @@ func GoogleLogin(c *fiber.Ctx) error {
 	// Get tenant and project slugs from context
 	tenantSlug, _ := c.Locals("tenantSlug").(string)
 	projectSlug, _ := c.Locals("projectSlug").(string)
-	
+
 	// Use FIXED redirect URL from env (not dynamic with tenant/project)
 	// The tenant/project context is stored in Redis with the state token
 	redirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
 	if redirectURL == "" {
 		redirectURL = "http://localhost:3002/api/v1/auth/google/callback" // fallback
 	}
-	
+
 	oauthConfig := utils.GetGoogleOAuthConfigWithRedirect(redirectURL)
-	
+
 	// Generate a cryptographically secure random state for CSRF protection
 	state := uuid.New().String()
-	
+
 	// Store state in Redis with tenant/project context for 5-minute expiration
-	redisClient := configs.RedisClient
+	if !configs.RedisCircuitAllow() {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to initiate OAuth flow",
+		})
+	}
 	stateKey := "oauth:state:" + state
-	
+
 	// Store context as JSON to retrieve later: {tenantID, projectID, tenantSlug, projectSlug}
 	stateData := map[string]string{
 		"tenantID":    tenantID,
@@ -391,8 +396,9 @@ func GoogleLogin(c *fiber.Ctx) error {
 			Message: "Failed to prepare OAuth state",
 		})
 	}
-	
-	err = redisClient.Set(ctx, stateKey, stateJSON, 5*time.Minute).Err()
+
+	err = configs.RedisClient.Set(ctx, stateKey, stateJSON, 5*time.Minute).Err()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		log.Printf("GoogleLogin: Failed to store OAuth state in Redis: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -400,7 +406,7 @@ func GoogleLogin(c *fiber.Ctx) error {
 			Message: "Failed to initiate OAuth flow",
 		})
 	}
-	
+
 	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	return c.Redirect(url)
 }
@@ -420,10 +426,16 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	// Verify state exists in Redis and retrieve tenant/project context
-	redisClient := configs.RedisClient
+	if !configs.RedisCircuitAllow() {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid or expired OAuth state. Please try again.",
+		})
+	}
 	stateKey := "oauth:state:" + state
-	
-	val, err := redisClient.Get(ctx, stateKey).Result()
+
+	val, err := configs.RedisClient.Get(ctx, stateKey).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		log.Printf("GoogleCallback: Invalid or expired OAuth state: %v", err)
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -443,7 +455,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 
 	// Delete the state from Redis (one-time use)
-	redisClient.Del(ctx, stateKey)
+	if configs.RedisCircuitAllow() {
+		err := configs.RedisClient.Del(ctx, stateKey).Err()
+		configs.RedisCircuitRecordResult(err)
+	}
 
 	// Extract tenant and project context from state
 	tenantID := stateData["tenantID"]
@@ -477,7 +492,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	// Exchange code for token
 	oauthConfig := utils.GetGoogleOAuthConfig()
-	
+
 	token, err := oauthConfig.Exchange(ctx, code)
 	if err != nil {
 		log.Printf("GoogleCallback: Failed to exchange token: %v", err)
@@ -524,10 +539,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
 	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-	
+
 	var authContainer models.ContainerModel
 	filter := bson.M{"isAuthContainer": true}
-	
+
 	err = containersCollection.FindOne(ctx, filter).Decode(&authContainer)
 	if err != nil {
 		log.Printf("GoogleCallback: Failed to find auth container: %v", err)
@@ -568,10 +583,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 
 	// Check if user exists in project-specific collection
 	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-	
+
 	var existingUser map[string]interface{}
 	userQuery := bson.M{emailFieldName: email}
-	
+
 	err = collection.FindOne(ctx, userQuery).Decode(&existingUser)
 
 	var userID string
@@ -632,7 +647,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 					log.Printf("GoogleCallback: Error fetching container model for schema %s: %v", triggeredSchema, err)
 					continue
 				}
-				
+
 				err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, triggeredContainer)
 				if err != nil {
 					log.Printf("GoogleCallback: Error deleting cache for schema %s: %v", triggeredSchema, err)
@@ -685,36 +700,36 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Remove sensitive fields
 	delete(existingUser, "password")
 
-    // Log Login Audit
-    authUser := &models.AuditUser{
-        ID: func() primitive.ObjectID {
-            if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
-                return oid
-            }
-            return primitive.NilObjectID
-        }(),
-        Roles: []string{role},
-        Email: func() string {
-            if email, ok := existingUser[emailFieldName].(string); ok {
-                return email
-            }
-            return ""
-        }(),
-    }
-    
-    ip := c.IP()
-    userAgent := c.Get("User-Agent")
-    
-    if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
-        log.Printf("GoogleCallback: Failed to log login: %v", err)
-    }
+	// Log Login Audit
+	authUser := &models.AuditUser{
+		ID: func() primitive.ObjectID {
+			if oid, err := primitive.ObjectIDFromHex(userID); err == nil {
+				return oid
+			}
+			return primitive.NilObjectID
+		}(),
+		Roles: []string{role},
+		Email: func() string {
+			if email, ok := existingUser[emailFieldName].(string); ok {
+				return email
+			}
+			return ""
+		}(),
+	}
+
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+
+	if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
+		log.Printf("GoogleCallback: Failed to log login: %v", err)
+	}
 
 	// Redirect to frontend with tokens
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:5173" // fallback
 	}
-	
+
 	// Serialize user data to JSON and encode for URL
 	userJSON, err := json.Marshal(existingUser)
 	if err != nil {
@@ -725,7 +740,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
-	
+
 	// Build the redirect URL with tenant/project context and user data
 	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?accessToken=%s&refreshToken=%s&user=%s",
 		frontendURL,
@@ -735,44 +750,43 @@ func GoogleCallback(c *fiber.Ctx) error {
 		tokenDetails.RefreshToken,
 		string(userJSON),
 	)
-	
+
 	return c.Redirect(redirectURL)
 }
-
 
 // Logout handles the user logout process.
 // Currently it mainly serves to log the logout action for audit purposes.
 // In the future, it can handle token blacklisting.
 func Logout(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    // Get user from context (set by middleware)
-    // Note: To use this endpoint effectively, it should be protected by authentication middleware
-    user := utils.GetUserFromContext(c)
-    
-    // Extract tenant and project context
-    // Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
-    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-    if err != nil {
-        return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-            Status:  http.StatusInternalServerError,
-            Message: "Failed to get project context: " + err.Error(),
-        })
-    }
-    
-    // IP and UserAgent
-    ip := c.IP()
-    userAgent := c.Get("User-Agent")
+	// Get user from context (set by middleware)
+	// Note: To use this endpoint effectively, it should be protected by authentication middleware
+	user := utils.GetUserFromContext(c)
 
-    if err := utils.LogLogout(ctx, tenantID, projectID, user, ip, userAgent); err != nil {
-        log.Printf("Failed to log logout: %v", err)
-        // We log the error but still return success to the user as the collection
-        // of usage data shouldn't block the user's workflow.
-    }
+	// Extract tenant and project context
+	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
 
-    return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-        Status:  http.StatusOK,
-        Message: "Logout successful.",
-    })
+	// IP and UserAgent
+	ip := c.IP()
+	userAgent := c.Get("User-Agent")
+
+	if err := utils.LogLogout(ctx, tenantID, projectID, user, ip, userAgent); err != nil {
+		log.Printf("Failed to log logout: %v", err)
+		// We log the error but still return success to the user as the collection
+		// of usage data shouldn't block the user's workflow.
+	}
+
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Logout successful.",
+	})
 }

@@ -21,12 +21,12 @@ import (
 
 // FileAnalysis holds the analysis result for a single Excel file
 type FileAnalysis struct {
-	FileName    string
-	SchemaName  string
-	Headers     []string
-	DataRows    [][]string
-	Fields      []models.Field
-	File        *multipart.FileHeader
+	FileName   string
+	SchemaName string
+	Headers    []string
+	DataRows   [][]string
+	Fields     []models.Field
+	File       *multipart.FileHeader
 }
 
 // RelationshipDetection holds detected relationship information
@@ -196,7 +196,7 @@ func UploadMultipleExcel(c *fiber.Ctx) error {
 	// Invalidate Redis cache
 	ctx := context.Background()
 	cacheKey := fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)
-	configs.RedisClient.Del(ctx, cacheKey)
+	_ = configs.RedisDelKeys(ctx, cacheKey)
 
 	// Emit WebSocket event
 	userIDStr, _ := c.Locals("userID").(string)
