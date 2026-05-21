@@ -48,7 +48,7 @@ func (p *DynamicRequestParser) ParseCreateItems(c *fiber.Ctx, container *models.
 			return nil, errors.New("missing items field")
 		}
 
-		items, err := parseLimitedItems([]byte(itemsJSON[0]), maxItems)
+		items, err := parseLimitedItems([]byte(itemsJSON[0]), maxItems, "bulk write")
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +80,54 @@ func (p *DynamicRequestParser) ParseCreateItems(c *fiber.Ctx, container *models.
 		return items, nil
 	}
 
-	return parseLimitedItems(c.Body(), maxItems)
+	return parseLimitedItems(c.Body(), maxItems, "bulk write")
+}
+
+func (p *DynamicRequestParser) ParseUpdateItems(c *fiber.Ctx, container *models.ContainerModel, maxItems int) ([]map[string]interface{}, error) {
+	if strings.Contains(c.Get("Content-Type"), "multipart/form-data") {
+		form, err := c.MultipartForm()
+		if err != nil {
+			return nil, err
+		}
+
+		itemsJSON, exists := form.Value["items"]
+		if !exists || len(itemsJSON) == 0 {
+			return nil, errors.New("missing items field")
+		}
+
+		items, err := parseLimitedItems([]byte(itemsJSON[0]), maxItems, "bulk update")
+		if err != nil {
+			return nil, err
+		}
+
+		if hasImageField(container) {
+			for _, field := range container.Fields {
+				if field.Type != "image" {
+					continue
+				}
+
+				files, exists := form.File[field.Name]
+				if !exists {
+					continue
+				}
+				if len(files) != len(items) {
+					return nil, fmt.Errorf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
+				}
+
+				for i, file := range files {
+					imageURL, err := p.uploadService.SaveAndUpload(c, file)
+					if err != nil {
+						return nil, err
+					}
+					items[i][field.Name] = imageURL
+				}
+			}
+		}
+
+		return items, nil
+	}
+
+	return parseLimitedItems(c.Body(), maxItems, "bulk update")
 }
 
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
@@ -129,7 +176,7 @@ func hasImageField(container *models.ContainerModel) bool {
 	return false
 }
 
-func parseLimitedItems(data []byte, max int) ([]map[string]interface{}, error) {
+func parseLimitedItems(data []byte, max int, operation string) ([]map[string]interface{}, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 
 	token, err := decoder.Token()
@@ -144,7 +191,7 @@ func parseLimitedItems(data []byte, max int) ([]map[string]interface{}, error) {
 	for decoder.More() {
 		if len(items) >= max {
 			return nil, &BatchLimitError{
-				Operation: "bulk write",
+				Operation: operation,
 				Requested: max + 1,
 				Max:       max,
 			}

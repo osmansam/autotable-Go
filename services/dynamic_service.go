@@ -68,6 +68,16 @@ type UpdateDynamicItemInput struct {
 	FiberCtx  *fiber.Ctx
 }
 
+type UpdateMultipleDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	UserID    string
+	User      *models.AuditUser
+	Container *models.ContainerModel
+	FiberCtx  *fiber.Ctx
+}
+
 type DynamicService struct {
 	repository *repositories.DynamicRepository
 	parser     *requests.DynamicRequestParser
@@ -393,6 +403,182 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 	return responseItem, nil
 }
 
+func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input UpdateMultipleDynamicItemsInput) (fiber.Map, error) {
+	container, err := s.resolveUpdateMultipleContainer(input)
+	if err != nil {
+		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	items, err := s.parser.ParseUpdateItems(input.FiberCtx, container, configs.GetMaxBulkUpdateLimit())
+	if err != nil {
+		log.Printf("Failed to parse bulk update request for schema: %s, error: %v", input.Schema, err)
+		return nil, parseBulkUpdateError(err)
+	}
+
+	var successfulUpdates []interface{}
+	var failedUpdates []map[string]interface{}
+	var bulkBeforeDocs []interface{}
+	var bulkAfterDocs []interface{}
+
+	for _, item := range items {
+		result, beforeDoc, afterDoc := s.updateOneFromBulk(ctx, input, container, item)
+		if result.Failed != nil {
+			failedUpdates = append(failedUpdates, result.Failed)
+			continue
+		}
+		successfulUpdates = append(successfulUpdates, result.Success)
+		bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
+		bulkAfterDocs = append(bulkAfterDocs, afterDoc)
+	}
+
+	if len(bulkAfterDocs) > 0 {
+		if err := utils.LogBulkUpdateAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkBeforeDocs, bulkAfterDocs); err != nil {
+			log.Printf("Failed to log bulk update: %v", err)
+		}
+	}
+
+	if len(successfulUpdates) > 0 {
+		if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
+			s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
+		}); err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		}
+		s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
+	}
+
+	return fiber.Map{
+		"successful": successfulUpdates,
+		"failed":     failedUpdates,
+	}, nil
+}
+
+type bulkUpdateItemResult struct {
+	Success interface{}
+	Failed  map[string]interface{}
+}
+
+func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}) {
+	idStr, errMessage := extractBulkUpdateID(item)
+	if errMessage != "" {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"item":  item,
+			"error": errMessage,
+		}}, nil, nil
+	}
+
+	updateID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Provided ID is not in the valid format",
+		}}, nil, nil
+	}
+
+	lockKey := fmt.Sprintf("lock:update:%s:%s", input.Schema, updateID.Hex())
+	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+	if !locked {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Another process is already updating this item",
+		}}, nil, nil
+	}
+	defer utils.ReleaseLock(lockKey, lockID)
+
+	delete(item, "id")
+	delete(item, "_id")
+
+	if err := validators.PrepareUpdateFields(container, item); err != nil {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Validation failed: " + err.Error(),
+		}}, nil, nil
+	}
+
+	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID)
+	if err != nil {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Failed to fetch existing item: " + err.Error(),
+		}}, nil, nil
+	}
+
+	beforeDoc := make(map[string]interface{})
+	for k, v := range existingItem {
+		beforeDoc[k] = v
+	}
+
+	if err := validators.PrepareMergedUpdateItem(input.TenantID, input.ProjectID, container, existingItem, item); err != nil {
+		var equationErr *validators.EquationFieldError
+		if errors.As(err, &equationErr) {
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": fmt.Sprintf("Error evaluating equation for field %s: %v", equationErr.FieldName, equationErr.Err),
+			}}, nil, nil
+		}
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": err.Error(),
+		}}, nil, nil
+	}
+
+	for _, field := range container.Fields {
+		if !field.Unique {
+			continue
+		}
+		fieldValue, found := item[field.Name]
+		if !found {
+			continue
+		}
+		count, err := s.repository.CountByFieldExcludingID(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, fieldValue, updateID)
+		if err != nil {
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "Error checking unique field: " + err.Error(),
+			}}, nil, nil
+		}
+		if count > 0 {
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": fmt.Sprintf("A document with the same %s already exists", field.Name),
+			}}, nil, nil
+		}
+	}
+
+	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
+	if err != nil {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Failed to update item: " + err.Error(),
+		}}, nil, nil
+	}
+	if updateResult.MatchedCount == 0 {
+		return bulkUpdateItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "No matching item found to update",
+		}}, nil, nil
+	}
+
+	return bulkUpdateItemResult{Success: map[string]interface{}{
+		"id":     idStr,
+		"result": updateResult,
+	}}, beforeDoc, existingItem
+}
+
 func (s *DynamicService) resolveContainer(input CreateDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
@@ -408,6 +594,13 @@ func (s *DynamicService) resolveCreateMultipleContainer(input CreateMultipleDyna
 }
 
 func (s *DynamicService) resolveUpdateContainer(input UpdateDynamicItemInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveUpdateMultipleContainer(input UpdateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
@@ -619,4 +812,54 @@ func parseBulkCreateError(err error) *ServiceError {
 		Message: message,
 		Err:     err,
 	}
+}
+
+func parseBulkUpdateError(err error) *ServiceError {
+	var limitErr *requests.BatchLimitError
+	if errors.As(err, &limitErr) {
+		return &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: limitErr.Error(),
+			Data: fiber.Map{
+				"requested": limitErr.Requested,
+				"max":       limitErr.Max,
+			},
+			Err: err,
+		}
+	}
+
+	message := "Failed to parse request body"
+	if err != nil {
+		if strings.Contains(err.Error(), "multipart") {
+			message = "Error parsing multipart form"
+		} else if err.Error() == "missing items field" {
+			message = "Missing items JSON field"
+		} else if strings.HasPrefix(err.Error(), "Expected ") {
+			message = err.Error()
+		}
+	}
+
+	return &ServiceError{
+		Status:  http.StatusInternalServerError,
+		Message: message,
+		Err:     err,
+	}
+}
+
+func extractBulkUpdateID(item map[string]interface{}) (string, string) {
+	if v, ok := item["id"]; ok {
+		idStr, ok := v.(string)
+		if !ok {
+			return "", "Invalid id format, expected string"
+		}
+		return idStr, ""
+	}
+	if v, ok := item["_id"]; ok {
+		idStr, ok := v.(string)
+		if !ok {
+			return "", "Invalid _id format, expected string"
+		}
+		return idStr, ""
+	}
+	return "", "Missing id field"
 }

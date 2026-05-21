@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
 	"plugin"
 	"strconv"
@@ -972,16 +971,11 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
-	// Set a timeout for the operation.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-
-	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
-
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -990,383 +984,30 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	log.Printf("Updating multiple items for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
-	// Fetch container model from context or via a helper function.
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
 	}
 
-	// Determine if any field is of type "image"
-	hasImageField := false
-	for _, field := range container.Fields {
-		if field.Type == "image" {
-			hasImageField = true
-			break
-		}
-	}
-
-	// items will hold the update objects.
-	var items []map[string]interface{}
-	// fileURLs holds, for each image field, a slice of URLs (one per item).
-	fileURLs := make(map[string][]string)
-
-	// Process input based on content type.
-	contentType := c.Get("Content-Type")
-	if strings.Contains(contentType, "multipart/form-data") {
-		// Expect a multipart form with one field "items" containing the JSON array.
-		form, err := c.MultipartForm()
-		if err != nil {
-			log.Printf("Error parsing multipart form for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error parsing multipart form")
-		}
-
-		itemsJSON, exists := form.Value["items"]
-		if !exists || len(itemsJSON) == 0 {
-			return utils.SendErrorResponse(c, fmt.Errorf("missing items field"), "Missing items JSON field")
-		}
-		maxBulkUpdate := configs.GetMaxBulkUpdateLimit()
-		items, err = parseLimitedBatchItems(c, []byte(itemsJSON[0]), "bulk update", schemaName, tenantID, projectID, maxBulkUpdate)
-		if err != nil {
-			return err
-		}
-
-		// Process image fields if any.
-		if hasImageField {
-			for _, field := range container.Fields {
-				if field.Type != "image" {
-					continue
-				}
-				files, exists := form.File[field.Name]
-				if !exists {
-					// No file for this image field; decide whether to skip or error out.
-					continue
-				}
-				// Make sure we have one file per item.
-				if len(files) != len(items) {
-					msg := fmt.Sprintf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
-					log.Printf("%s", msg)
-					return utils.SendErrorResponse(c, fmt.Errorf("%s", msg), msg)
-				}
-				// Loop over the files so that each item gets its corresponding image.
-				for _, file := range files {
-					tempFilePath := "./temp/" + file.Filename
-					if err := c.SaveFile(file, tempFilePath); err != nil {
-						return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.", Data: err.Error()})
-					}
-					imageURL, err := utils.UploadToCloudinary(tempFilePath)
-					// Clean up the temp file.
-					os.Remove(tempFilePath)
-					if err != nil {
-						log.Printf("Error uploading image to Cloudinary for schema: %s, error: %v", schemaName, err)
-						return utils.SendErrorResponse(c, err, "Error uploading image to Cloudinary")
-					}
-					fileURLs[field.Name] = append(fileURLs[field.Name], imageURL)
-				}
-			}
-		}
-	} else {
-		// Otherwise, assume a JSON array in the request body.
-		maxBulkUpdate := configs.GetMaxBulkUpdateLimit()
-		items, err = parseLimitedBatchItems(c, c.Body(), "bulk update", schemaName, tenantID, projectID, maxBulkUpdate)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Build a set of allowed field names from the container model.
-	allowedFields := make(map[string]struct{})
-	for _, field := range container.Fields {
-		allowedFields[field.Name] = struct{}{}
-	}
-
-	// Prepare slices for successful and failed update results.
-	var successfulUpdates []interface{}
-	var failedUpdates []map[string]interface{}
-	var bulkBeforeDocs []interface{}
-	var bulkAfterDocs []interface{}
-
-	// Get the project-specific collection for this schema.
-	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-
-	// Process each update item individually.
-	for index, item := range items {
-		// Expect each update item to include an ID.
-		var idStr string
-		if v, ok := item["id"]; ok {
-			idStr, ok = v.(string)
-			if !ok {
-				failedUpdates = append(failedUpdates, map[string]interface{}{
-					"item":  item,
-					"error": "Invalid id format, expected string",
-				})
-				continue
-			}
-		} else if v, ok := item["_id"]; ok {
-			idStr, ok = v.(string)
-			if !ok {
-				failedUpdates = append(failedUpdates, map[string]interface{}{
-					"item":  item,
-					"error": "Invalid _id format, expected string",
-				})
-				continue
-			}
-		} else {
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"item":  item,
-				"error": "Missing id field",
+	dynamicService := services.NewDynamicService()
+	responseData, err := dynamicService.UpdateMultipleDynamicItems(ctx, services.UpdateMultipleDynamicItemsInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    schemaName,
+		UserID:    userIDStr,
+		User:      utils.GetUserFromContext(c),
+		Container: container,
+		FiberCtx:  c,
+	})
+	if err != nil {
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
 			})
-			continue
 		}
-
-		updateId, err := primitive.ObjectIDFromHex(idStr)
-		if err != nil {
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Provided ID is not in the valid format",
-			})
-			continue
-		}
-
-		// Acquire a Redis lock for this item to prevent concurrent updates.
-		lockKey := fmt.Sprintf("lock:update:%s:%s", schemaName, updateId.Hex())
-		lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
-		if !locked {
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Another process is already updating this item",
-			})
-			continue
-		}
-		// IMPORTANT: We cannot use defer inside a loop—release the lock as soon as the update is done.
-
-		// Remove the id fields from the update map so they are not updated.
-		delete(item, "id")
-		delete(item, "_id")
-
-		// Remove any fields that are not allowed.
-		for key := range item {
-			if _, exists := allowedFields[key]; !exists {
-				delete(item, key)
-			}
-		}
-
-		// If files were uploaded for image fields, update the corresponding fields.
-		for fieldName, urls := range fileURLs {
-			if index < len(urls) {
-				item[fieldName] = urls[index]
-			}
-		}
-
-		// Automatically update updatedAt for the update data.
-		now := time.Now().UTC().Format(time.RFC3339)
-		for _, field := range container.Fields {
-			if field.Name == "updatedAt" {
-				item["updatedAt"] = now
-			}
-		}
-
-		// Validate only the fields being updated (partial validation)
-		if err = utils.ValidatePartialUpdate(item, *container); err != nil {
-			utils.ReleaseLock(lockKey, lockID)
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Validation failed: " + err.Error(),
-			})
-			continue
-		}
-
-		// Fetch the existing item from the database.
-		var existingItem bson.M
-		err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
-		if err != nil {
-			utils.ReleaseLock(lockKey, lockID)
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Failed to fetch existing item: " + err.Error(),
-			})
-			continue
-		}
-
-		// Clone for audit (Before state)
-		beforeDoc := make(map[string]interface{})
-		for k, v := range existingItem {
-			beforeDoc[k] = v
-		}
-
-		// Merge update fields into the existing document.
-		for key, value := range item {
-			existingItem[key] = value
-		}
-
-		// Calculate equation fields based on the merged existingItem
-		equationError := false
-		for _, field := range container.Fields {
-			if field.Equation != "" {
-				eqCtx := &utils.EquationContext{
-					TenantID:  tenantID,
-					ProjectID: projectID,
-					Data:      existingItem,
-				}
-				val, err := utils.EvaluateEquationWithContext(field.Equation, eqCtx)
-				if err != nil {
-					utils.ReleaseLock(lockKey, lockID)
-					failedUpdates = append(failedUpdates, map[string]interface{}{
-						"id":    idStr,
-						"item":  item,
-						"error": fmt.Sprintf("Error evaluating equation for field %s: %v", field.Name, err),
-					})
-					equationError = true
-					break
-				}
-				existingItem[field.Name] = val
-			}
-		}
-		if equationError {
-			continue
-		}
-
-		// Check unique constraints for updated fields.
-		for _, field := range container.Fields {
-			if field.Unique {
-				if fieldValue, found := item[field.Name]; found {
-					// Exclude the current document from the uniqueness check.
-					filter := bson.M{
-						field.Name: fieldValue,
-						"_id":      bson.M{"$ne": updateId},
-					}
-					count, err := currentCollection.CountDocuments(ctx, filter)
-					if err != nil {
-						utils.ReleaseLock(lockKey, lockID)
-						failedUpdates = append(failedUpdates, map[string]interface{}{
-							"id":    idStr,
-							"item":  item,
-							"error": "Error checking unique field: " + err.Error(),
-						})
-						continue
-					}
-					if count > 0 {
-						utils.ReleaseLock(lockKey, lockID)
-						failedUpdates = append(failedUpdates, map[string]interface{}{
-							"id":    idStr,
-							"item":  item,
-							"error": fmt.Sprintf("A document with the same %s already exists", field.Name),
-						})
-						continue
-					}
-				}
-			}
-		}
-
-		// Convert fields that should be ObjectId or ObjectIdArray to proper types
-		for _, field := range container.Fields {
-			if field.Type == "objectId" {
-				if strVal, ok := existingItem[field.Name].(string); ok {
-					if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-						existingItem[field.Name] = objId
-					}
-				}
-			} else if field.Type == "objectIdArray" {
-				// Handle objectIdArray conversion
-				if val, exists := existingItem[field.Name]; exists && val != nil {
-					// Try []interface{} first (common from JSON parsing)
-					if arrInterface, ok := val.([]interface{}); ok {
-						objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
-						for _, item := range arrInterface {
-							if strVal, ok := item.(string); ok {
-								if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-									objIdArray = append(objIdArray, objId)
-								}
-							} else if objId, ok := item.(primitive.ObjectID); ok {
-								objIdArray = append(objIdArray, objId)
-							}
-						}
-						existingItem[field.Name] = objIdArray
-					} else if arrString, ok := val.([]string); ok {
-						// Handle []string
-						objIdArray := make([]primitive.ObjectID, 0, len(arrString))
-						for _, strVal := range arrString {
-							if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-								objIdArray = append(objIdArray, objId)
-							}
-						}
-						existingItem[field.Name] = objIdArray
-					}
-				}
-			}
-		}
-
-		// Perform the update.
-		updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
-		// Release the Redis lock.
-		utils.ReleaseLock(lockKey, lockID)
-		if err != nil {
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Failed to update item: " + err.Error(),
-			})
-			continue
-		}
-		if updateResult.MatchedCount == 0 {
-			failedUpdates = append(failedUpdates, map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "No matching item found to update",
-			})
-			continue
-		}
-
-		// Record a successful update.
-		successfulUpdates = append(successfulUpdates, map[string]interface{}{
-			"id":     idStr,
-			"result": updateResult,
-		})
-		bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
-		bulkAfterDocs = append(bulkAfterDocs, existingItem)
-	}
-
-	// Log Bulk Audit
-	if len(bulkAfterDocs) > 0 {
-		if err := utils.LogBulkUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), bulkBeforeDocs, bulkAfterDocs); err != nil {
-			log.Printf("Failed to log bulk update: %v", err)
-		}
-	}
-
-	// After processing all items, clear the cache for the schema.
-	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
-		if err != nil {
-			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
-		}
-		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
-			if err != nil {
-				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-			}
-			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
-		}
-	}
-
-	// Prepare the final response containing both successes and failures.
-	responseData := fiber.Map{
-		"successful": successfulUpdates,
-		"failed":     failedUpdates,
-	}
-
-	// Emit WebSocket invalidate event for this schema if there were any successful updates
-	if len(successfulUpdates) > 0 {
-		ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
 	}
 
 	log.Printf("Multiple items update completed for schema: %s", schemaName)
