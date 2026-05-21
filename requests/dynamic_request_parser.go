@@ -25,6 +25,19 @@ type SearchParams struct {
 	Pager     utils.Pager
 }
 
+type FilterParams struct {
+	Filter    bson.M
+	SearchKey string
+	Sort      bson.D
+	Pager     utils.Pager
+}
+
+type PipelineParams struct {
+	SchemaName   string
+	PipelineName string
+	CurrentQuery string
+}
+
 type BatchLimitError struct {
 	Operation string
 	Requested int
@@ -157,6 +170,38 @@ func (p *DynamicRequestParser) ParseSearchParams(c *fiber.Ctx) (SearchParams, er
 		Sort:      sortDoc,
 		Pager:     pager,
 	}, nil
+}
+
+func (p *DynamicRequestParser) ParseFilterParams(c *fiber.Ctx, container *models.ContainerModel) (FilterParams, error) {
+	filter, err := utils.BuildFilterFromQuery(c, container)
+	if err != nil {
+		return FilterParams{}, fmt.Errorf("invalid filter parameter: %w", err)
+	}
+
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return FilterParams{}, fmt.Errorf("invalid sort parameters: %w", err)
+	}
+
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return FilterParams{}, fmt.Errorf("invalid pagination parameters: %w", err)
+	}
+
+	return FilterParams{
+		Filter:    filter,
+		SearchKey: c.Query("search"),
+		Sort:      sortDoc,
+		Pager:     pager,
+	}, nil
+}
+
+func (p *DynamicRequestParser) ParsePipelineParams(c *fiber.Ctx) PipelineParams {
+	return PipelineParams{
+		SchemaName:   c.Query("schemaName"),
+		PipelineName: c.Query("pipelineName"),
+		CurrentQuery: c.OriginalURL(),
+	}
 }
 
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {

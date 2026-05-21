@@ -648,116 +648,67 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
-	// 1) Context + load containerModel (ensures schemaName is present)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	container, err := utils.FetchContainerModel(c)
-	if err != nil {
-		if err == utils.ErrNoSchemaName {
-			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
-		}
-		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
 	}
-
-	// 2) Build the filter from query parameters
-	filter, err := utils.BuildFilterFromQuery(c, container)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Invalid filter parameter")
-	}
-
-	// 3) Add search functionality if search parameter is provided
-	searchKey := c.Query("search")
-	if searchKey != "" {
-		// Build search OR clauses with references
-		orClauses, err := utils.BuildSearchWithReferences(ctx, container, searchKey)
+	if container == nil {
+		container, err = utils.FetchContainerModel(c)
 		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to build search filter")
-		}
-
-		if len(orClauses) > 0 {
-			// Combine existing filter with search using $and
-			if len(filter) > 0 {
-				filter = bson.M{
-					"$and": []bson.M{
-						filter,
-						{"$or": orClauses},
-					},
-				}
-			} else {
-				// No existing filter, just use search
-				filter = bson.M{"$or": orClauses}
+			if err == utils.ErrNoSchemaName {
+				return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
 			}
+			return utils.SendErrorResponse(c, err, "Failed to load container model")
 		}
 	}
 
-	// 4) Parse sort & pagination
-	sortDoc, err := utils.ParseSort(c)
+	dynamicService := services.NewDynamicService()
+	params, err := dynamicService.ParseFilterParams(c, container)
 	if err != nil {
-		return utils.SendErrorResponse(c, err, "Invalid sort parameters")
-	}
-	pager, err := utils.ParsePager(c)
-	if err != nil {
+		if strings.HasPrefix(err.Error(), "invalid filter parameter") {
+			return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+		}
+		if strings.HasPrefix(err.Error(), "invalid sort parameters") {
+			return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+		}
 		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
 	}
 
-	// 5) Execute the query
-	opts := utils.BuildFindOptions(sortDoc, pager)
-
-	// Apply Row Access Logic
 	userRole, _ := c.Locals("userRole").(string)
 	userID, _ := c.Locals("userID").(string)
-	userMap := map[string]interface{}{"id": userID, "_id": userID, "role": userRole}
-
-	rowAccessFilter, err := utils.GetRowAccessFilter(container, userRole, userMap)
+	result, err := dynamicService.FilterDynamicItems(ctx, services.FilterDynamicItemsInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    container.SchemaName,
+		Filter:    params.Filter,
+		SearchKey: params.SearchKey,
+		UserID:    userID,
+		UserRole:  userRole,
+		Sort:      params.Sort,
+		Pager:     params.Pager,
+		Container: container,
+	})
 	if err != nil {
-		log.Printf("Error building row access filter: %v", err)
-		return utils.SendErrorResponse(c, err, "row access error")
-	}
-	if rowAccessFilter != nil {
-		if len(filter) > 0 {
-			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-		} else {
-			filter = rowAccessFilter
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
 		}
-	}
-
-	items, err := utils.QueryAndDecode(ctx, tenantID, projectID, container.SchemaName, filter, opts, &pager)
-	if err != nil {
-		log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
 	}
 
-	// 6) Strip out hashed fields
-	utils.StripHashed(container.Fields, items)
-
-	// 7) Populate references if configured
-	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to populate items")
-	}
-
-	// 7.5) Filter fields based on user role authorization
-	// 7.5) Filter fields based on user role authorization
-	items = utils.FilterDocuments(items, container.Fields, userRole)
-
-	// 8) Send response (with pagination metadata if applicable)
-	if pager.Enabled {
-		return c.JSON(fiber.Map{
-			"items":       items,
-			"totalItems":  pager.TotalItems,
-			"totalPages":  pager.TotalPages,
-			"currentPage": pager.Page,
-		})
-	}
-	return c.JSON(items)
+	return c.JSON(result)
 }
 
 // get all item for given collection
@@ -765,118 +716,44 @@ func GetPipeline(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	// Fetching the schema name and pipeline name from the query params
-	schemaName := c.Query("schemaName")
-	pipelineName := c.Query("pipelineName")
-	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s (tenant: %s, project: %s)", schemaName, pipelineName, tenantID, projectID)
-
-	// Validate schemaName and pipelineName
-	if schemaName == "" || pipelineName == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "schemaName and pipelineName are required",
-			Data:    nil,
-		})
-	}
-
-	// Serialize the current query parameters
-	currentQuery := c.OriginalURL()
-
-	// Get the container model for the schema
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
 	}
 
-	// Find the pipeline stage with the given name
-	var pipelineStage models.PipelineStage
-	found := false
-	for _, stage := range container.Pipelines {
-		if stage.Name == pipelineName {
-			pipelineStage = stage
-			found = true
-			break
-		}
-	}
-	if !found {
-		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
-			Status:  http.StatusNotFound,
-			Message: "Pipeline not found",
-			Data:    nil,
-		})
-	}
-	pipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineStage.PipelineJSON, c)
-	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	dynamicService := services.NewDynamicService()
+	params := dynamicService.ParsePipelineParams(c)
+	log.Printf("Fetching pipeline for schema: %s with pipeline name: %s (tenant: %s, project: %s)", params.SchemaName, params.PipelineName, tenantID, projectID)
 
-	redisKey, shouldCache := utils.GeneratePipelineRedisKey(tenantID, projectID, schemaName, pipelineName, container)
-
-	// Check if query has changed
-	queryChanged := false
-	if shouldCache {
-		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
-		if err == nil && storedQuery != currentQuery {
-			queryChanged = true
-		}
-	}
-
-	// Fetch from cache if query hasn't changed and cache is available
-	if shouldCache && !queryChanged {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var items []map[string]interface{}
-			if err := json.Unmarshal([]byte(cachedData), &items); err == nil {
-				// Filter fields based on user role authorization
-				// userRole, _ := c.Locals("userRole").(string)
-				// items = utils.FilterDocuments(items, container.Fields, userRole)
-				return c.JSON(items)
-			}
-		}
-	}
-
-	// Execute the dynamic pipeline
-	items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, pipelineStage)
+	items, err := dynamicService.GetPipeline(ctx, services.GetPipelineInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		Schema:       params.SchemaName,
+		PipelineName: params.PipelineName,
+		CurrentQuery: params.CurrentQuery,
+		Container:    container,
+		PrepareStage: func(pipelineJSON string) string {
+			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+		},
+	})
 	if err != nil {
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
+		}
 		return utils.SendErrorResponse(c, err, "Failed to execute dynamic pipeline")
 	}
 
-	// Convert []bson.M to []map[string]interface{} for filtering
-	var resultItems []map[string]interface{}
-	for _, doc := range items {
-		resultItems = append(resultItems, map[string]interface{}(doc))
-	}
-
-	// Filter fields based on user role authorization
-	// userRole, _ := c.Locals("userRole").(string)
-	// resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
-
-	// Cache the new data and query if shouldCache is true
-	if shouldCache {
-		dataToCache, _ := json.Marshal(resultItems)
-		var expiration time.Duration
-		if pipelineStage.CacheTime > 0 {
-			expiration = time.Duration(pipelineStage.CacheTime) * time.Minute
-		} else {
-			expiration = 0 //the key will never expire.
-		}
-		configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-		configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-	}
-
-	// Return the results
-	log.Printf("Pipeline results successfully fetched and filtered for schema: %s with pipeline name: %s", schemaName, pipelineName)
-	return c.JSON(resultItems)
+	return c.JSON(items)
 }
 
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.

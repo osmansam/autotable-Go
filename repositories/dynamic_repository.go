@@ -97,6 +97,19 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 	return items, nil
 }
 
+func (r *DynamicRepository) ExecutePipeline(ctx context.Context, tenantID, projectID, schemaName string, pipelineStage models.PipelineStage) ([]map[string]interface{}, error) {
+	items, err := utils.ExecuteDynamicPipeline(ctx, r.GetCollection(tenantID, projectID, schemaName), pipelineStage)
+	if err != nil {
+		return nil, err
+	}
+
+	resultItems := make([]map[string]interface{}, 0, len(items))
+	for _, doc := range items {
+		resultItems = append(resultItems, map[string]interface{}(doc))
+	}
+	return resultItems, nil
+}
+
 func (r *DynamicRepository) DeleteByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}) (*mongo.DeleteResult, error) {
 	return r.GetCollection(tenantID, projectID, schemaName).DeleteOne(ctx, bson.M{"_id": id})
 }

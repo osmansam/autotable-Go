@@ -58,6 +58,30 @@ func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[str
 	configs.RedisClient.Set(ctx, key, payload, ttl)
 }
 
+func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery string) ([]map[string]interface{}, bool) {
+	storedQuery, err := configs.RedisClient.Get(ctx, key+"-query").Result()
+	if err == nil && storedQuery != currentQuery {
+		return nil, false
+	}
+
+	return d.GetItems(ctx, key)
+}
+
+func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery string, items []map[string]interface{}, cacheMinutes int) {
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return
+	}
+
+	var expiration time.Duration
+	if cacheMinutes > 0 {
+		expiration = time.Duration(cacheMinutes) * time.Minute
+	}
+
+	configs.RedisClient.Set(ctx, key, payload, expiration)
+	configs.RedisClient.Set(ctx, key+"-query", currentQuery, expiration)
+}
+
 func (d *DynamicCache) SetItem(ctx context.Context, key string, item map[string]interface{}, ttlMinutes int) {
 	payload, err := json.Marshal(item)
 	if err != nil {

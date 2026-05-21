@@ -142,6 +142,29 @@ type SearchDynamicItemsInput struct {
 	Container *models.ContainerModel
 }
 
+type FilterDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	Filter    bson.M
+	SearchKey string
+	UserID    string
+	UserRole  string
+	Sort      bson.D
+	Pager     utils.Pager
+	Container *models.ContainerModel
+}
+
+type GetPipelineInput struct {
+	TenantID     string
+	ProjectID    string
+	Schema       string
+	PipelineName string
+	CurrentQuery string
+	Container    *models.ContainerModel
+	PrepareStage func(string) string
+}
+
 type DynamicService struct {
 	repository *repositories.DynamicRepository
 	parser     *requests.DynamicRequestParser
@@ -161,6 +184,14 @@ func NewDynamicService() *DynamicService {
 
 func (s *DynamicService) ParseSearchParams(c *fiber.Ctx) (requests.SearchParams, error) {
 	return s.parser.ParseSearchParams(c)
+}
+
+func (s *DynamicService) ParseFilterParams(c *fiber.Ctx, container *models.ContainerModel) (requests.FilterParams, error) {
+	return s.parser.ParseFilterParams(c, container)
+}
+
+func (s *DynamicService) ParsePipelineParams(c *fiber.Ctx) requests.PipelineParams {
+	return s.parser.ParsePipelineParams(c)
 }
 
 func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDynamicItemInput) (map[string]interface{}, error) {
@@ -980,6 +1011,158 @@ func (s *DynamicService) SearchDynamicItems(ctx context.Context, input SearchDyn
 	return items, nil
 }
 
+func (s *DynamicService) FilterDynamicItems(ctx context.Context, input FilterDynamicItemsInput) (interface{}, error) {
+	container, err := s.resolveFilterContainer(input)
+	if err != nil {
+		if input.Schema == "" {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "schemaName is required",
+				Data:    nil,
+				Err:     err,
+			}
+		}
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to load container model",
+			Err:     err,
+		}
+	}
+
+	filter := input.Filter
+	if input.SearchKey != "" {
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, input.SearchKey)
+		if err != nil {
+			return nil, &ServiceError{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to build search filter",
+				Err:     err,
+			}
+		}
+
+		if len(orClauses) > 0 {
+			if len(filter) > 0 {
+				filter = bson.M{
+					"$and": []bson.M{
+						filter,
+						{"$or": orClauses},
+					},
+				}
+			} else {
+				filter = bson.M{"$or": orClauses}
+			}
+		}
+	}
+
+	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "row access error",
+			Err:     err,
+		}
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
+
+	pager := input.Pager
+	opts := utils.BuildFindOptions(input.Sort, pager)
+	items, err := s.repository.Query(ctx, input.TenantID, input.ProjectID, container.SchemaName, filter, opts, &pager)
+	if err != nil {
+		log.Printf("Filter query failed for schema %q: %v", container.SchemaName, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch filtered items",
+			Err:     err,
+		}
+	}
+
+	utils.StripHashed(container.Fields, items)
+
+	items, err = utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, items)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to populate items",
+			Err:     err,
+		}
+	}
+
+	items = utils.FilterDocuments(items, container.Fields, input.UserRole)
+	if pager.Enabled {
+		return fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		}, nil
+	}
+
+	return items, nil
+}
+
+func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput) ([]map[string]interface{}, error) {
+	if input.Schema == "" || input.PipelineName == "" {
+		return nil, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName and pipelineName are required",
+			Data:    nil,
+		}
+	}
+
+	container, err := s.resolvePipelineContainer(input)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	pipelineStage, found := findPipelineStage(container, input.PipelineName)
+	if !found {
+		return nil, &ServiceError{
+			Status:  http.StatusNotFound,
+			Message: "Pipeline not found",
+			Data:    nil,
+		}
+	}
+
+	if input.PrepareStage != nil {
+		pipelineStage.PipelineJSON = input.PrepareStage(pipelineStage.PipelineJSON)
+	}
+
+	redisKey, shouldCache := utils.GeneratePipelineRedisKey(input.TenantID, input.ProjectID, input.Schema, input.PipelineName, container)
+	if shouldCache {
+		if items, ok := s.cache.GetPipelineItems(ctx, redisKey, input.CurrentQuery); ok {
+			return items, nil
+		}
+	}
+
+	resultItems, err := s.repository.ExecutePipeline(ctx, input.TenantID, input.ProjectID, input.Schema, pipelineStage)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to execute dynamic pipeline",
+			Err:     err,
+		}
+	}
+
+	if shouldCache {
+		s.cache.SetPipelineItems(ctx, redisKey, input.CurrentQuery, resultItems, pipelineStage.CacheTime)
+	}
+
+	log.Printf("Pipeline results successfully fetched and filtered for schema: %s with pipeline name: %s", input.Schema, input.PipelineName)
+	return resultItems, nil
+}
+
 type bulkUpdateItemResult struct {
 	Success interface{}
 	Failed  map[string]interface{}
@@ -1250,6 +1433,23 @@ func (s *DynamicService) resolveSearchContainer(input SearchDynamicItemsInput) (
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveFilterContainer(input FilterDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	if input.Schema == "" {
+		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolvePipelineContainer(input GetPipelineInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
 	}
 	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
 }
@@ -1592,6 +1792,15 @@ func buildGetDynamicItemFilter(container *models.ContainerModel, idParam string)
 		return nil, err
 	}
 	return bson.M{"_id": objID}, nil
+}
+
+func findPipelineStage(container *models.ContainerModel, pipelineName string) (models.PipelineStage, bool) {
+	for _, stage := range container.Pipelines {
+		if stage.Name == pipelineName {
+			return stage, true
+		}
+	}
+	return models.PipelineStage{}, false
 }
 
 func extractBulkUpdateID(item map[string]interface{}) (string, string) {
