@@ -46,6 +46,15 @@ type PipelineParams struct {
 	CurrentQuery string
 }
 
+type ExportRequest struct {
+	SchemaName string                 `json:"schemaName"`
+	Fields     []string               `json:"fields"`
+	Filters    map[string]interface{} `json:"filters"`
+	Search     string                 `json:"search"`
+	Page       int                    `json:"page"`
+	Limit      int                    `json:"limit"`
+}
+
 type BatchLimitError struct {
 	Operation string
 	Requested int
@@ -235,6 +244,33 @@ func (p *DynamicRequestParser) ParsePipelineParams(c *fiber.Ctx) PipelineParams 
 		PipelineName: c.Query("pipelineName"),
 		CurrentQuery: c.OriginalURL(),
 	}
+}
+
+func (p *DynamicRequestParser) ParseTestPipeline(c *fiber.Ctx) (models.TestPipelineRequestBody, error) {
+	var requestBody models.TestPipelineRequestBody
+	if err := c.BodyParser(&requestBody); err != nil {
+		return models.TestPipelineRequestBody{}, err
+	}
+	return requestBody, nil
+}
+
+func (p *DynamicRequestParser) ParseDynamicAPIRequest(c *fiber.Ctx) (map[string]interface{}, error) {
+	var requestBody map[string]interface{}
+	if err := c.BodyParser(&requestBody); err != nil {
+		return nil, err
+	}
+	if requestBody == nil {
+		requestBody = make(map[string]interface{})
+	}
+	return requestBody, nil
+}
+
+func (p *DynamicRequestParser) ParseExportRequest(c *fiber.Ctx) (ExportRequest, error) {
+	var req ExportRequest
+	if err := c.BodyParser(&req); err != nil {
+		return ExportRequest{}, err
+	}
+	return req, nil
 }
 
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {

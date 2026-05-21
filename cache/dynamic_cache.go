@@ -82,6 +82,28 @@ func (d *DynamicCache) SetResponse(ctx context.Context, key string, response fib
 	configs.RedisClient.Set(ctx, key, payload, ttl)
 }
 
+func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, bool) {
+	data, err := configs.RedisClient.Get(ctx, key).Result()
+	if err != nil {
+		return nil, false
+	}
+
+	var result interface{}
+	if err := json.Unmarshal([]byte(data), &result); err != nil {
+		return nil, false
+	}
+
+	return result, true
+}
+
+func (d *DynamicCache) SetValue(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	configs.RedisClient.Set(ctx, key, payload, ttl)
+}
+
 func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery string) ([]map[string]interface{}, bool) {
 	storedQuery, err := configs.RedisClient.Get(ctx, key+"-query").Result()
 	if err == nil && storedQuery != currentQuery {

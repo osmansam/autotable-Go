@@ -2,27 +2,17 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os/exec"
-	"plugin"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
-	"github.com/xuri/excelize/v2"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // getProjectContext extracts tenantID and projectID from fiber context
@@ -39,148 +29,6 @@ func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
 	}
 
 	return tenantID, projectID, nil
-}
-
-// convertFormFieldTypes converts string values from multipart forms to their appropriate types
-func convertFormFieldTypes(itemMap map[string]interface{}, container *models.ContainerModel) {
-	for _, field := range container.Fields {
-		value, exists := itemMap[field.Name]
-		if !exists {
-			continue
-		}
-
-		// Only convert if the value is a string
-		strValue, isString := value.(string)
-		if !isString {
-			// Handle array fields with nested objects
-			if field.Type == "array" && field.Children != nil {
-				if arrayValue, isArray := value.([]interface{}); isArray {
-					for _, item := range arrayValue {
-						if objMap, isMap := item.(map[string]interface{}); isMap {
-							convertNestedFields(objMap, field.Children)
-						}
-					}
-				}
-			}
-			// Handle object fields with nested children
-			if field.Type == "object" && field.Children != nil {
-				if objValue, isMap := value.(map[string]interface{}); isMap {
-					convertNestedFields(objValue, field.Children)
-				}
-			}
-			continue
-		}
-
-		switch field.Type {
-		case "bool", "boolean":
-			// Convert "true"/"false" strings to boolean
-			if strValue == "true" {
-				itemMap[field.Name] = true
-			} else if strValue == "false" {
-				itemMap[field.Name] = false
-			}
-		case "int":
-			// Convert string to int
-			if intValue, err := strconv.Atoi(strValue); err == nil {
-				itemMap[field.Name] = intValue
-			}
-		case "float", "decimal":
-			// Convert string to float64
-			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
-				itemMap[field.Name] = floatValue
-			}
-		case "stringArray":
-			// Convert comma-separated string to string array
-			if strValue != "" {
-				parts := strings.Split(strValue, ",")
-				strArray := make([]interface{}, len(parts))
-				for i, part := range parts {
-					strArray[i] = strings.TrimSpace(part)
-				}
-				itemMap[field.Name] = strArray
-			} else {
-				itemMap[field.Name] = []interface{}{}
-			}
-		case "numberArray", "intArray":
-			// Convert comma-separated string to number array
-			if strValue != "" {
-				parts := strings.Split(strValue, ",")
-				numArray := make([]interface{}, 0, len(parts))
-				for _, part := range parts {
-					part = strings.TrimSpace(part)
-					// Try to parse as int first
-					if intValue, err := strconv.Atoi(part); err == nil {
-						numArray = append(numArray, intValue)
-					} else if floatValue, err := strconv.ParseFloat(part, 64); err == nil {
-						// If not an int, try as float
-						numArray = append(numArray, floatValue)
-					}
-				}
-				itemMap[field.Name] = numArray
-			} else {
-				itemMap[field.Name] = []interface{}{}
-			}
-		}
-	}
-}
-
-// convertNestedFields converts string values in nested objects (for array fields)
-func convertNestedFields(objMap map[string]interface{}, fields []models.Field) {
-	for _, field := range fields {
-		value, exists := objMap[field.Name]
-		if !exists {
-			continue
-		}
-
-		strValue, isString := value.(string)
-		if !isString {
-			continue
-		}
-
-		switch field.Type {
-		case "bool", "boolean":
-			if strValue == "true" {
-				objMap[field.Name] = true
-			} else if strValue == "false" {
-				objMap[field.Name] = false
-			}
-		case "int":
-			if intValue, err := strconv.Atoi(strValue); err == nil {
-				objMap[field.Name] = intValue
-			}
-		case "float", "decimal":
-			if floatValue, err := strconv.ParseFloat(strValue, 64); err == nil {
-				objMap[field.Name] = floatValue
-			}
-		case "stringArray":
-			if strValue != "" {
-				parts := strings.Split(strValue, ",")
-				strArray := make([]interface{}, len(parts))
-				for i, part := range parts {
-					strArray[i] = strings.TrimSpace(part)
-				}
-				objMap[field.Name] = strArray
-			} else {
-				objMap[field.Name] = []interface{}{}
-			}
-		case "numberArray", "intArray":
-			if strValue != "" {
-				parts := strings.Split(strValue, ",")
-				numArray := make([]interface{}, 0, len(parts))
-				for _, part := range parts {
-					part = strings.TrimSpace(part)
-					if intValue, err := strconv.Atoi(part); err == nil {
-						numArray = append(numArray, intValue)
-					} else if floatValue, err := strconv.ParseFloat(part, 64); err == nil {
-						numArray = append(numArray, floatValue)
-					}
-				}
-				objMap[field.Name] = numArray
-			} else {
-				objMap[field.Name] = []interface{}{}
-			}
-		}
-	}
 }
 
 // create an item for a given collection
@@ -821,7 +669,6 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
@@ -830,166 +677,43 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	functionName := c.Query("functionName")
-
-	// Serialize the current query parameters
-	currentQuery := c.OriginalURL()
-	// Fetch the associated container model from context
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
 	}
 
-	pluginFileName := "temp_" + functionName + ".so"
-	fileName := "temp_" + functionName + ".go"
-
-	// generate new redis key
-	redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName, container)
-
-	// Check if query has changed
-	queryChanged := false
-	if shouldCache {
-		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
-		if err == nil && storedQuery != currentQuery {
-			queryChanged = true
-		}
-	}
-	// Fetch from cache if query hasn't changed and cache is available
-	if shouldCache && !queryChanged {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var result interface{}
-			if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
-				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-					Status:  http.StatusOK,
-					Message: "Function result fetched from cache",
-					Data:    result,
-					Source:  utils.PointerToString("cache"),
-				})
-			}
-		}
-	}
-	// Check if plugin exists
-	p, err := plugin.Open(pluginFileName)
-	if err == nil {
-		// Plugin exists, try to lookup the function
-		f, err := p.Lookup(functionName)
-		if err == nil {
-			// Function found, execute it
-			if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
-				result, err := executeFunc(c)
-				if err != nil {
-					return utils.SendErrorResponse(c, err, "Failed to execute function")
-				}
-				// Cache result if query hasn't changed and cache is available
-				if shouldCache {
-					var expiration time.Duration
-					if container.Redis.CacheTime > 0 {
-						expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-					} else {
-						expiration = 0 //the key will never expire.
-					}
-					resultJSON, err := json.Marshal(result)
-					if err == nil {
-						configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
-						configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-					}
-				}
-				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-					Status:  http.StatusOK,
-					Message: "Function result fetched from plugin",
-					Data:    result,
-					Source:  utils.PointerToString("plugin"),
-				})
-			}
-		}
-	}
-
-	// Function not found in existing plugin, fetch or generate new code
-	var dynamicFuncCode string
-	// Check if function is defined in container model
-	functionExists := false
-	for _, dynamicFunc := range container.DynamicFunctions {
-		if dynamicFunc.Name == functionName {
-			dynamicFuncCode = dynamicFunc.CodeJSON
-			functionExists = true
-			break
-		}
-	}
-	if !functionExists {
-		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "Function not found",
-			Data:    nil,
-		})
-	}
-
-	// Write new code to file
-	err = ioutil.WriteFile(fileName, []byte(dynamicFuncCode), 0644)
+	dynamicService := services.NewDynamicService()
+	result, err := dynamicService.ExecuteDynamicCode(ctx, services.ExecuteDynamicCodeInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		Schema:       schemaName,
+		FunctionName: functionName,
+		CurrentQuery: c.OriginalURL(),
+		Container:    container,
+		FiberCtx:     c,
+	})
 	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to write code to file")
-	}
-
-	// Compile new code into plugin
-	out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to compile code into plugin",
-			Data:    string(out),
-		})
-	}
-	// Load new plugin
-	p, err = plugin.Open(pluginFileName)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to load new plugin")
-	}
-
-	// Lookup function in new plugin
-	f, err := p.Lookup(functionName)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to lookup function in new plugin")
-	}
-
-	// Execute the function and cache the result if caching is enabled
-	if executeFunc, ok := f.(func(*fiber.Ctx) (interface{}, error)); ok {
-		result, err := executeFunc(c)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to execute function")
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
 		}
-
-		// Cache the result
-		if shouldCache {
-			dataToCache, _ := json.Marshal(result)
-			var expiration time.Duration
-			if container.Redis.CacheTime > 0 {
-				expiration = time.Duration(container.Redis.CacheTime) * time.Minute
-			} else {
-				expiration = 0 //the key will never expire.
-			}
-			configs.RedisClient.Set(ctx, redisKey, dataToCache, expiration)
-			configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
-		}
-
-		return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-			Status:  http.StatusOK,
-			Message: "Function result fetched from new plugin",
-			Data:    result,
-			Source:  utils.PointerToString("new plugin"),
-		})
-	} else {
 		return utils.SendErrorResponse(c, err, "Failed to execute function")
 	}
+
+	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: result.Message,
+		Data:    result.Data,
+		Source:  utils.PointerToString(result.Source),
+	})
 }
 func TestPipeline(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
@@ -997,44 +721,38 @@ func TestPipeline(c *fiber.Ctx) error {
 	}
 
 	schemaName := c.Query("schemaName")
-
-	// Fetch the container model for filtering
-	container, err := utils.GetContainerModel(tenantID, projectID, schemaName)
+	dynamicService := services.NewDynamicService()
+	requestBody, err := dynamicService.ParseTestPipeline(c)
 	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-	}
-
-	// Parse request body
-	var requestBody models.TestPipelineRequestBody
-	if err := c.BodyParser(&requestBody); err != nil {
 		return utils.SendErrorResponse(c, err, "Invalid request body")
 	}
-	requestBody.PipelineStage.PipelineJSON = utils.ReplacePlaceholdersWithQueryParams(requestBody.PipelineStage.PipelineJSON, c)
-	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
 
-	// Execute the dynamic pipeline
-	items, err := utils.ExecuteDynamicPipeline(ctx, currentCollection, requestBody.PipelineStage)
+	userRole, _ := c.Locals("userRole").(string)
+	items, err := dynamicService.TestPipeline(ctx, services.TestPipelineInput{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		Schema:        schemaName,
+		UserRole:      userRole,
+		PipelineStage: requestBody.PipelineStage,
+		PrepareStage: func(pipelineJSON string) string {
+			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+		},
+	})
 	if err != nil {
-		// Log the error; do not fail the server
-		log.Printf("Error executing test pipeline: %v", err)
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
+		}
 		return utils.SendErrorResponse(c, err, "Failed to execute test pipeline")
 	}
 
-	// Convert []bson.M to []map[string]interface{} for filtering
-	var resultItems []map[string]interface{}
-	for _, doc := range items {
-		resultItems = append(resultItems, map[string]interface{}(doc))
-	}
-
-	// Filter fields based on user role authorization
-	userRole, _ := c.Locals("userRole").(string)
-	resultItems = utils.FilterDocuments(resultItems, container.Fields, userRole)
-
-	// Return the results
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status":  fiber.StatusOK,
 		"message": "Test pipeline executed and filtered successfully",
-		"data":    resultItems,
+		"data":    items,
 	})
 }
 
@@ -1043,7 +761,6 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
@@ -1052,220 +769,42 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	apiName := c.Query("apiName")
-
-	// Fetch the associated container model from context
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
 	}
 
-	// Check if API is defined in container model
-	var dynamicApi *models.DynamicApiModel
-	apiExists := false
-	for _, api := range container.DynamicApis {
-		if api.Name == apiName {
-			dynamicApi = &api
-			apiExists = true
-			break
-		}
-	}
-	if !apiExists {
-		return c.Status(fiber.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "API not found",
-			Data:    nil,
-		})
-	}
-
-	// Validate dependencies if they exist
-	var requestBody map[string]interface{}
-	if err := c.BodyParser(&requestBody); err != nil {
+	dynamicService := services.NewDynamicService()
+	requestBody, err := dynamicService.ParseDynamicAPIRequest(c)
+	if err != nil {
 		return utils.SendErrorResponse(c, err, "Invalid request body")
 	}
 
-	if dynamicApi.Dependencies != nil && len(dynamicApi.Dependencies) > 0 {
-		missingDependencies := []string{}
-		for _, dependency := range dynamicApi.Dependencies {
-			if value, ok := requestBody[dependency]; !ok || value == nil {
-				missingDependencies = append(missingDependencies, dependency)
-			}
-		}
-		if len(missingDependencies) > 0 {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  fiber.StatusBadRequest,
-				"message": "Missing dependencies",
-				"data":    missingDependencies,
+	result, err := dynamicService.ExecuteDynamicAPI(ctx, services.ExecuteDynamicAPIInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    schemaName,
+		APIName:   apiName,
+		Body:      requestBody,
+		Container: container,
+	})
+	if err != nil {
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
 			})
 		}
-	}
-
-	// Generate Redis key for caching
-	redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(tenantID, projectID, schemaName, apiName, container)
-	// Attempt to fetch from cache if enabled
-	if dynamicApi.IsRedisCached {
-		cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result()
-		if err == nil {
-			var result interface{}
-			if err := json.Unmarshal([]byte(cachedData), &result); err == nil {
-				return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-					Status:  http.StatusOK,
-					Message: "API result fetched from cache",
-					Data:    result,
-					Source:  utils.PointerToString("cache"),
-				})
-			}
-		}
-	}
-
-	apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicApi.Method, dynamicApi.Url, requestBody)
-	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to execute API call")
-	}
-
-	var apiResult interface{}
-	if err := json.Unmarshal(apiResultBytes, &apiResult); err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to unmarshal API response")
-	}
-	// Cache the result if enabled
-	if shouldCache {
-		var expiration time.Duration
-		if dynamicApi.CacheTime > 0 {
-			expiration = time.Duration(dynamicApi.CacheTime) * time.Minute
-		} else {
-			expiration = 0 //the key will never expire.
-		}
-		resultJSON, _ := json.Marshal(apiResult)
-		configs.RedisClient.Set(ctx, redisKey, resultJSON, expiration)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
-		Message: "API result fetched",
-		Data:    apiResult,
-		Source:  utils.PointerToString("API call"),
+		Message: result.Message,
+		Data:    result.Data,
+		Source:  utils.PointerToString(result.Source),
 	})
-}
-
-// Helper function to check if a slice contains a given string.
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// formatPopulatedValue extracts and formats display fields from a populated object or array
-func formatPopulatedValue(val interface{}, displayFields []string) string {
-	// Handle populated object (single objectId)
-	if populatedObj, ok := val.(map[string]interface{}); ok {
-		var parts []string
-		for _, displayField := range displayFields {
-			if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-				parts = append(parts, fmt.Sprintf("%v", fieldVal))
-			}
-		}
-		return strings.Join(parts, " ")
-	}
-
-	// Handle bson.M (alternative map type from MongoDB) - single object
-	if populatedObj, ok := val.(bson.M); ok {
-		var parts []string
-		for _, displayField := range displayFields {
-			if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-				parts = append(parts, fmt.Sprintf("%v", fieldVal))
-			}
-		}
-		return strings.Join(parts, " ")
-	}
-
-	// Handle []map[string]interface{} (what MongoDB actually returns for populated arrays)
-	if populatedArray, ok := val.([]map[string]interface{}); ok {
-		var arrayParts []string
-		for _, populatedObj := range populatedArray {
-			var parts []string
-			for _, displayField := range displayFields {
-				if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-					parts = append(parts, fmt.Sprintf("%v", fieldVal))
-				}
-			}
-			if len(parts) > 0 {
-				arrayParts = append(arrayParts, strings.Join(parts, " "))
-			}
-		}
-		return strings.Join(arrayParts, ", ")
-	}
-
-	// Handle populated array (objectIdArray) - []interface{}
-	if populatedArray, ok := val.([]interface{}); ok {
-		var arrayParts []string
-		for _, item := range populatedArray {
-			// Try map[string]interface{}
-			if populatedObj, ok := item.(map[string]interface{}); ok {
-				var parts []string
-				for _, displayField := range displayFields {
-					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-						parts = append(parts, fmt.Sprintf("%v", fieldVal))
-					}
-				}
-				if len(parts) > 0 {
-					arrayParts = append(arrayParts, strings.Join(parts, " "))
-				}
-			} else if populatedObj, ok := item.(bson.M); ok {
-				// Try bson.M
-				var parts []string
-				for _, displayField := range displayFields {
-					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-						parts = append(parts, fmt.Sprintf("%v", fieldVal))
-					}
-				}
-				if len(parts) > 0 {
-					arrayParts = append(arrayParts, strings.Join(parts, " "))
-				}
-			}
-		}
-		return strings.Join(arrayParts, ", ")
-	}
-
-	// Handle primitive.A (MongoDB array type)
-	if populatedArray, ok := val.(primitive.A); ok {
-		var arrayParts []string
-		for _, item := range populatedArray {
-			// Try map[string]interface{}
-			if populatedObj, ok := item.(map[string]interface{}); ok {
-				var parts []string
-				for _, displayField := range displayFields {
-					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-						parts = append(parts, fmt.Sprintf("%v", fieldVal))
-					}
-				}
-				if len(parts) > 0 {
-					arrayParts = append(arrayParts, strings.Join(parts, " "))
-				}
-			} else if populatedObj, ok := item.(bson.M); ok {
-				// Try bson.M
-				var parts []string
-				for _, displayField := range displayFields {
-					if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
-						parts = append(parts, fmt.Sprintf("%v", fieldVal))
-					}
-				}
-				if len(parts) > 0 {
-					arrayParts = append(arrayParts, strings.Join(parts, " "))
-				}
-			}
-		}
-		return strings.Join(arrayParts, ", ")
-	}
-
-	// Fallback: return the value as-is
-	return fmt.Sprintf("%v", val)
 }
 
 // ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.
@@ -1273,267 +812,36 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	// 1. Parse Request Body
-	type ExportRequest struct {
-		SchemaName string                 `json:"schemaName"`
-		Fields     []string               `json:"fields"`
-		Filters    map[string]interface{} `json:"filters"`
-		Search     string                 `json:"search"`
-		Page       int                    `json:"page"`
-		Limit      int                    `json:"limit"`
-	}
-
-	var req ExportRequest
-	if err := c.BodyParser(&req); err != nil {
+	dynamicService := services.NewDynamicService()
+	req, err := dynamicService.ParseExportRequest(c)
+	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to parse request body")
 	}
 
-	if req.SchemaName == "" {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "schemaName is required",
-			Data:    nil,
-		})
-	}
-
-	// 2. Load Container Model
-	container, err := utils.GetContainerModel(tenantID, projectID, req.SchemaName)
+	result, err := dynamicService.ExportDynamicItems(ctx, services.ExportDynamicItemsInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Request:   req,
+	})
 	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-	}
-
-	// 3. Build Filter
-	// We need to adapt BuildFilterFromQuery to work with the map from the body
-	// Since BuildFilterFromQuery uses c.QueryParser, we'll manually build the filter here
-	// reusing logic similar to BuildFilterFromQuery but for the map.
-	filter := bson.M{}
-
-	// Apply filters from request
-	if len(req.Filters) > 0 {
-		// This is a simplified version. For full compatibility with complex filters
-		// (like ranges, etc.) we might need to replicate BuildFilterFromQuery logic fully.
-		// For now, assuming direct value matching or simple operators if passed in the map.
-		// If the frontend sends the same structure as query params, we can iterate and build.
-		for key, value := range req.Filters {
-			// Skip empty string values (ignore them, don't filter for empty strings)
-			if strVal, ok := value.(string); ok && strVal == "" {
-				continue
-			}
-
-			// Check if field exists in container
-			isValidField := false
-			for _, f := range container.Fields {
-				if f.Name == key {
-					isValidField = true
-					break
-				}
-			}
-			if isValidField {
-				filter[key] = value
-			}
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
+			})
 		}
+		return utils.SendErrorResponse(c, err, "Failed to export items")
 	}
 
-	// 4. Apply Search if provided
-	if req.Search != "" {
-		orClauses, err := utils.BuildSearchWithReferences(ctx, container, req.Search)
-		if err != nil {
-			return utils.SendErrorResponse(c, err, "Failed to build search filter")
-		}
-		if len(orClauses) > 0 {
-			if len(filter) > 0 {
-				filter = bson.M{"$and": []bson.M{filter, {"$or": orClauses}}}
-			} else {
-				filter = bson.M{"$or": orClauses}
-			}
-		}
-	}
-
-	// 5. Query Data with optional pagination from project-specific collection
-	currentCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, req.SchemaName)
-
-	// Build find options with pagination if page and limit are provided
-	maxExportLimit := configs.GetMaxExportLimit()
-	findOpts := options.Find()
-	if req.Limit > maxExportLimit {
-		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s requested=%d max=%d", req.SchemaName, tenantID, projectID, req.Limit, maxExportLimit)
-		req.Limit = maxExportLimit
-	}
-	if req.Page > 0 || req.Limit > 0 {
-		page := req.Page
-		if page < 1 {
-			page = 1
-		}
-		limit := req.Limit
-		if limit < 1 {
-			limit = maxExportLimit
-		}
-		skip := int64((page - 1) * limit)
-		findOpts.SetSkip(skip)
-		findOpts.SetLimit(int64(limit))
-	} else {
-		findOpts.SetLimit(int64(maxExportLimit + 1))
-	}
-
-	cursor, err := currentCollection.Find(ctx, filter, findOpts)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to fetch items")
-	}
-	defer cursor.Close(ctx)
-
-	var items []map[string]interface{}
-	if err = cursor.All(ctx, &items); err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to decode items")
-	}
-	if len(items) > maxExportLimit {
-		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s max=%d", req.SchemaName, tenantID, projectID, maxExportLimit)
-		items = items[:maxExportLimit]
-	}
-
-	// 6. Populate and Strip Hashed
-	utils.StripHashed(container.Fields, items)
-	items, err = utils.PopulateIfNeeded(ctx, tenantID, projectID, container, items)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to populate items")
-	}
-
-	// 7. Generate Excel
-	f := excelize.NewFile()
-	sheetName := "Sheet1"
-	index, err := f.NewSheet(sheetName)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to create sheet")
-	}
-	f.SetActiveSheet(index)
-
-	// Determine columns to export
-	var exportFields []models.Field
-	if len(req.Fields) > 0 {
-		// Filter container fields based on requested fields
-		for _, reqField := range req.Fields {
-			for _, field := range container.Fields {
-				if field.Name == reqField {
-					exportFields = append(exportFields, field)
-					break
-				}
-			}
-		}
-	} else {
-		// Default to all fields if none specified
-		exportFields = container.Fields
-	}
-
-	// Write Headers
-	for i, field := range exportFields {
-		colName := field.Name
-		// Column Naming Logic
-		if field.Frontend != nil && field.Frontend.DisplayName != "" {
-			colName = field.Frontend.DisplayName
-		} else {
-			// Capitalize first letter
-			if len(colName) > 0 {
-				colName = strings.ToUpper(colName[:1]) + colName[1:]
-			}
-			// CamelCase to Camel Case
-			// A simple regex or loop to insert space before uppercase
-			// Using a loop for simplicity and no extra regex dependency overhead if not needed
-			var newColName strings.Builder
-			for j, r := range colName {
-				if j > 0 && r >= 'A' && r <= 'Z' {
-					newColName.WriteRune(' ')
-				}
-				newColName.WriteRune(r)
-			}
-			colName = newColName.String()
-		}
-
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheetName, cell, colName)
-	}
-
-	// Write Data
-	for i, item := range items {
-		row := i + 2
-		for j, field := range exportFields {
-			cell, _ := excelize.CoordinatesToCellName(j+1, row)
-			val, exists := item[field.Name]
-			if exists {
-				// Check if this field has population settings and displayFields
-				if field.PopulationSettings != nil && len(field.PopulationSettings.DisplayFields) > 0 {
-					// This is a populated objectId field
-					displayValue := formatPopulatedValue(val, field.PopulationSettings.DisplayFields)
-					f.SetCellValue(sheetName, cell, displayValue)
-				} else {
-					// Handle different types for string representation
-					// Check if field is stringArray or intArray
-					if field.Type == "stringArray" {
-						// Convert to []string and join with commas
-						if strArray, ok := val.([]interface{}); ok {
-							var strValues []string
-							for _, v := range strArray {
-								strValues = append(strValues, fmt.Sprintf("%v", v))
-							}
-							f.SetCellValue(sheetName, cell, strings.Join(strValues, ","))
-						} else if strArray, ok := val.([]string); ok {
-							f.SetCellValue(sheetName, cell, strings.Join(strArray, ","))
-						} else if strArray, ok := val.(primitive.A); ok {
-							var strValues []string
-							for _, v := range strArray {
-								strValues = append(strValues, fmt.Sprintf("%v", v))
-							}
-							f.SetCellValue(sheetName, cell, strings.Join(strValues, ","))
-						} else {
-							f.SetCellValue(sheetName, cell, val)
-						}
-					} else if field.Type == "intArray" {
-						// Convert to []int and join with commas
-						if intArray, ok := val.([]interface{}); ok {
-							var intValues []string
-							for _, v := range intArray {
-								intValues = append(intValues, fmt.Sprintf("%v", v))
-							}
-							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
-						} else if intArray, ok := val.([]int); ok {
-							var intValues []string
-							for _, v := range intArray {
-								intValues = append(intValues, fmt.Sprintf("%d", v))
-							}
-							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
-						} else if intArray, ok := val.(primitive.A); ok {
-							var intValues []string
-							for _, v := range intArray {
-								intValues = append(intValues, fmt.Sprintf("%v", v))
-							}
-							f.SetCellValue(sheetName, cell, strings.Join(intValues, ","))
-						} else {
-							f.SetCellValue(sheetName, cell, val)
-						}
-					} else {
-						// For all other types, use default formatting
-						f.SetCellValue(sheetName, cell, val)
-					}
-				}
-			}
-		}
-	}
-
-	// 8. Return File
-	// Save to buffer
-	buffer, err := f.WriteToBuffer()
-	if err != nil {
-		return utils.SendErrorResponse(c, err, "Failed to write excel to buffer")
-	}
-
-	// Set headers for download
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_export.xlsx", req.SchemaName))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", result.FileName))
 
-	return c.Send(buffer.Bytes())
+	return c.Send(result.Content)
 }

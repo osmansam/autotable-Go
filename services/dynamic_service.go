@@ -1,11 +1,16 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
+	"plugin"
 	"strconv"
 	"strings"
 	"time"
@@ -20,9 +25,11 @@ import (
 	"github.com/osmansam/autotableGo/requests"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/validators"
+	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type ServiceError struct {
@@ -179,6 +186,52 @@ type GetPipelineInput struct {
 	PrepareStage func(string) string
 }
 
+type ExecuteDynamicCodeInput struct {
+	TenantID     string
+	ProjectID    string
+	Schema       string
+	FunctionName string
+	CurrentQuery string
+	Container    *models.ContainerModel
+	FiberCtx     *fiber.Ctx
+}
+
+type DynamicExecutionResult struct {
+	Message string
+	Data    interface{}
+	Source  string
+}
+
+type TestPipelineInput struct {
+	TenantID      string
+	ProjectID     string
+	Schema        string
+	UserRole      string
+	PipelineStage models.PipelineStage
+	Container     *models.ContainerModel
+	PrepareStage  func(string) string
+}
+
+type ExecuteDynamicAPIInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	APIName   string
+	Body      map[string]interface{}
+	Container *models.ContainerModel
+}
+
+type ExportDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Request   requests.ExportRequest
+}
+
+type ExportDynamicItemsResult struct {
+	FileName string
+	Content  []byte
+}
+
 type DynamicService struct {
 	repository *repositories.DynamicRepository
 	parser     *requests.DynamicRequestParser
@@ -210,6 +263,18 @@ func (s *DynamicService) ParsePaginatedItemsParams(c *fiber.Ctx, container *mode
 
 func (s *DynamicService) ParsePipelineParams(c *fiber.Ctx) requests.PipelineParams {
 	return s.parser.ParsePipelineParams(c)
+}
+
+func (s *DynamicService) ParseTestPipeline(c *fiber.Ctx) (models.TestPipelineRequestBody, error) {
+	return s.parser.ParseTestPipeline(c)
+}
+
+func (s *DynamicService) ParseDynamicAPIRequest(c *fiber.Ctx) (map[string]interface{}, error) {
+	return s.parser.ParseDynamicAPIRequest(c)
+}
+
+func (s *DynamicService) ParseExportRequest(c *fiber.Ctx) (requests.ExportRequest, error) {
+	return s.parser.ParseExportRequest(c)
 }
 
 func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDynamicItemInput) (map[string]interface{}, error) {
@@ -1314,6 +1379,238 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 	return resultItems, nil
 }
 
+func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDynamicCodeInput) (DynamicExecutionResult, error) {
+	container, err := s.resolveDynamicCodeContainer(input)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	pluginFileName := "temp_" + input.FunctionName + ".so"
+	fileName := "temp_" + input.FunctionName + ".go"
+	redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(input.TenantID, input.ProjectID, input.Schema, input.FunctionName, container)
+
+	queryChanged := false
+	if shouldCache {
+		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
+		if err == nil && storedQuery != input.CurrentQuery {
+			queryChanged = true
+		}
+	}
+
+	if shouldCache && !queryChanged {
+		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
+			return DynamicExecutionResult{
+				Message: "Function result fetched from cache",
+				Data:    result,
+				Source:  "cache",
+			}, nil
+		}
+	}
+
+	if result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, false); ok {
+		if err != nil {
+			return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: err}
+		}
+		s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
+		return DynamicExecutionResult{Message: "Function result fetched from plugin", Data: result, Source: "plugin"}, nil
+	}
+
+	dynamicFuncCode, found := findDynamicFunctionCode(container, input.FunctionName)
+	if !found {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "Function not found",
+			Data:    nil,
+		}
+	}
+
+	if err := os.WriteFile(fileName, []byte(dynamicFuncCode), 0644); err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to write code to file", Err: err}
+	}
+
+	out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to compile code into plugin",
+			Data:    string(out),
+			Err:     err,
+		}
+	}
+
+	result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, true)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: pluginExecutionMessage(err), Err: err}
+	}
+	if !ok {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: errors.New("function has incompatible signature")}
+	}
+
+	s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
+	return DynamicExecutionResult{Message: "Function result fetched from new plugin", Data: result, Source: "new plugin"}, nil
+}
+
+func (s *DynamicService) TestPipeline(ctx context.Context, input TestPipelineInput) ([]map[string]interface{}, error) {
+	container, err := s.resolveTestPipelineContainer(input)
+	if err != nil {
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	stage := input.PipelineStage
+	if input.PrepareStage != nil {
+		stage.PipelineJSON = input.PrepareStage(stage.PipelineJSON)
+	}
+
+	resultItems, err := s.repository.ExecutePipeline(ctx, input.TenantID, input.ProjectID, input.Schema, stage)
+	if err != nil {
+		log.Printf("Error executing test pipeline: %v", err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to execute test pipeline",
+			Err:     err,
+		}
+	}
+
+	return utils.FilterDocuments(resultItems, container.Fields, input.UserRole), nil
+}
+
+func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDynamicAPIInput) (DynamicExecutionResult, error) {
+	container, err := s.resolveDynamicAPIContainer(input)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	dynamicAPI, found := findDynamicAPI(container, input.APIName)
+	if !found {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "API not found",
+			Data:    nil,
+		}
+	}
+
+	if missing := missingDynamicAPIDependencies(dynamicAPI, input.Body); len(missing) > 0 {
+		return DynamicExecutionResult{}, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "Missing dependencies",
+			Data:    missing,
+		}
+	}
+
+	redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(input.TenantID, input.ProjectID, input.Schema, input.APIName, container)
+	if dynamicAPI.IsRedisCached {
+		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
+			return DynamicExecutionResult{Message: "API result fetched from cache", Data: result, Source: "cache"}, nil
+		}
+	}
+
+	apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicAPI.Method, dynamicAPI.Url, input.Body)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute API call", Err: err}
+	}
+
+	var apiResult interface{}
+	if err := json.Unmarshal(apiResultBytes, &apiResult); err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to unmarshal API response", Err: err}
+	}
+
+	if shouldCache {
+		s.cache.SetValue(ctx, redisKey, apiResult, cacheDuration(dynamicAPI.CacheTime))
+	}
+
+	return DynamicExecutionResult{Message: "API result fetched", Data: apiResult, Source: "API call"}, nil
+}
+
+func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDynamicItemsInput) (ExportDynamicItemsResult, error) {
+	req := input.Request
+	if req.SchemaName == "" {
+		return ExportDynamicItemsResult{}, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName is required",
+			Data:    nil,
+		}
+	}
+
+	container, err := s.repository.GetContainerModel(input.TenantID, input.ProjectID, req.SchemaName)
+	if err != nil {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
+	}
+
+	filter := buildExportFilter(container, req.Filters)
+	if req.Search != "" {
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, req.Search)
+		if err != nil {
+			return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to build search filter", Err: err}
+		}
+		if len(orClauses) > 0 {
+			if len(filter) > 0 {
+				filter = bson.M{"$and": []bson.M{filter, {"$or": orClauses}}}
+			} else {
+				filter = bson.M{"$or": orClauses}
+			}
+		}
+	}
+
+	maxExportLimit := configs.GetMaxExportLimit()
+	findOpts := options.Find()
+	if req.Limit > maxExportLimit {
+		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s requested=%d max=%d", req.SchemaName, input.TenantID, input.ProjectID, req.Limit, maxExportLimit)
+		req.Limit = maxExportLimit
+	}
+	if req.Page > 0 || req.Limit > 0 {
+		page := req.Page
+		if page < 1 {
+			page = 1
+		}
+		limit := req.Limit
+		if limit < 1 {
+			limit = maxExportLimit
+		}
+		findOpts.SetSkip(int64((page - 1) * limit))
+		findOpts.SetLimit(int64(limit))
+	} else {
+		findOpts.SetLimit(int64(maxExportLimit + 1))
+	}
+
+	pager := utils.Pager{Enabled: false}
+	items, err := s.repository.Query(ctx, input.TenantID, input.ProjectID, req.SchemaName, filter, findOpts, &pager)
+	if err != nil {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch items", Err: err}
+	}
+	if len(items) > maxExportLimit {
+		log.Printf("Export limit exceeded for schema=%s tenant=%s project=%s max=%d", req.SchemaName, input.TenantID, input.ProjectID, maxExportLimit)
+		items = items[:maxExportLimit]
+	}
+
+	utils.StripHashed(container.Fields, items)
+	items, err = utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, items)
+	if err != nil {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to populate items", Err: err}
+	}
+
+	content, err := buildExportWorkbook(container, items, req.Fields)
+	if err != nil {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: err.Error(), Err: err}
+	}
+
+	return ExportDynamicItemsResult{
+		FileName: fmt.Sprintf("%s_export.xlsx", req.SchemaName),
+		Content:  content,
+	}, nil
+}
+
 type bulkUpdateItemResult struct {
 	Success interface{}
 	Failed  map[string]interface{}
@@ -1609,6 +1906,27 @@ func (s *DynamicService) resolvePaginatedContainer(input GetPaginatedDynamicItem
 }
 
 func (s *DynamicService) resolvePipelineContainer(input GetPipelineInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveDynamicCodeContainer(input ExecuteDynamicCodeInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveTestPipelineContainer(input TestPipelineInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveDynamicAPIContainer(input ExecuteDynamicAPIInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
@@ -1964,6 +2282,93 @@ func findPipelineStage(container *models.ContainerModel, pipelineName string) (m
 	return models.PipelineStage{}, false
 }
 
+func findDynamicFunctionCode(container *models.ContainerModel, functionName string) (string, bool) {
+	for _, dynamicFunc := range container.DynamicFunctions {
+		if dynamicFunc.Name == functionName {
+			return dynamicFunc.CodeJSON, true
+		}
+	}
+	return "", false
+}
+
+func findDynamicAPI(container *models.ContainerModel, apiName string) (models.DynamicApiModel, bool) {
+	for _, api := range container.DynamicApis {
+		if api.Name == apiName {
+			return api, true
+		}
+	}
+	return models.DynamicApiModel{}, false
+}
+
+func missingDynamicAPIDependencies(dynamicAPI models.DynamicApiModel, requestBody map[string]interface{}) []string {
+	if len(dynamicAPI.Dependencies) == 0 {
+		return nil
+	}
+
+	missing := make([]string, 0)
+	for _, dependency := range dynamicAPI.Dependencies {
+		if value, ok := requestBody[dependency]; !ok || value == nil {
+			missing = append(missing, dependency)
+		}
+	}
+	return missing
+}
+
+func (s *DynamicService) executePluginFunction(pluginFileName, functionName string, fiberCtx *fiber.Ctx, required bool) (interface{}, bool, error) {
+	loadedPlugin, err := plugin.Open(pluginFileName)
+	if err != nil {
+		if required {
+			return nil, false, fmt.Errorf("load plugin: %w", err)
+		}
+		return nil, false, nil
+	}
+
+	function, err := loadedPlugin.Lookup(functionName)
+	if err != nil {
+		if required {
+			return nil, false, fmt.Errorf("lookup function: %w", err)
+		}
+		return nil, false, nil
+	}
+
+	executeFunc, ok := function.(func(*fiber.Ctx) (interface{}, error))
+	if !ok {
+		return nil, true, errors.New("function has incompatible signature")
+	}
+
+	result, err := executeFunc(fiberCtx)
+	return result, true, err
+}
+
+func (s *DynamicService) cacheDynamicFunctionResult(ctx context.Context, redisKey, currentQuery string, result interface{}, container *models.ContainerModel, shouldCache bool) {
+	if !shouldCache {
+		return
+	}
+	expiration := cacheDuration(container.Redis.CacheTime)
+	s.cache.SetValue(ctx, redisKey, result, expiration)
+	configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+}
+
+func cacheDuration(cacheMinutes int) time.Duration {
+	if cacheMinutes > 0 {
+		return time.Duration(cacheMinutes) * time.Minute
+	}
+	return 0
+}
+
+func pluginExecutionMessage(err error) string {
+	if err == nil {
+		return "Failed to execute function"
+	}
+	if strings.Contains(err.Error(), "load plugin") {
+		return "Failed to load new plugin"
+	}
+	if strings.Contains(err.Error(), "lookup function") {
+		return "Failed to lookup function in new plugin"
+	}
+	return "Failed to execute function"
+}
+
 func cachedResponseItems(response fiber.Map) ([]map[string]interface{}, bool) {
 	itemsInterface, ok := response["items"].([]interface{})
 	if !ok {
@@ -1980,6 +2385,187 @@ func cachedResponseItems(response fiber.Map) ([]map[string]interface{}, bool) {
 	}
 
 	return items, true
+}
+
+func buildExportFilter(container *models.ContainerModel, filters map[string]interface{}) bson.M {
+	filter := bson.M{}
+	if len(filters) == 0 {
+		return filter
+	}
+
+	for key, value := range filters {
+		if strVal, ok := value.(string); ok && strVal == "" {
+			continue
+		}
+		if containerHasField(container, key) {
+			filter[key] = value
+		}
+	}
+	return filter
+}
+
+func containerHasField(container *models.ContainerModel, fieldName string) bool {
+	for _, field := range container.Fields {
+		if field.Name == fieldName {
+			return true
+		}
+	}
+	return false
+}
+
+func buildExportWorkbook(container *models.ContainerModel, items []map[string]interface{}, requestedFields []string) ([]byte, error) {
+	workbook := excelize.NewFile()
+	sheetName := "Sheet1"
+	index, err := workbook.NewSheet(sheetName)
+	if err != nil {
+		return nil, errors.New("Failed to create sheet")
+	}
+	workbook.SetActiveSheet(index)
+
+	exportFields := selectExportFields(container, requestedFields)
+	for i, field := range exportFields {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		workbook.SetCellValue(sheetName, cell, exportColumnName(field))
+	}
+
+	for i, item := range items {
+		row := i + 2
+		for j, field := range exportFields {
+			cell, _ := excelize.CoordinatesToCellName(j+1, row)
+			if val, exists := item[field.Name]; exists {
+				workbook.SetCellValue(sheetName, cell, exportCellValue(field, val))
+			}
+		}
+	}
+
+	buffer := bytes.NewBuffer(nil)
+	if _, err := workbook.WriteTo(buffer); err != nil {
+		return nil, errors.New("Failed to write excel to buffer")
+	}
+	return buffer.Bytes(), nil
+}
+
+func selectExportFields(container *models.ContainerModel, requestedFields []string) []models.Field {
+	if len(requestedFields) == 0 {
+		return container.Fields
+	}
+
+	exportFields := make([]models.Field, 0, len(requestedFields))
+	for _, reqField := range requestedFields {
+		for _, field := range container.Fields {
+			if field.Name == reqField {
+				exportFields = append(exportFields, field)
+				break
+			}
+		}
+	}
+	return exportFields
+}
+
+func exportColumnName(field models.Field) string {
+	colName := field.Name
+	if field.Frontend != nil && field.Frontend.DisplayName != "" {
+		return field.Frontend.DisplayName
+	}
+	if len(colName) > 0 {
+		colName = strings.ToUpper(colName[:1]) + colName[1:]
+	}
+	var newColName strings.Builder
+	for j, r := range colName {
+		if j > 0 && r >= 'A' && r <= 'Z' {
+			newColName.WriteRune(' ')
+		}
+		newColName.WriteRune(r)
+	}
+	return newColName.String()
+}
+
+func exportCellValue(field models.Field, val interface{}) interface{} {
+	if field.PopulationSettings != nil && len(field.PopulationSettings.DisplayFields) > 0 {
+		return formatPopulatedValue(val, field.PopulationSettings.DisplayFields)
+	}
+	if field.Type == "stringArray" || field.Type == "intArray" {
+		return formatExportArray(val)
+	}
+	return val
+}
+
+func formatExportArray(val interface{}) interface{} {
+	switch array := val.(type) {
+	case []interface{}:
+		values := make([]string, 0, len(array))
+		for _, v := range array {
+			values = append(values, fmt.Sprintf("%v", v))
+		}
+		return strings.Join(values, ",")
+	case []string:
+		return strings.Join(array, ",")
+	case []int:
+		values := make([]string, 0, len(array))
+		for _, v := range array {
+			values = append(values, fmt.Sprintf("%d", v))
+		}
+		return strings.Join(values, ",")
+	case primitive.A:
+		values := make([]string, 0, len(array))
+		for _, v := range array {
+			values = append(values, fmt.Sprintf("%v", v))
+		}
+		return strings.Join(values, ",")
+	default:
+		return val
+	}
+}
+
+func formatPopulatedValue(val interface{}, displayFields []string) string {
+	if populatedObj, ok := val.(map[string]interface{}); ok {
+		return joinDisplayFields(populatedObj, displayFields)
+	}
+	if populatedObj, ok := val.(bson.M); ok {
+		return joinDisplayFields(populatedObj, displayFields)
+	}
+	if populatedArray, ok := val.([]map[string]interface{}); ok {
+		arrayParts := make([]string, 0, len(populatedArray))
+		for _, populatedObj := range populatedArray {
+			if displayValue := joinDisplayFields(populatedObj, displayFields); displayValue != "" {
+				arrayParts = append(arrayParts, displayValue)
+			}
+		}
+		return strings.Join(arrayParts, ", ")
+	}
+	if populatedArray, ok := val.([]interface{}); ok {
+		return joinDisplayFieldArray(populatedArray, displayFields)
+	}
+	if populatedArray, ok := val.(primitive.A); ok {
+		return joinDisplayFieldArray([]interface{}(populatedArray), displayFields)
+	}
+	return fmt.Sprintf("%v", val)
+}
+
+func joinDisplayFieldArray(populatedArray []interface{}, displayFields []string) string {
+	arrayParts := make([]string, 0, len(populatedArray))
+	for _, item := range populatedArray {
+		if populatedObj, ok := item.(map[string]interface{}); ok {
+			if displayValue := joinDisplayFields(populatedObj, displayFields); displayValue != "" {
+				arrayParts = append(arrayParts, displayValue)
+			}
+		} else if populatedObj, ok := item.(bson.M); ok {
+			if displayValue := joinDisplayFields(populatedObj, displayFields); displayValue != "" {
+				arrayParts = append(arrayParts, displayValue)
+			}
+		}
+	}
+	return strings.Join(arrayParts, ", ")
+}
+
+func joinDisplayFields(populatedObj map[string]interface{}, displayFields []string) string {
+	parts := make([]string, 0, len(displayFields))
+	for _, displayField := range displayFields {
+		if fieldVal, exists := populatedObj[displayField]; exists && fieldVal != nil {
+			parts = append(parts, fmt.Sprintf("%v", fieldVal))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func extractBulkUpdateID(item map[string]interface{}) (string, string) {
