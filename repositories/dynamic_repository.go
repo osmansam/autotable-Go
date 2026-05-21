@@ -27,6 +27,10 @@ func (r *DynamicRepository) CountByField(ctx context.Context, tenantID, projectI
 	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, bson.M{fieldName: fieldValue})
 }
 
+func (r *DynamicRepository) CountByFieldIn(ctx context.Context, tenantID, projectID, schemaName, fieldName string, values []interface{}) (int64, error) {
+	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, bson.M{fieldName: bson.M{"$in": values}})
+}
+
 func (r *DynamicRepository) CountByFieldExcludingID(ctx context.Context, tenantID, projectID, schemaName, fieldName string, fieldValue interface{}, id interface{}) (int64, error) {
 	filter := bson.M{
 		fieldName: fieldValue,
@@ -37,6 +41,14 @@ func (r *DynamicRepository) CountByFieldExcludingID(ctx context.Context, tenantI
 
 func (r *DynamicRepository) Insert(ctx context.Context, tenantID, projectID, schemaName string, item map[string]interface{}) (*mongo.InsertOneResult, error) {
 	return r.GetCollection(tenantID, projectID, schemaName).InsertOne(ctx, item)
+}
+
+func (r *DynamicRepository) InsertMany(ctx context.Context, tenantID, projectID, schemaName string, items []map[string]interface{}) (*mongo.InsertManyResult, error) {
+	docs := make([]interface{}, len(items))
+	for i, item := range items {
+		docs[i] = item
+	}
+	return r.GetCollection(tenantID, projectID, schemaName).InsertMany(ctx, docs)
 }
 
 func (r *DynamicRepository) FindByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}) (bson.M, error) {

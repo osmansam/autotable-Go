@@ -14,6 +14,20 @@ type EquationFieldError struct {
 	Err       error
 }
 
+type EquationItemFieldError struct {
+	FieldName string
+	Index     int
+	Err       error
+}
+
+func (e *EquationItemFieldError) Error() string {
+	return fmt.Sprintf("Error evaluating equation for field %s in item %d: %v", e.FieldName, e.Index, e.Err)
+}
+
+func (e *EquationItemFieldError) Unwrap() error {
+	return e.Err
+}
+
 func (e *EquationFieldError) Error() string {
 	return fmt.Sprintf("Error evaluating equation for field %s: %v", e.FieldName, e.Err)
 }
@@ -34,6 +48,27 @@ func PrepareCreateItem(tenantID, projectID string, container *models.ContainerMo
 	}
 
 	convertObjectIDFields(container, itemMap)
+	return nil
+}
+
+func PrepareCreateItems(tenantID, projectID string, container *models.ContainerModel, items []map[string]interface{}) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, item := range items {
+		keepAllowedFields(container, item)
+		setCreateTimestampsAt(container, item, now)
+
+		if err := evaluateEquationFieldsForItem(tenantID, projectID, container, item, i); err != nil {
+			return err
+		}
+
+		if err := utils.ValidateContainerModel(item, *container); err != nil {
+			return fmt.Errorf("validation failed for item at index %d: %w", i, err)
+		}
+
+		convertObjectIDFields(container, item)
+		items[i] = item
+	}
+
 	return nil
 }
 
@@ -79,7 +114,10 @@ func setUpdateTimestamp(container *models.ContainerModel, itemMap map[string]int
 }
 
 func setCreateTimestamps(container *models.ContainerModel, itemMap map[string]interface{}) {
-	now := time.Now().UTC().Format(time.RFC3339)
+	setCreateTimestampsAt(container, itemMap, time.Now().UTC().Format(time.RFC3339))
+}
+
+func setCreateTimestampsAt(container *models.ContainerModel, itemMap map[string]interface{}, now string) {
 	for _, field := range container.Fields {
 		if field.Name == "createdAt" {
 			if _, exists := itemMap["createdAt"]; !exists {
@@ -90,6 +128,25 @@ func setCreateTimestamps(container *models.ContainerModel, itemMap map[string]in
 			itemMap["updatedAt"] = now
 		}
 	}
+}
+
+func evaluateEquationFieldsForItem(tenantID, projectID string, container *models.ContainerModel, itemMap map[string]interface{}, index int) error {
+	for _, field := range container.Fields {
+		if field.Equation == "" {
+			continue
+		}
+		ctx := &utils.EquationContext{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			Data:      itemMap,
+		}
+		val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
+		if err != nil {
+			return &EquationItemFieldError{FieldName: field.Name, Index: index, Err: err}
+		}
+		itemMap[field.Name] = val
+	}
+	return nil
 }
 
 func evaluateEquationFields(tenantID, projectID string, container *models.ContainerModel, itemMap map[string]interface{}) error {

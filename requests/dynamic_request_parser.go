@@ -1,6 +1,10 @@
 package requests
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,12 +18,69 @@ type DynamicRequestParser struct {
 	uploadService *files.UploadService
 }
 
+type BatchLimitError struct {
+	Operation string
+	Requested int
+	Max       int
+}
+
+func (e *BatchLimitError) Error() string {
+	return fmt.Sprintf("%s limit exceeded. Maximum allowed items is %d.", e.Operation, e.Max)
+}
+
 func NewDynamicRequestParser(uploadService *files.UploadService) *DynamicRequestParser {
 	return &DynamicRequestParser{uploadService: uploadService}
 }
 
 func (p *DynamicRequestParser) ParseCreateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
 	return p.parseItem(c, container)
+}
+
+func (p *DynamicRequestParser) ParseCreateItems(c *fiber.Ctx, container *models.ContainerModel, maxItems int) ([]map[string]interface{}, error) {
+	if strings.Contains(c.Get("Content-Type"), "multipart/form-data") {
+		form, err := c.MultipartForm()
+		if err != nil {
+			return nil, err
+		}
+
+		itemsJSON, exists := form.Value["items"]
+		if !exists || len(itemsJSON) == 0 {
+			return nil, errors.New("missing items field")
+		}
+
+		items, err := parseLimitedItems([]byte(itemsJSON[0]), maxItems)
+		if err != nil {
+			return nil, err
+		}
+
+		if hasImageField(container) {
+			for _, field := range container.Fields {
+				if field.Type != "image" {
+					continue
+				}
+
+				files, exists := form.File[field.Name]
+				if !exists {
+					continue
+				}
+				if len(files) != len(items) {
+					return nil, fmt.Errorf("Expected %d files for field '%s' but got %d", len(items), field.Name, len(files))
+				}
+
+				for i, file := range files {
+					imageURL, err := p.uploadService.SaveAndUpload(c, file)
+					if err != nil {
+						return nil, err
+					}
+					items[i][field.Name] = imageURL
+				}
+			}
+		}
+
+		return items, nil
+	}
+
+	return parseLimitedItems(c.Body(), maxItems)
 }
 
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
@@ -66,6 +127,45 @@ func hasImageField(container *models.ContainerModel) bool {
 		}
 	}
 	return false
+}
+
+func parseLimitedItems(data []byte, max int) ([]map[string]interface{}, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != '[' {
+		return nil, errors.New("expected JSON array")
+	}
+
+	items := make([]map[string]interface{}, 0, max)
+	for decoder.More() {
+		if len(items) >= max {
+			return nil, &BatchLimitError{
+				Operation: "bulk write",
+				Requested: max + 1,
+				Max:       max,
+			}
+		}
+
+		var item map[string]interface{}
+		if err := decoder.Decode(&item); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	token, err = decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delim, ok := token.(json.Delim); !ok || delim != ']' {
+		return nil, errors.New("expected end of JSON array")
+	}
+
+	return items, nil
 }
 
 func ConvertFormFieldTypes(itemMap map[string]interface{}, container *models.ContainerModel) {

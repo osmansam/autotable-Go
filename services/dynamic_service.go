@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/cache"
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/events"
 	"github.com/osmansam/autotableGo/files"
 	"github.com/osmansam/autotableGo/models"
@@ -19,6 +20,7 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/validators"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type ServiceError struct {
@@ -36,6 +38,16 @@ func (e *ServiceError) Error() string {
 }
 
 type CreateDynamicItemInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	UserID    string
+	User      *models.AuditUser
+	Container *models.ContainerModel
+	FiberCtx  *fiber.Ctx
+}
+
+type CreateMultipleDynamicItemsInput struct {
 	TenantID  string
 	ProjectID string
 	Schema    string
@@ -156,6 +168,96 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 	utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
 
 	return itemMap, nil
+}
+
+func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input CreateMultipleDynamicItemsInput) (*mongo.InsertManyResult, error) {
+	container, err := s.resolveCreateMultipleContainer(input)
+	if err != nil {
+		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Data:    err.Error(),
+			Err:     err,
+		}
+	}
+
+	items, err := s.parser.ParseCreateItems(input.FiberCtx, container, configs.GetMaxBulkWriteLimit())
+	if err != nil {
+		log.Printf("Failed to parse bulk create request for schema: %s, error: %v", input.Schema, err)
+		return nil, parseBulkCreateError(err)
+	}
+
+	if err := validators.PrepareCreateItems(input.TenantID, input.ProjectID, container, items); err != nil {
+		log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
+		status := http.StatusInternalServerError
+		message := "Validation failed."
+		var equationErr *validators.EquationItemFieldError
+		if errors.As(err, &equationErr) {
+			status = http.StatusBadRequest
+			message = fmt.Sprintf("Error evaluating equation for field %s in item %d", equationErr.FieldName, equationErr.Index)
+		} else if strings.HasPrefix(err.Error(), "validation failed for item at index ") {
+			message = strings.TrimPrefix(strings.Split(err.Error(), ":")[0], "validation failed for item at index ")
+			message = fmt.Sprintf("Validation failed for item at index %s.", message)
+		}
+		return nil, &ServiceError{
+			Status:  status,
+			Message: message,
+			Data:    err.Error(),
+			Err:     err,
+		}
+	}
+
+	if err := s.applyAutoIncrementFieldsForItems(ctx, input.Schema, container, items); err != nil {
+		log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to generate autoIncrement id",
+			Err:     err,
+		}
+	}
+
+	if err := s.ensureUniqueCreateItems(ctx, input, container, items); err != nil {
+		return nil, err
+	}
+
+	result, err := s.repository.InsertMany(ctx, input.TenantID, input.ProjectID, input.Schema, items)
+	if err != nil {
+		log.Printf("Failed to insert multiple items for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to insert multiple items.",
+			Err:     err,
+		}
+	}
+
+	bulkCreatedDocs := make([]interface{}, 0, len(result.InsertedIDs))
+	for i, insertedID := range result.InsertedIDs {
+		if oid, ok := insertedID.(primitive.ObjectID); ok && i < len(items) {
+			items[i]["_id"] = oid
+			bulkCreatedDocs = append(bulkCreatedDocs, items[i])
+		}
+	}
+
+	if len(bulkCreatedDocs) > 0 {
+		if err := utils.LogBulkCreateAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkCreatedDocs); err != nil {
+			log.Printf("Failed to log bulk create: %v", err)
+		}
+	}
+
+	if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
+		s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
+	}); err != nil {
+		log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete the cache for the schema.",
+			Err:     err,
+		}
+	}
+
+	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
+	return result, nil
 }
 
 func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDynamicItemInput) (map[string]interface{}, error) {
@@ -298,6 +400,13 @@ func (s *DynamicService) resolveContainer(input CreateDynamicItemInput) (*models
 	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
 }
 
+func (s *DynamicService) resolveCreateMultipleContainer(input CreateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
 func (s *DynamicService) resolveUpdateContainer(input UpdateDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
@@ -371,6 +480,59 @@ func (s *DynamicService) ensureUniqueUpdateFields(ctx context.Context, input Upd
 	return nil
 }
 
+func (s *DynamicService) ensureUniqueCreateItems(ctx context.Context, input CreateMultipleDynamicItemsInput, container *models.ContainerModel, items []map[string]interface{}) error {
+	for _, field := range container.Fields {
+		if !field.Unique {
+			continue
+		}
+
+		valueSet := make(map[interface{}]bool)
+		values := make([]interface{}, 0, len(items))
+		for i, item := range items {
+			fieldValue, found := item[field.Name]
+			if !found {
+				continue
+			}
+			if _, exists := valueSet[fieldValue]; exists {
+				msg := fmt.Sprintf("Duplicate value for unique field '%s' in item index %d", field.Name, i)
+				log.Printf("%s", msg)
+				return &ServiceError{
+					Status:  http.StatusBadRequest,
+					Message: msg,
+					Data:    nil,
+				}
+			}
+			valueSet[fieldValue] = true
+			values = append(values, fieldValue)
+		}
+
+		if len(values) == 0 {
+			continue
+		}
+
+		count, err := s.repository.CountByFieldIn(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, values)
+		if err != nil {
+			log.Printf("Error checking unique field '%s' for schema: %s, error: %v", field.Name, input.Schema, err)
+			return &ServiceError{
+				Status:  http.StatusInternalServerError,
+				Message: fmt.Sprintf("Error checking unique field '%s'.", field.Name),
+				Err:     err,
+			}
+		}
+		if count > 0 {
+			msg := fmt.Sprintf("A document with the same '%s' already exists.", field.Name)
+			log.Printf("%s", msg)
+			return &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: msg,
+				Data:    nil,
+			}
+		}
+	}
+
+	return nil
+}
+
 func (s *DynamicService) applyAutoIncrementFields(ctx context.Context, schemaName string, container *models.ContainerModel, itemMap map[string]interface{}) error {
 	for _, field := range container.Fields {
 		if field.Type != "autoIncrementId" {
@@ -384,6 +546,25 @@ func (s *DynamicService) applyAutoIncrementFields(ctx context.Context, schemaNam
 			return err
 		}
 		itemMap[field.Name] = seq
+	}
+	return nil
+}
+
+func (s *DynamicService) applyAutoIncrementFieldsForItems(ctx context.Context, schemaName string, container *models.ContainerModel, items []map[string]interface{}) error {
+	for _, item := range items {
+		for _, field := range container.Fields {
+			if field.Type != "autoIncrementId" {
+				continue
+			}
+			if val, exists := item[field.Name]; exists && fmt.Sprintf("%v", val) != "" {
+				continue
+			}
+			seq, err := s.repository.NextSequence(ctx, schemaName)
+			if err != nil {
+				return err
+			}
+			item[field.Name] = seq
+		}
 	}
 	return nil
 }
@@ -406,4 +587,36 @@ func parseUpdateErrorMessage(err error) string {
 		return "Error in multipart form"
 	}
 	return "Failed to parse body"
+}
+
+func parseBulkCreateError(err error) *ServiceError {
+	var limitErr *requests.BatchLimitError
+	if errors.As(err, &limitErr) {
+		return &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: limitErr.Error(),
+			Data: fiber.Map{
+				"requested": limitErr.Requested,
+				"max":       limitErr.Max,
+			},
+			Err: err,
+		}
+	}
+
+	message := "Failed to parse request body"
+	if err != nil {
+		if strings.Contains(err.Error(), "multipart") {
+			message = "Error parsing multipart form."
+		} else if err.Error() == "missing items field" {
+			message = "Missing items JSON field."
+		} else if strings.HasPrefix(err.Error(), "Expected ") {
+			message = err.Error()
+		}
+	}
+
+	return &ServiceError{
+		Status:  http.StatusInternalServerError,
+		Message: message,
+		Err:     err,
+	}
 }
