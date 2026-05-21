@@ -16,11 +16,11 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`   // "invalidate", "pageChanged", "containerChanged"
-	Schema    string `json:"schema"` // schema name
+	Type      string `json:"type"`             // "invalidate", "pageChanged", "containerChanged"
+	Schema    string `json:"schema"`           // schema name
 	UserId    string `json:"userId,omitempty"` // user who triggered the event
-	TenantID  string `json:"-"` // tenant ID (not sent to client, used for routing)
-	ProjectID string `json:"-"` // project ID (not sent to client, used for routing)
+	TenantID  string `json:"-"`                // tenant ID (not sent to client, used for routing)
+	ProjectID string `json:"-"`                // project ID (not sent to client, used for routing)
 	Timestamp int64  `json:"ts"`
 }
 
@@ -59,9 +59,9 @@ func RunBroadcaster() {
 			}
 		}
 		clientsMu.RUnlock()
-		
+
 		if matchCount > 0 {
-			log.Printf("WebSocket: Broadcast sent to %d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s", 
+			log.Printf("WebSocket: Broadcast sent to %d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
 				matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
 		}
 	}
@@ -75,11 +75,14 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 
 	// Try Redis cache first
 	cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
-	cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
-	if err == nil && cachedValue != "" {
-		parts := strings.Split(cachedValue, "|")
-		if len(parts) == 2 {
-			return parts[0], parts[1], nil
+	if configs.RedisCircuitAllow() {
+		cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
+		configs.RedisCircuitRecordResult(err)
+		if err == nil && cachedValue != "" {
+			parts := strings.Split(cachedValue, "|")
+			if len(parts) == 2 {
+				return parts[0], parts[1], nil
+			}
 		}
 	}
 
@@ -94,7 +97,7 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 		log.Printf("WebSocket: Tenant not found for slug '%s': %v", tenantSlug, err)
 		return "", "", err
 	}
-	
+
 	// Extract tenant ID as hex string
 	tenantID = tenantResult["_id"].(primitive.ObjectID).Hex()
 
@@ -105,15 +108,18 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 		log.Printf("WebSocket: Project not found for slug '%s': %v", projectSlug, err)
 		return "", "", err
 	}
-	
+
 	// Extract project ID as hex string
 	projectID = projectResult["_id"].(primitive.ObjectID).Hex()
-	
-	log.Printf("WebSocket: Resolved slugs - tenant '%s' -> %s, project '%s' -> %s", 
+
+	log.Printf("WebSocket: Resolved slugs - tenant '%s' -> %s, project '%s' -> %s",
 		tenantSlug, tenantID, projectSlug, projectID)
 
 	// Cache the result for future use (24 hours)
-	configs.RedisClient.Set(ctx, cacheKey, tenantID+"|"+projectID, 24*time.Hour)
+	if configs.RedisCircuitAllow() {
+		err := configs.RedisClient.Set(ctx, cacheKey, tenantID+"|"+projectID, 24*time.Hour).Err()
+		configs.RedisCircuitRecordResult(err)
+	}
 
 	return tenantID, projectID, nil
 }
@@ -128,7 +134,7 @@ func HandleWS(c *websocket.Conn) {
 	if tenantSlug == "" {
 		tenantSlug = c.Query("tenantId") // backward compatibility
 	}
-	
+
 	projectSlug := c.Query("projectSlug")
 	if projectSlug == "" {
 		projectSlug = c.Query("projectId") // backward compatibility
@@ -165,7 +171,7 @@ func HandleWS(c *websocket.Conn) {
 		return
 	}
 
-	log.Printf("WebSocket: Client connected - tenantSlug: %s (%s), projectSlug: %s (%s)", 
+	log.Printf("WebSocket: Client connected - tenantSlug: %s (%s), projectSlug: %s (%s)",
 		tenantSlug, tenantID, projectSlug, projectID)
 
 	// Register client with tenant/project context
@@ -179,7 +185,7 @@ func HandleWS(c *websocket.Conn) {
 	clients[c] = clientInfo
 	totalClients := len(clients)
 	clientsMu.Unlock()
-	
+
 	log.Printf("WebSocket: Total connected clients: %d", totalClients)
 
 	defer func() {
@@ -202,7 +208,7 @@ func HandleWS(c *websocket.Conn) {
 // EmitInvalidate pushes an invalidate event to clients in the same tenant/project.
 func EmitInvalidate(schema string, userId string, tenantID string, projectID string) {
 	log.Printf("WebSocket: Emitting invalidate event - schema: %s, userId: %s, tenantID: %s, projectID: %s", schema, userId, tenantID, projectID)
-	
+
 	Broadcast <- Event{
 		Type:      "invalidate",
 		Schema:    schema,

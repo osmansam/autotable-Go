@@ -145,7 +145,7 @@ func UploadExcel(c *fiber.Ctx) error {
 
 	// Get project-specific container collection
 	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-	
+
 	_, err = containersCollection.InsertOne(c.Context(), container)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -158,7 +158,7 @@ func UploadExcel(c *fiber.Ctx) error {
 	// Invalidate Redis cache for containers
 	ctx := context.Background()
 	cacheKey := fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)
-	configs.RedisClient.Del(ctx, cacheKey)
+	_ = configs.RedisDelKeys(ctx, cacheKey)
 
 	// Emit WebSocket event for container change
 	userIDStr, _ := c.Locals("userID").(string)
@@ -171,11 +171,11 @@ func UploadExcel(c *fiber.Ctx) error {
 	var documents []interface{}
 	for _, row := range dataRows {
 		doc := bson.M{
-			"_id":        primitive.NewObjectID(),
-			"tenantID":   tenantID,
-			"projectID":  projectID,
-			"createdAt":  time.Now(),
-			"updatedAt":  time.Now(),
+			"_id":       primitive.NewObjectID(),
+			"tenantID":  tenantID,
+			"projectID": projectID,
+			"createdAt": time.Now(),
+			"updatedAt": time.Now(),
 		}
 
 		// Map each cell to corresponding field

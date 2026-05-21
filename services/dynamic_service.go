@@ -2446,7 +2446,11 @@ func (s *DynamicService) cacheDynamicFunctionResult(ctx context.Context, redisKe
 	}
 	expiration := cacheDuration(container.Redis.CacheTime)
 	s.cache.SetValue(ctx, redisKey, result, expiration)
-	configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
+	if !configs.RedisCircuitAllow() {
+		return
+	}
+	err := configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration).Err()
+	configs.RedisCircuitRecordResult(err)
 }
 
 func schemaCacheKey(ctx context.Context, tenantID, projectID, schemaName string, shouldCache bool, routeName, queryValue string) (string, bool) {

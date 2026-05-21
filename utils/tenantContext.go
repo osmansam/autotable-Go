@@ -39,22 +39,25 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 
 	// Try to get from Redis cache first
 	cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
-	cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
-	if err == nil && cachedValue != "" {
-		// Cache hit: parse cached value (format: "tenantID|projectID")
-		// Split and return
-		parts := splitCachedValue(cachedValue)
-		if len(parts) == 2 {
-			tenantID = parts[0]
-			projectID = parts[1]
-			
-			// Store in locals for downstream use
-			c.Locals("tenantID", tenantID)
-			c.Locals("projectID", projectID)
-			c.Locals("tenantSlug", tenantSlug)
-			c.Locals("projectSlug", projectSlug)
-			
-			return tenantID, projectID, nil
+	if configs.RedisCircuitAllow() {
+		cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
+		configs.RedisCircuitRecordResult(err)
+		if err == nil && cachedValue != "" {
+			// Cache hit: parse cached value (format: "tenantID|projectID")
+			// Split and return
+			parts := splitCachedValue(cachedValue)
+			if len(parts) == 2 {
+				tenantID = parts[0]
+				projectID = parts[1]
+
+				// Store in locals for downstream use
+				c.Locals("tenantID", tenantID)
+				c.Locals("projectID", projectID)
+				c.Locals("tenantSlug", tenantSlug)
+				c.Locals("projectSlug", projectSlug)
+
+				return tenantID, projectID, nil
+			}
 		}
 	}
 
@@ -73,17 +76,23 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 	if err != nil {
 		return "", "", ErrProjectNotFound
 	}
-	
+
 	projectID = project.ID.Hex()
 	tenantID = project.TenantID.Hex()
 
 	// Cache the result for 1 hour (3600 seconds)
 	cacheValue := tenantID + "|" + projectID
 	go func() {
+		if !configs.RedisCircuitAllow() {
+			return
+		}
 		// Cache in background to not block the request
 		if err := configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err(); err != nil {
+			configs.RedisCircuitRecordResult(err)
 			// Log error but don't fail the request
+			return
 		}
+		configs.RedisCircuitRecordSuccess()
 	}()
 
 	// Store in locals for downstream use
@@ -130,17 +139,20 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 
 		// Try cache first
 		cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
-		cachedValue, cacheErr := configs.RedisClient.Get(ctx, cacheKey).Result()
 		var urlTenantID, urlProjectID string
-		
-		if cacheErr == nil && cachedValue != "" {
-			parts := splitCachedValue(cachedValue)
-			if len(parts) == 2 {
-				urlTenantID = parts[0]
-				urlProjectID = parts[1]
+
+		if configs.RedisCircuitAllow() {
+			cachedValue, cacheErr := configs.RedisClient.Get(ctx, cacheKey).Result()
+			configs.RedisCircuitRecordResult(cacheErr)
+			if cacheErr == nil && cachedValue != "" {
+				parts := splitCachedValue(cachedValue)
+				if len(parts) == 2 {
+					urlTenantID = parts[0]
+					urlProjectID = parts[1]
+				}
 			}
 		}
-		
+
 		// If not in cache, query database
 		if urlProjectID == "" {
 			projectsCollection := configs.GetCollection("projects")
@@ -157,14 +169,18 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 			if err != nil {
 				return "", "", ErrProjectNotFound
 			}
-			
+
 			urlProjectID = project.ID.Hex()
 			urlTenantID = project.TenantID.Hex()
 
 			// Cache the result
 			cacheValue := urlTenantID + "|" + urlProjectID
 			go func() {
-				configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second)
+				if !configs.RedisCircuitAllow() {
+					return
+				}
+				err := configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err()
+				configs.RedisCircuitRecordResult(err)
 			}()
 		}
 

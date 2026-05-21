@@ -25,8 +25,13 @@ func BuildSchemaCacheVersionKey(tenantID, projectID, schemaName string) string {
 }
 
 func GetSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName string) (int64, error) {
+	if !configs.RedisCircuitAllow() {
+		return 0, fmt.Errorf("redis circuit breaker is open")
+	}
+
 	versionKey := BuildSchemaCacheVersionKey(tenantID, projectID, schemaName)
 	version, err := configs.RedisClient.Get(ctx, versionKey).Int64()
+	configs.RedisCircuitRecordResult(err)
 	if err == nil {
 		return version, nil
 	}
@@ -35,6 +40,7 @@ func GetSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName 
 	}
 
 	created, err := configs.RedisClient.SetNX(ctx, versionKey, int64(1), 0).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return 0, err
 	}
@@ -42,12 +48,20 @@ func GetSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName 
 		return 1, nil
 	}
 
-	return configs.RedisClient.Get(ctx, versionKey).Int64()
+	version, err = configs.RedisClient.Get(ctx, versionKey).Int64()
+	configs.RedisCircuitRecordResult(err)
+	return version, err
 }
 
 func IncrementSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName string) error {
+	if !configs.RedisCircuitAllow() {
+		return nil
+	}
+
 	versionKey := BuildSchemaCacheVersionKey(tenantID, projectID, schemaName)
-	return configs.RedisClient.Incr(ctx, versionKey).Err()
+	err := configs.RedisClient.Incr(ctx, versionKey).Err()
+	configs.RedisCircuitRecordResult(err)
+	return nil
 }
 
 func BuildVersionedCacheKey(tenantID string, projectID string, schemaName string, version int64, routeName string, queryHash string) string {
@@ -60,6 +74,10 @@ func HashCacheQuery(query string) string {
 }
 
 func SetCache(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	if !configs.RedisCircuitAllow() {
+		return nil
+	}
+
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -67,7 +85,9 @@ func SetCache(ctx context.Context, key string, value interface{}, ttl time.Durat
 	if ttl <= 0 {
 		ttl = DefaultCacheTTLDuration()
 	}
-	return configs.RedisClient.Set(ctx, key, payload, ttl).Err()
+	err = configs.RedisClient.Set(ctx, key, payload, ttl).Err()
+	configs.RedisCircuitRecordResult(err)
+	return err
 }
 
 func InvalidateSchemaAndTriggeredCaches(ctx context.Context, tenantID string, projectID string, schemaName string, triggeredSchemas []string) error {

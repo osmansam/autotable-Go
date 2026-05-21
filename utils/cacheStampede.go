@@ -13,8 +13,13 @@ func BuildCacheFillLockKey(cacheKey string) string {
 }
 
 func AcquireCacheFillLock(ctx context.Context, cacheKey string) (string, bool) {
+	if !configs.RedisCircuitAllow() {
+		return "", false
+	}
+
 	lockID := uuid.NewString()
 	locked, err := configs.RedisClient.SetNX(ctx, BuildCacheFillLockKey(cacheKey), lockID, configs.GetCacheFillLockTTL()).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return "", false
 	}
@@ -22,6 +27,10 @@ func AcquireCacheFillLock(ctx context.Context, cacheKey string) (string, bool) {
 }
 
 func ReleaseCacheFillLock(ctx context.Context, cacheKey, lockID string) {
+	if !configs.RedisCircuitAllow() {
+		return
+	}
+
 	luaScript := `
 		if redis.call("GET", KEYS[1]) == ARGV[1] then
 			return redis.call("DEL", KEYS[1])
@@ -29,10 +38,15 @@ func ReleaseCacheFillLock(ctx context.Context, cacheKey, lockID string) {
 			return 0
 		end
 	`
-	_ = configs.RedisClient.Eval(ctx, luaScript, []string{BuildCacheFillLockKey(cacheKey)}, lockID).Err()
+	err := configs.RedisClient.Eval(ctx, luaScript, []string{BuildCacheFillLockKey(cacheKey)}, lockID).Err()
+	configs.RedisCircuitRecordResult(err)
 }
 
 func WaitForCacheFill(ctx context.Context, checkCache func() bool) bool {
+	if !configs.RedisCircuitAllow() {
+		return false
+	}
+
 	deadline := time.NewTimer(configs.GetCacheFillWaitTimeout())
 	defer deadline.Stop()
 

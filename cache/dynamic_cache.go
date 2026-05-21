@@ -22,7 +22,12 @@ func (d *DynamicCache) InvalidateCreateCaches(ctx context.Context, tenantID, pro
 }
 
 func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]interface{}, bool) {
+	if !configs.RedisCircuitAllow() {
+		return nil, false
+	}
+
 	data, err := configs.RedisClient.Get(ctx, key).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return nil, false
 	}
@@ -36,7 +41,12 @@ func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]i
 }
 
 func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]interface{}, bool) {
+	if !configs.RedisCircuitAllow() {
+		return nil, false
+	}
+
 	data, err := configs.RedisClient.Get(ctx, key).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return nil, false
 	}
@@ -54,7 +64,12 @@ func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[str
 }
 
 func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, bool) {
+	if !configs.RedisCircuitAllow() {
+		return nil, false
+	}
+
 	data, err := configs.RedisClient.Get(ctx, key).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return nil, false
 	}
@@ -72,7 +87,12 @@ func (d *DynamicCache) SetResponse(ctx context.Context, key string, response fib
 }
 
 func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, bool) {
+	if !configs.RedisCircuitAllow() {
+		return nil, false
+	}
+
 	data, err := configs.RedisClient.Get(ctx, key).Result()
+	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		return nil, false
 	}
@@ -90,7 +110,12 @@ func (d *DynamicCache) SetValue(ctx context.Context, key string, value interface
 }
 
 func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery string) ([]map[string]interface{}, bool) {
+	if !configs.RedisCircuitAllow() {
+		return nil, false
+	}
+
 	storedQuery, err := configs.RedisClient.Get(ctx, key+"-query").Result()
+	configs.RedisCircuitRecordResult(err)
 	if err == nil && storedQuery != currentQuery {
 		return nil, false
 	}
@@ -105,8 +130,16 @@ func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery s
 	}
 
 	expiration := cacheTTL(cacheMinutes)
-	configs.RedisClient.Set(ctx, key, payload, expiration)
-	configs.RedisClient.Set(ctx, key+"-query", currentQuery, expiration)
+	if !configs.RedisCircuitAllow() {
+		return
+	}
+	err = configs.RedisClient.Set(ctx, key, payload, expiration).Err()
+	configs.RedisCircuitRecordResult(err)
+	if err != nil {
+		return
+	}
+	err = configs.RedisClient.Set(ctx, key+"-query", currentQuery, expiration).Err()
+	configs.RedisCircuitRecordResult(err)
 }
 
 func (d *DynamicCache) SetItem(ctx context.Context, key string, item map[string]interface{}, ttlMinutes int) {

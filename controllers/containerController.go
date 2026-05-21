@@ -21,11 +21,12 @@ import (
 )
 
 type DynamicFunctionsUpdate struct {
-    DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
+	DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
 }
 type PipelinesUpdate struct {
-    Pipelines []models.PipelineStage `json:"Pipelines"`
+	Pipelines []models.PipelineStage `json:"Pipelines"`
 }
+
 var validate = validator.New()
 
 // ensureRoleSchemaExists checks if a "role" schema exists and creates it if not
@@ -76,12 +77,12 @@ func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Coll
 			CacheTime:            0,
 			TriggeredRedisCaches: []string{},
 		},
-		IsAuthContainer: false,
-		PopulatedRoutes: []string{},
-		Pipelines:       []models.PipelineStage{},
+		IsAuthContainer:  false,
+		PopulatedRoutes:  []string{},
+		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
-		DynamicApis:     []models.DynamicApiModel{},
-		Indexes:         []models.Index{},
+		DynamicApis:      []models.DynamicApiModel{},
+		Indexes:          []models.Index{},
 	}
 
 	// Insert the role container
@@ -152,7 +153,7 @@ func CreateContainer(c *fiber.Ctx) error {
 	// Validate isAuthContainer requirements
 	if container.IsAuthContainer {
 		log.Println("Validating isAuthContainer requirements")
-		
+
 		// Check if another auth container already exists
 		authCount, err := containerCollection.CountDocuments(ctx, bson.M{"isAuthContainer": true})
 		if err != nil {
@@ -163,7 +164,7 @@ func CreateContainer(c *fiber.Ctx) error {
 			log.Println("Another auth container already exists")
 			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
 		}
-		
+
 		// Validate that there's an email field with isLoginCredential true
 		hasValidEmailField := false
 		for _, field := range container.Fields {
@@ -176,14 +177,14 @@ func CreateContainer(c *fiber.Ctx) error {
 			log.Println("Auth container missing required email field with isLoginCredential")
 			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
 		}
-	
+
 		// Ensure role schema exists when creating an auth container
 		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
 			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
 		}
 	}
-	
+
 	// Validate that objectId fields reference an existing container (not the one being created)
 	for _, field := range container.Fields {
 		if field.Type == "objectId" {
@@ -205,16 +206,16 @@ func CreateContainer(c *fiber.Ctx) error {
 		}
 	}
 	newContainer := models.ContainerModel{
-		SchemaName:      container.SchemaName,
-		Fields:          container.Fields,
-		Routes:          container.Routes,
-		Redis:           container.Redis,
-		Pipelines:       container.Pipelines,
-		IsAuthContainer: container.IsAuthContainer,
-		PopulatedRoutes: container.PopulatedRoutes,
-		DynamicApis:     container.DynamicApis,
+		SchemaName:       container.SchemaName,
+		Fields:           container.Fields,
+		Routes:           container.Routes,
+		Redis:            container.Redis,
+		Pipelines:        container.Pipelines,
+		IsAuthContainer:  container.IsAuthContainer,
+		PopulatedRoutes:  container.PopulatedRoutes,
+		DynamicApis:      container.DynamicApis,
 		DynamicFunctions: container.DynamicFunctions,
-		Indexes:         container.Indexes,
+		Indexes:          container.Indexes,
 	}
 
 	log.Println("Inserting new container into the database")
@@ -231,7 +232,7 @@ func CreateContainer(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers (project-specific)
-	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+	_ = configs.RedisDelKeys(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
 	log.Println("Invalidated containers cache after creation")
 
 	// Emit WebSocket event for container change
@@ -263,7 +264,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 
 	// Try to get from Redis cache first (project-specific key)
 	redisKey := fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)
-	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+	if cachedData, err := configs.RedisGetString(ctx, redisKey); err == nil {
 		var containers []models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &containers) == nil {
 			// Sort fields by order for each container before returning
@@ -285,7 +286,6 @@ func GetAllContainers(c *fiber.Ctx) error {
 	}
 	defer results.Close(ctx)
 
-
 	for results.Next(ctx) {
 		var singleContainer models.ContainerModel
 		if err = results.Decode(&singleContainer); err != nil {
@@ -303,7 +303,7 @@ func GetAllContainers(c *fiber.Ctx) error {
 
 	// Cache the result in Redis (30 minutes TTL)
 	if payload, err := json.Marshal(containers); err == nil {
-		configs.RedisClient.Set(ctx, redisKey, payload, 30*time.Minute)
+		_ = configs.RedisSetValue(ctx, redisKey, payload, 30*time.Minute)
 		log.Println("Cached all containers in Redis")
 	}
 
@@ -376,8 +376,10 @@ func DeleteContainer(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
-	configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", deleteIdStr, tenantID, projectID))
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", deleteIdStr, tenantID, projectID),
+	)
 	log.Println("Invalidated containers cache after deletion")
 
 	// Emit WebSocket event for container change
@@ -451,7 +453,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 	// Validate isAuthContainer requirements
 	if updatedContainer.IsAuthContainer {
 		log.Println("Validating isAuthContainer requirements for update")
-		
+
 		// Check if another auth container already exists (excluding the current one being updated)
 		authCount, err := containerCollection.CountDocuments(ctx, bson.M{"isAuthContainer": true, "_id": bson.M{"$ne": updateId}})
 		if err != nil {
@@ -462,7 +464,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 			log.Println("Another auth container already exists")
 			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
 		}
-		
+
 		// Validate that there's an email field with isLoginCredential true
 		hasValidEmailField := false
 		for _, field := range updatedContainer.Fields {
@@ -475,7 +477,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 			log.Println("Auth container missing required email field with isLoginCredential")
 			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
 		}
-		
+
 		// Ensure role schema exists when updating to an auth container
 		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
@@ -509,8 +511,10 @@ func UpdateContainer(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
-	configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", updateIdStr, tenantID, projectID))
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", updateIdStr, tenantID, projectID),
+	)
 	log.Println("Invalidated containers cache after update")
 
 	// Emit WebSocket event for container change
@@ -527,140 +531,144 @@ func UpdateContainer(c *fiber.Ctx) error {
 
 // UpdatePipelines updates the Pipelines of a specific container
 func UpdatePipelines(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context from URL slugs with JWT validation
-    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-    if err != nil {
-        log.Printf("Failed to get project context: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
-    }
-    if tenantID == "" || projectID == "" {
-        log.Println("Missing tenant or project context")
-        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
-    }
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
 
-    // Get project-specific container collection
-    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
-    containerIdStr := c.Params("id")
-    containerId, err := primitive.ObjectIDFromHex(containerIdStr)
-    if err != nil {
-        log.Printf("Invalid container ID format: %v", err)
-        return utils.SendErrorResponse(c, err, "Invalid container ID format")
-    }
+	containerIdStr := c.Params("id")
+	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+	if err != nil {
+		log.Printf("Invalid container ID format: %v", err)
+		return utils.SendErrorResponse(c, err, "Invalid container ID format")
+	}
 
-    log.Println("Parsing request body for UpdatePipelines")
-    var update PipelinesUpdate
-    if err := c.BodyParser(&update); err != nil {
-        log.Printf("Failed to parse request body: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to parse request body")
-    }
+	log.Println("Parsing request body for UpdatePipelines")
+	var update PipelinesUpdate
+	if err := c.BodyParser(&update); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
 
-    log.Println("Updating Pipelines in the container")
-    updateResult, err := containerCollection.UpdateOne(
-        ctx, 
-        bson.M{"_id": containerId}, 
-        bson.M{"$set": bson.M{"pipelines": update.Pipelines}},
-    )
-    if err != nil {
-        log.Printf("Failed to update Pipelines: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to update Pipelines")
-    }
+	log.Println("Updating Pipelines in the container")
+	updateResult, err := containerCollection.UpdateOne(
+		ctx,
+		bson.M{"_id": containerId},
+		bson.M{"$set": bson.M{"pipelines": update.Pipelines}},
+	)
+	if err != nil {
+		log.Printf("Failed to update Pipelines: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to update Pipelines")
+	}
 
-    if updateResult.MatchedCount == 0 {
-        log.Println("No container found with the specified ID")
-        return c.Status(http.StatusNotFound).JSON(fiber.Map{
-            "status":  http.StatusNotFound,
-            "message": "No container found with the specified ID",
-        })
-    }
+	if updateResult.MatchedCount == 0 {
+		log.Println("No container found with the specified ID")
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"status":  http.StatusNotFound,
+			"message": "No container found with the specified ID",
+		})
+	}
 
-    // Invalidate Redis cache for all containers and this specific container (project-specific)
-    configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
-    configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID))
-    log.Println("Invalidated containers cache after pipeline update")
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
+	)
+	log.Println("Invalidated containers cache after pipeline update")
 
-    // Emit WebSocket event for container change
-    userIDStr, _ := c.Locals("userID").(string)
-    ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+	// Emit WebSocket event for container change
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
-    log.Println("Pipelines successfully updated")
-    return c.Status(http.StatusOK).JSON(fiber.Map{
-        "status":  http.StatusOK,
-        "message": "Pipelines successfully updated",
-        "data":    updateResult,
-    })
+	log.Println("Pipelines successfully updated")
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  http.StatusOK,
+		"message": "Pipelines successfully updated",
+		"data":    updateResult,
+	})
 }
 
 // Update the DynamicFunctions in the container
 func UpdateDynamicFunctions(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context from URL slugs with JWT validation
-    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-    if err != nil {
-        log.Printf("Failed to get project context: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
-    }
-    if tenantID == "" || projectID == "" {
-        log.Println("Missing tenant or project context")
-        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
-    }
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
 
-    // Get project-specific container collection
-    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
-    containerIdStr := c.Params("id")
-    containerId, err := primitive.ObjectIDFromHex(containerIdStr)
-    if err != nil {
-        log.Printf("Invalid container ID format: %v", err)
-        return utils.SendErrorResponse(c, err, "Invalid container ID format")
-    }
+	containerIdStr := c.Params("id")
+	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+	if err != nil {
+		log.Printf("Invalid container ID format: %v", err)
+		return utils.SendErrorResponse(c, err, "Invalid container ID format")
+	}
 
-    log.Println("Parsing request body for UpdateDynamicFunctions")
-    var update DynamicFunctionsUpdate
-    if err := c.BodyParser(&update); err != nil {
-        log.Printf("Failed to parse request body: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to parse request body")
-    }
+	log.Println("Parsing request body for UpdateDynamicFunctions")
+	var update DynamicFunctionsUpdate
+	if err := c.BodyParser(&update); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
 
-    log.Println("Updating DynamicFunctions in the container")
-    updateResult, err := containerCollection.UpdateOne(
-        ctx, 
-        bson.M{"_id": containerId}, 
-        bson.M{"$set": bson.M{"dynamicFunctions": update.DynamicFunctions}},
-    )
-    if err != nil {
-        log.Printf("Failed to update DynamicFunctions: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to update DynamicFunctions")
-    }
+	log.Println("Updating DynamicFunctions in the container")
+	updateResult, err := containerCollection.UpdateOne(
+		ctx,
+		bson.M{"_id": containerId},
+		bson.M{"$set": bson.M{"dynamicFunctions": update.DynamicFunctions}},
+	)
+	if err != nil {
+		log.Printf("Failed to update DynamicFunctions: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to update DynamicFunctions")
+	}
 
-    if updateResult.MatchedCount == 0 {
-        log.Println("No container found with the specified ID")
-        return c.Status(http.StatusNotFound).JSON(fiber.Map{
-            "status":  http.StatusNotFound,
-            "message": "No container found with the specified ID",
-        })
-    }
+	if updateResult.MatchedCount == 0 {
+		log.Println("No container found with the specified ID")
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"status":  http.StatusNotFound,
+			"message": "No container found with the specified ID",
+		})
+	}
 
-    // Invalidate Redis cache for all containers and this specific container (project-specific)
-    configs.RedisClient.Del(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
-    configs.RedisClient.Del(ctx, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID))
-    log.Println("Invalidated containers cache after dynamic functions update")
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
+	)
+	log.Println("Invalidated containers cache after dynamic functions update")
 
-    // Emit WebSocket event for container change
-    userIDStr, _ := c.Locals("userID").(string)
-    ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+	// Emit WebSocket event for container change
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
 
-    log.Println("DynamicFunctions successfully updated")
-    return c.Status(http.StatusOK).JSON(fiber.Map{
-        "status":  http.StatusOK,
-        "message": "DynamicFunctions successfully updated",
-        "data":    updateResult,
-    })
+	log.Println("DynamicFunctions successfully updated")
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  http.StatusOK,
+		"message": "DynamicFunctions successfully updated",
+		"data":    updateResult,
+	})
 }
 
 // GetContainer retrieves a single container from the database based on its ID
@@ -693,7 +701,7 @@ func GetContainer(c *fiber.Ctx) error {
 
 	// Try to get from Redis cache first (project-specific key)
 	redisKey := fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID)
-	if cachedData, err := configs.RedisClient.Get(ctx, redisKey).Result(); err == nil {
+	if cachedData, err := configs.RedisGetString(ctx, redisKey); err == nil {
 		var container models.ContainerModel
 		if json.Unmarshal([]byte(cachedData), &container) == nil {
 			// Sort fields by order before returning
@@ -728,7 +736,7 @@ func GetContainer(c *fiber.Ctx) error {
 
 	// Cache the result in Redis (30 minutes TTL)
 	if payload, err := json.Marshal(container); err == nil {
-		configs.RedisClient.Set(ctx, redisKey, payload, 30*time.Minute)
+		_ = configs.RedisSetValue(ctx, redisKey, payload, 30*time.Minute)
 		log.Printf("Cached container %s in Redis", containerIdStr)
 	}
 
@@ -742,62 +750,62 @@ func GetContainer(c *fiber.Ctx) error {
 
 // GetAllContainerTypes retrieves all containers and returns their dynamic field type definitions.
 func GetAllContainerTypes(c *fiber.Ctx) error {
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Extract tenant and project context from URL slugs with JWT validation
-    tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-    if err != nil {
-        log.Printf("Failed to get project context: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
-    }
-    if tenantID == "" || projectID == "" {
-        log.Println("Missing tenant or project context")
-        return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
-    }
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
 
-    // Get project-specific container collection
-    containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
-    // Retrieve all container documents from the collection.
-    cursor, err := containerCollection.Find(ctx, bson.M{})
-    if err != nil {
-        log.Printf("Failed to retrieve containers: %v", err)
-        return utils.SendErrorResponse(c, err, "Failed to retrieve containers from the database.")
-    }
-    defer cursor.Close(ctx)
+	// Retrieve all container documents from the collection.
+	cursor, err := containerCollection.Find(ctx, bson.M{})
+	if err != nil {
+		log.Printf("Failed to retrieve containers: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to retrieve containers from the database.")
+	}
+	defer cursor.Close(ctx)
 
-    var containerTypes []models.ContainerTypes
+	var containerTypes []models.ContainerTypes
 
-    // Iterate over each container document.
-    for cursor.Next(ctx) {
-        var container models.ContainerModel
-        if err = cursor.Decode(&container); err != nil {
-            log.Printf("Error decoding container: %v", err)
-            return utils.SendErrorResponse(c, err, "An error occurred while processing containers.")
-        }
+	// Iterate over each container document.
+	for cursor.Next(ctx) {
+		var container models.ContainerModel
+		if err = cursor.Decode(&container); err != nil {
+			log.Printf("Error decoding container: %v", err)
+			return utils.SendErrorResponse(c, err, "An error occurred while processing containers.")
+		}
 
-        // Build a map of field names to their type definitions.
-        fieldTypes := make(map[string]string)
-        for _, field := range container.Fields {
-            fieldTypes[field.Name] = field.Type
-        }
+		// Build a map of field names to their type definitions.
+		fieldTypes := make(map[string]string)
+		for _, field := range container.Fields {
+			fieldTypes[field.Name] = field.Type
+		}
 
-        containerTypes = append(containerTypes, models.ContainerTypes{
-            ID:         container.ID.Hex(),
-            SchemaName: container.SchemaName,
-            FieldTypes: fieldTypes,
-        })
-    }
+		containerTypes = append(containerTypes, models.ContainerTypes{
+			ID:         container.ID.Hex(),
+			SchemaName: container.SchemaName,
+			FieldTypes: fieldTypes,
+		})
+	}
 
-    // Check for any errors encountered during iteration.
-    if err = cursor.Err(); err != nil {
-        log.Printf("Cursor error: %v", err)
-        return utils.SendErrorResponse(c, err, "An error occurred while iterating over containers.")
-    }
+	// Check for any errors encountered during iteration.
+	if err = cursor.Err(); err != nil {
+		log.Printf("Cursor error: %v", err)
+		return utils.SendErrorResponse(c, err, "An error occurred while iterating over containers.")
+	}
 
-    log.Println("Successfully retrieved container types")
-    return utils.SendResponse(c, http.StatusOK, "Container types successfully retrieved.", containerTypes)
+	log.Println("Successfully retrieved container types")
+	return utils.SendResponse(c, http.StatusOK, "Container types successfully retrieved.", containerTypes)
 }
 
 // ResetRedis resets the entire Redis cache
@@ -806,7 +814,7 @@ func ResetRedis(c *fiber.Ctx) error {
 	defer cancel()
 
 	log.Println("Resetting entire Redis cache")
-	err := configs.RedisClient.FlushAll(ctx).Err()
+	err := configs.RedisFlushAll(ctx)
 	if err != nil {
 		log.Printf("Failed to reset Redis cache: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to reset the Redis cache. Please try again later.")
