@@ -2,8 +2,11 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"time"
 
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
 )
@@ -16,6 +19,29 @@ func NewDynamicCache() *DynamicCache {
 
 func (d *DynamicCache) InvalidateCreateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel) error {
 	return d.invalidateWriteCaches(ctx, tenantID, projectID, schemaName, container)
+}
+
+func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]interface{}, bool) {
+	data, err := configs.RedisClient.Get(ctx, key).Result()
+	if err != nil {
+		return nil, false
+	}
+
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &items); err != nil {
+		return nil, false
+	}
+
+	return items, true
+}
+
+func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[string]interface{}, ttlMinutes int) {
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return
+	}
+	ttl := time.Duration(ttlMinutes) * time.Minute
+	configs.RedisClient.Set(ctx, key, payload, ttl)
 }
 
 func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel, onTriggeredSchema func(string)) error {

@@ -130,6 +130,10 @@ func (p *DynamicRequestParser) ParseUpdateItems(c *fiber.Ctx, container *models.
 	return parseLimitedItems(c.Body(), maxItems, "bulk update")
 }
 
+func (p *DynamicRequestParser) ParseDeleteItems(c *fiber.Ctx, maxItems int) ([]map[string]interface{}, error) {
+	return parseLimitedItems(c.Body(), maxItems, "bulk delete")
+}
+
 func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
 	return p.parseItem(c, container)
 }

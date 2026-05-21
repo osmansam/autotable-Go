@@ -78,6 +78,42 @@ type UpdateMultipleDynamicItemsInput struct {
 	FiberCtx  *fiber.Ctx
 }
 
+type DeleteDynamicItemInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	ID        string
+	UserID    string
+	User      *models.AuditUser
+	Container *models.ContainerModel
+}
+
+type DeleteMultipleDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	UserID    string
+	User      *models.AuditUser
+	Container *models.ContainerModel
+	FiberCtx  *fiber.Ctx
+}
+
+type GetAllDynamicItemsInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	UserRole  string
+	Container *models.ContainerModel
+}
+
+type GetItemsForSelectionInput struct {
+	TenantID  string
+	ProjectID string
+	Schema    string
+	FieldName string
+	UserRole  string
+}
+
 type DynamicService struct {
 	repository *repositories.DynamicRepository
 	parser     *requests.DynamicRequestParser
@@ -457,9 +493,378 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 	}, nil
 }
 
+func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDynamicItemInput) (map[string]interface{}, error) {
+	deleteID, err := primitive.ObjectIDFromHex(input.ID)
+	if err != nil {
+		log.Printf("Provided ID is not in the valid format for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Provided ID is not in the valid format.",
+			Err:     err,
+		}
+	}
+
+	lockKey := fmt.Sprintf("lock:delete:%s:%s", input.Schema, deleteID.Hex())
+	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+	if !locked {
+		log.Printf("Another process is already deleting this item for schema: %s", input.Schema)
+		return nil, &ServiceError{
+			Status:  http.StatusConflict,
+			Message: "Another process is already deleting this item",
+			Data:    nil,
+		}
+	}
+	defer utils.ReleaseLock(lockKey, lockID)
+
+	allContainers, err := s.repository.GetAllContainerModels()
+	if err != nil {
+		log.Printf("Failed to retrieve container models for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to retrieve container models.",
+			Err:     err,
+		}
+	}
+
+	if err := s.ensureDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers); err != nil {
+		return nil, err
+	}
+
+	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, true); err != nil {
+		return nil, err
+	}
+
+	container, err := s.resolveDeleteContainer(input)
+	if err != nil {
+		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	deletedDoc, findErr := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
+	if findErr != nil {
+		log.Printf("Failed to fetch item before delete for schema: %s, error: %v", input.Schema, findErr)
+	}
+
+	if _, err := s.repository.DeleteByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID); err != nil {
+		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete the item from the specified collection.",
+			Err:     err,
+		}
+	}
+
+	if deletedDoc != nil {
+		if err := utils.LogDeleteAction(ctx, input.TenantID, input.ProjectID, container, input.User, deletedDoc); err != nil {
+			log.Printf("Failed to log delete action: %v", err)
+		}
+	}
+
+	if err := s.cache.InvalidateCreateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container); err != nil {
+		log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete the cache for the schema.",
+			Err:     err,
+		}
+	}
+
+	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
+
+	responseItem := make(map[string]interface{})
+	if deletedDoc != nil {
+		for k, v := range deletedDoc {
+			responseItem[k] = v
+		}
+		utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
+	}
+
+	return responseItem, nil
+}
+
+func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input DeleteMultipleDynamicItemsInput) (fiber.Map, error) {
+	items, err := s.parser.ParseDeleteItems(input.FiberCtx, configs.GetMaxBulkDeleteLimit())
+	if err != nil {
+		log.Printf("Failed to parse bulk delete request for schema: %s, error: %v", input.Schema, err)
+		return nil, parseBulkDeleteError(err)
+	}
+
+	allContainers, err := s.repository.GetAllContainerModels()
+	if err != nil {
+		log.Printf("Failed to retrieve container models for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to retrieve container models",
+			Err:     err,
+		}
+	}
+
+	container, err := s.resolveDeleteMultipleContainer(input)
+	if err != nil {
+		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+
+	var successfulDeletes []interface{}
+	var failedDeletes []map[string]interface{}
+	var bulkDeletedDocs []interface{}
+
+	for _, item := range items {
+		result, deletedDoc := s.deleteOneFromBulk(ctx, input, allContainers, item)
+		if result.Failed != nil {
+			failedDeletes = append(failedDeletes, result.Failed)
+			continue
+		}
+		successfulDeletes = append(successfulDeletes, result.Success)
+		if deletedDoc != nil {
+			bulkDeletedDocs = append(bulkDeletedDocs, deletedDoc)
+		}
+	}
+
+	if len(successfulDeletes) > 0 {
+		if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
+			s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
+		}); err != nil {
+			log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		}
+		s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
+	}
+
+	if len(bulkDeletedDocs) > 0 {
+		if err := utils.LogBulkDeleteAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkDeletedDocs); err != nil {
+			log.Printf("Failed to log bulk delete: %v", err)
+		}
+	}
+
+	return fiber.Map{
+		"successful": successfulDeletes,
+		"failed":     failedDeletes,
+	}, nil
+}
+
+func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDynamicItemsInput) ([]map[string]interface{}, error) {
+	container, err := s.resolveGetAllContainer(input)
+	if err != nil {
+		if input.Schema == "" {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "schemaName is required",
+				Data:    nil,
+				Err:     err,
+			}
+		}
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to load container model",
+			Err:     err,
+		}
+	}
+
+	schema := container.SchemaName
+	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", input.TenantID, input.ProjectID, schema, container)
+	if shouldCache {
+		if items, ok := s.cache.GetItems(ctx, redisKey); ok {
+			log.Printf("Fetched items from cache for schema: %s", schema)
+			if maxUnboundedRead := configs.GetMaxUnboundedReadLimit(); len(items) > maxUnboundedRead {
+				log.Printf("Unbounded read limit exceeded from cache for schema=%s tenant=%s project=%s requested=%d max=%d", schema, input.TenantID, input.ProjectID, len(items), maxUnboundedRead)
+				items = items[:maxUnboundedRead]
+			}
+			return utils.FilterDocuments(items, container.Fields, input.UserRole), nil
+		}
+	}
+
+	maxUnboundedRead := configs.GetMaxUnboundedReadLimit()
+	items, err := s.repository.FindAll(ctx, input.TenantID, input.ProjectID, schema, int64(maxUnboundedRead+1))
+	if err != nil {
+		log.Printf("DB query failed for schema %q: %v", schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch items",
+			Err:     err,
+		}
+	}
+	if len(items) > maxUnboundedRead {
+		log.Printf("Unbounded read limit exceeded for schema=%s tenant=%s project=%s max=%d", schema, input.TenantID, input.ProjectID, maxUnboundedRead)
+		items = items[:maxUnboundedRead]
+	}
+
+	utils.StripHashed(container.Fields, items)
+
+	items, err = utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, items)
+	if err != nil {
+		log.Printf("Population failed for schema %q: %v", schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to populate items",
+			Err:     err,
+		}
+	}
+
+	items = utils.FilterDocuments(items, container.Fields, input.UserRole)
+	if shouldCache {
+		s.cache.SetItems(ctx, redisKey, items, container.Redis.CacheTime)
+	}
+
+	log.Printf("Fetched items from DB for schema: %s", schema)
+	return items, nil
+}
+
+func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItemsForSelectionInput) ([]map[string]interface{}, error) {
+	if input.Schema == "" || input.FieldName == "" {
+		return nil, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "schemaName and fieldName are required",
+			Data:    nil,
+		}
+	}
+
+	container, err := s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	if err != nil {
+		log.Printf("Failed to get container model for schema %s: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to load schema configuration",
+			Err:     err,
+		}
+	}
+
+	for _, field := range container.Fields {
+		if field.Name != input.FieldName {
+			continue
+		}
+
+		if len(field.AuthorizeRole) > 0 {
+			authorized := false
+			for _, role := range field.AuthorizeRole {
+				if role == input.UserRole {
+					authorized = true
+					break
+				}
+			}
+			if !authorized {
+				return nil, &ServiceError{
+					Status:  http.StatusForbidden,
+					Message: "Access to this field is restricted",
+					Data:    nil,
+				}
+			}
+		}
+
+		if field.IsHashed {
+			log.Printf("Attempted to access hashed field %s in schema %s", input.FieldName, input.Schema)
+			return nil, &ServiceError{
+				Status:  http.StatusForbidden,
+				Message: "Cannot access hashed fields",
+				Data:    nil,
+			}
+		}
+	}
+
+	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName)
+	if err != nil {
+		log.Printf("Failed to query collection %s: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch items",
+			Err:     err,
+		}
+	}
+
+	log.Printf("Successfully fetched %d items for selection", len(items))
+	return utils.FilterDocuments(items, container.Fields, input.UserRole), nil
+}
+
 type bulkUpdateItemResult struct {
 	Success interface{}
 	Failed  map[string]interface{}
+}
+
+type bulkDeleteItemResult struct {
+	Success interface{}
+	Failed  map[string]interface{}
+}
+
+func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMultipleDynamicItemsInput, allContainers []models.ContainerModel, item map[string]interface{}) (bulkDeleteItemResult, interface{}) {
+	idStr, errMessage := extractBulkUpdateID(item)
+	if errMessage != "" {
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"item":  item,
+			"error": errMessage,
+		}}, nil
+	}
+
+	deleteID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Provided ID is not in the valid format",
+		}}, nil
+	}
+
+	lockKey := fmt.Sprintf("lock:delete:%s:%s", input.Schema, deleteID.Hex())
+	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
+	if !locked {
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Another process is already deleting this item",
+		}}, nil
+	}
+	defer utils.ReleaseLock(lockKey, lockID)
+
+	if err := s.ensureDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers); err != nil {
+		if serviceErr, ok := err.(*ServiceError); ok {
+			return bulkDeleteItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": serviceErr.Message,
+			}}, nil
+		}
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": err.Error(),
+		}}, nil
+	}
+
+	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, false); err != nil {
+		log.Printf("Failed to force delete referenced items for schema: %s, error: %v", input.Schema, err)
+	}
+
+	deletedDoc, findErr := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
+	if findErr != nil {
+		log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", input.Schema, findErr)
+	}
+
+	deleteResult, err := s.repository.DeleteByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
+	if err != nil {
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "Failed to delete item: " + err.Error(),
+		}}, nil
+	}
+	if deleteResult.DeletedCount == 0 {
+		return bulkDeleteItemResult{Failed: map[string]interface{}{
+			"id":    idStr,
+			"item":  item,
+			"error": "No item found with the specified ID",
+		}}, nil
+	}
+
+	return bulkDeleteItemResult{Success: map[string]interface{}{
+		"id":     idStr,
+		"result": deleteResult,
+	}}, deletedDoc
 }
 
 func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}) {
@@ -607,6 +1012,30 @@ func (s *DynamicService) resolveUpdateMultipleContainer(input UpdateMultipleDyna
 	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
 }
 
+func (s *DynamicService) resolveDeleteContainer(input DeleteDynamicItemInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveDeleteMultipleContainer(input DeleteMultipleDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveGetAllContainer(input GetAllDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	if input.Schema == "" {
+		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
 func (s *DynamicService) ensureUniqueFields(ctx context.Context, input CreateDynamicItemInput, container *models.ContainerModel, itemMap map[string]interface{}) error {
 	for _, field := range container.Fields {
 		if !field.Unique {
@@ -726,6 +1155,60 @@ func (s *DynamicService) ensureUniqueCreateItems(ctx context.Context, input Crea
 	return nil
 }
 
+func (s *DynamicService) ensureDeleteReferences(ctx context.Context, tenantID, projectID, schemaName string, deleteID primitive.ObjectID, allContainers []models.ContainerModel) error {
+	for _, container := range allContainers {
+		if container.SchemaName == schemaName {
+			continue
+		}
+		for _, field := range container.Fields {
+			if field.Type != "objectId" || field.Name != schemaName {
+				continue
+			}
+			count, err := s.repository.CountByField(ctx, tenantID, projectID, container.SchemaName, field.Name, deleteID)
+			if err != nil {
+				log.Printf("Database error while checking references for schema: %s, error: %v", schemaName, err)
+				return &ServiceError{
+					Status:  http.StatusInternalServerError,
+					Message: "Database error while checking references.",
+					Err:     err,
+				}
+			}
+			if count > 0 && !field.IsForceDelete {
+				return &ServiceError{
+					Status:  http.StatusBadRequest,
+					Message: fmt.Sprintf("Cannot delete: This item is still referenced in schema '%s' and cannot be forcibly deleted.", container.SchemaName),
+					Data:    nil,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *DynamicService) forceDeleteReferences(ctx context.Context, tenantID, projectID, schemaName string, deleteID primitive.ObjectID, allContainers []models.ContainerModel, failOnError bool) error {
+	for _, container := range allContainers {
+		if container.SchemaName == schemaName {
+			continue
+		}
+		for _, field := range container.Fields {
+			if field.Type != "objectId" || field.Name != schemaName || !field.IsForceDelete {
+				continue
+			}
+			if _, err := s.repository.DeleteManyByField(ctx, tenantID, projectID, container.SchemaName, field.Name, deleteID); err != nil {
+				log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, err)
+				if failOnError {
+					return &ServiceError{
+						Status:  http.StatusInternalServerError,
+						Message: "Failed to force delete referenced items.",
+						Err:     err,
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (s *DynamicService) applyAutoIncrementFields(ctx context.Context, schemaName string, container *models.ContainerModel, itemMap map[string]interface{}) error {
 	for _, field := range container.Fields {
 		if field.Type != "autoIncrementId" {
@@ -842,6 +1325,27 @@ func parseBulkUpdateError(err error) *ServiceError {
 	return &ServiceError{
 		Status:  http.StatusInternalServerError,
 		Message: message,
+		Err:     err,
+	}
+}
+
+func parseBulkDeleteError(err error) *ServiceError {
+	var limitErr *requests.BatchLimitError
+	if errors.As(err, &limitErr) {
+		return &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: limitErr.Error(),
+			Data: fiber.Map{
+				"requested": limitErr.Requested,
+				"max":       limitErr.Max,
+			},
+			Err: err,
+		}
+	}
+
+	return &ServiceError{
+		Status:  http.StatusInternalServerError,
+		Message: "Failed to parse request body",
 		Err:     err,
 	}
 }
