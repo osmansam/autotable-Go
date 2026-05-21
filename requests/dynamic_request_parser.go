@@ -32,6 +32,14 @@ type FilterParams struct {
 	Pager     utils.Pager
 }
 
+type PaginatedItemsParams struct {
+	QueryString string
+	Filter      bson.M
+	SearchKey   string
+	Sort        bson.D
+	Pager       utils.Pager
+}
+
 type PipelineParams struct {
 	SchemaName   string
 	PipelineName string
@@ -193,6 +201,31 @@ func (p *DynamicRequestParser) ParseFilterParams(c *fiber.Ctx, container *models
 		SearchKey: c.Query("search"),
 		Sort:      sortDoc,
 		Pager:     pager,
+	}, nil
+}
+
+func (p *DynamicRequestParser) ParsePaginatedItemsParams(c *fiber.Ctx, container *models.ContainerModel) (PaginatedItemsParams, error) {
+	filter, err := utils.BuildFilterFromQuery(c, container)
+	if err != nil {
+		return PaginatedItemsParams{}, fmt.Errorf("invalid filter parameter: %w", err)
+	}
+
+	sortDoc, err := utils.ParseSort(c)
+	if err != nil {
+		return PaginatedItemsParams{}, fmt.Errorf("invalid sort parameters: %w", err)
+	}
+
+	pager, err := utils.ParsePager(c)
+	if err != nil {
+		return PaginatedItemsParams{}, fmt.Errorf("invalid pagination parameters: %w", err)
+	}
+
+	return PaginatedItemsParams{
+		QueryString: string(c.Request().URI().QueryString()),
+		Filter:      filter,
+		SearchKey:   c.Query("search"),
+		Sort:        sortDoc,
+		Pager:       pager,
 	}, nil
 }
 

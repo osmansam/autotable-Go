@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
@@ -51,6 +52,29 @@ func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]inte
 
 func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[string]interface{}, ttlMinutes int) {
 	payload, err := json.Marshal(items)
+	if err != nil {
+		return
+	}
+	ttl := time.Duration(ttlMinutes) * time.Minute
+	configs.RedisClient.Set(ctx, key, payload, ttl)
+}
+
+func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, bool) {
+	data, err := configs.RedisClient.Get(ctx, key).Result()
+	if err != nil {
+		return nil, false
+	}
+
+	var response fiber.Map
+	if err := json.Unmarshal([]byte(data), &response); err != nil {
+		return nil, false
+	}
+
+	return response, true
+}
+
+func (d *DynamicCache) SetResponse(ctx context.Context, key string, response fiber.Map, ttlMinutes int) {
+	payload, err := json.Marshal(response)
 	if err != nil {
 		return
 	}

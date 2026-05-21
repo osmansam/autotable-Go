@@ -155,6 +155,20 @@ type FilterDynamicItemsInput struct {
 	Container *models.ContainerModel
 }
 
+type GetPaginatedDynamicItemsInput struct {
+	TenantID    string
+	ProjectID   string
+	Schema      string
+	QueryString string
+	Filter      bson.M
+	SearchKey   string
+	UserID      string
+	UserRole    string
+	Sort        bson.D
+	Pager       utils.Pager
+	Container   *models.ContainerModel
+}
+
 type GetPipelineInput struct {
 	TenantID     string
 	ProjectID    string
@@ -188,6 +202,10 @@ func (s *DynamicService) ParseSearchParams(c *fiber.Ctx) (requests.SearchParams,
 
 func (s *DynamicService) ParseFilterParams(c *fiber.Ctx, container *models.ContainerModel) (requests.FilterParams, error) {
 	return s.parser.ParseFilterParams(c, container)
+}
+
+func (s *DynamicService) ParsePaginatedItemsParams(c *fiber.Ctx, container *models.ContainerModel) (requests.PaginatedItemsParams, error) {
+	return s.parser.ParsePaginatedItemsParams(c, container)
 }
 
 func (s *DynamicService) ParsePipelineParams(c *fiber.Ctx) requests.PipelineParams {
@@ -1108,6 +1126,139 @@ func (s *DynamicService) FilterDynamicItems(ctx context.Context, input FilterDyn
 	return items, nil
 }
 
+func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, input GetPaginatedDynamicItemsInput) (interface{}, error) {
+	container, err := s.resolvePaginatedContainer(input)
+	if err != nil {
+		if input.Schema == "" {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "schemaName is required",
+				Data:    nil,
+				Err:     err,
+			}
+		}
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to load container model",
+			Err:     err,
+		}
+	}
+
+	hasRowAccess := container.RowAccess != nil && len(container.RowAccess.Conditions) > 0
+	cacheQuery := input.QueryString
+	if hasRowAccess {
+		cacheQuery += "&_uid=" + input.UserID
+	}
+
+	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", input.TenantID, input.ProjectID, container.SchemaName, container, cacheQuery)
+	if shouldCache {
+		if response, ok := s.cache.GetResponse(ctx, redisKey); ok {
+			log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
+			if items, ok := cachedResponseItems(response); ok {
+				response["items"] = utils.FilterDocuments(items, container.Fields, input.UserRole)
+			}
+			return response, nil
+		}
+	}
+
+	filter := input.Filter
+	pager := input.Pager
+	if input.SearchKey != "" {
+		orClauses, err := utils.BuildSearchWithReferences(ctx, container, input.SearchKey)
+		if err != nil {
+			return nil, &ServiceError{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to build search filter",
+				Err:     err,
+			}
+		}
+
+		if len(orClauses) > 0 {
+			if len(filter) > 0 {
+				filter = bson.M{
+					"$and": []bson.M{
+						filter,
+						{"$or": orClauses},
+					},
+				}
+			} else {
+				filter = bson.M{"$or": orClauses}
+			}
+		} else if pager.Enabled {
+			return fiber.Map{
+				"items":       []interface{}{},
+				"totalItems":  0,
+				"totalPages":  0,
+				"currentPage": pager.Page,
+			}, nil
+		} else {
+			return []interface{}{}, nil
+		}
+	}
+
+	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
+	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	if err != nil {
+		log.Printf("Error building row access filter: %v", err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "row access error",
+			Err:     err,
+		}
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
+
+	opts := utils.BuildFindOptions(input.Sort, pager)
+	items, err := s.repository.Query(ctx, input.TenantID, input.ProjectID, container.SchemaName, filter, opts, &pager)
+	if err != nil {
+		log.Printf("Query failed for schema %q: %v", container.SchemaName, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch items",
+			Err:     err,
+		}
+	}
+
+	utils.StripHashed(container.Fields, items)
+
+	items, err = utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, items)
+	if err != nil {
+		log.Printf("Population failed for schema %q: %v", container.SchemaName, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to populate items",
+			Err:     err,
+		}
+	}
+
+	items = utils.FilterDocuments(items, container.Fields, input.UserRole)
+	response := fiber.Map{"items": items}
+	if pager.Enabled {
+		response = fiber.Map{
+			"items":       items,
+			"totalItems":  pager.TotalItems,
+			"totalPages":  pager.TotalPages,
+			"currentPage": pager.Page,
+		}
+	}
+
+	if shouldCache {
+		s.cache.SetResponse(ctx, redisKey, response, container.Redis.CacheTime)
+		log.Printf("Cached paginated items for schema: %s", container.SchemaName)
+	}
+
+	if pager.Enabled {
+		return response, nil
+	}
+	return items, nil
+}
+
 func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput) ([]map[string]interface{}, error) {
 	if input.Schema == "" || input.PipelineName == "" {
 		return nil, &ServiceError{
@@ -1438,6 +1589,16 @@ func (s *DynamicService) resolveSearchContainer(input SearchDynamicItemsInput) (
 }
 
 func (s *DynamicService) resolveFilterContainer(input FilterDynamicItemsInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	if input.Schema == "" {
+		return nil, utils.ErrNoSchemaName
+	}
+	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolvePaginatedContainer(input GetPaginatedDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
@@ -1801,6 +1962,24 @@ func findPipelineStage(container *models.ContainerModel, pipelineName string) (m
 		}
 	}
 	return models.PipelineStage{}, false
+}
+
+func cachedResponseItems(response fiber.Map) ([]map[string]interface{}, bool) {
+	itemsInterface, ok := response["items"].([]interface{})
+	if !ok {
+		return nil, false
+	}
+
+	items := make([]map[string]interface{}, 0, len(itemsInterface))
+	for _, item := range itemsInterface {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		items = append(items, itemMap)
+	}
+
+	return items, true
 }
 
 func extractBulkUpdateID(item map[string]interface{}) (string, string) {
