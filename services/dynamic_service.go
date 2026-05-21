@@ -815,7 +815,8 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 	}
 
 	schema := container.SchemaName
-	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", input.TenantID, input.ProjectID, schema, container)
+	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", input.TenantID, input.ProjectID, schema, container)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, schema, shouldCache, "GetAllDynamicModelItems", "all")
 	if shouldCache {
 		if items, ok := s.cache.GetItems(ctx, redisKey); ok {
 			log.Printf("Fetched items from cache for schema: %s", schema)
@@ -824,6 +825,24 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 				items = items[:maxUnboundedRead]
 			}
 			return utils.FilterDocuments(items, container.Fields, input.UserRole), nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedItems []map[string]interface{}
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedItems, ok = s.cache.GetItems(ctx, redisKey)
+				return ok
+			}) {
+				log.Printf("Fetched items from cache after wait for schema: %s", schema)
+				if maxUnboundedRead := configs.GetMaxUnboundedReadLimit(); len(cachedItems) > maxUnboundedRead {
+					cachedItems = cachedItems[:maxUnboundedRead]
+				}
+				return utils.FilterDocuments(cachedItems, container.Fields, input.UserRole), nil
+			}
 		}
 	}
 
@@ -955,7 +974,8 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 		}
 	}
 
-	redisKey, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", input.TenantID, input.ProjectID, container.SchemaName, container, input.ID)
+	_, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", input.TenantID, input.ProjectID, container.SchemaName, container, input.ID)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetDynamicModelItem", input.ID)
 	if shouldCache {
 		if item, ok := s.cache.GetItem(ctx, redisKey); ok {
 			utils.StripHashed(container.Fields, []map[string]interface{}{item})
@@ -964,6 +984,25 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 				item = populated[0]
 			}
 			return GetDynamicItemResult{Item: item, FromCache: true}, nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedItem map[string]interface{}
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedItem, ok = s.cache.GetItem(ctx, redisKey)
+				return ok
+			}) {
+				utils.StripHashed(container.Fields, []map[string]interface{}{cachedItem})
+				populated, _ := utils.PopulateIfNeeded(ctx, input.TenantID, input.ProjectID, container, []map[string]interface{}{cachedItem})
+				if len(populated) > 0 {
+					cachedItem = populated[0]
+				}
+				return GetDynamicItemResult{Item: cachedItem, FromCache: true}, nil
+			}
 		}
 	}
 
@@ -1215,7 +1254,8 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 		cacheQuery += "&_uid=" + input.UserID
 	}
 
-	redisKey, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", input.TenantID, input.ProjectID, container.SchemaName, container, cacheQuery)
+	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", input.TenantID, input.ProjectID, container.SchemaName, container, cacheQuery)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetAllDynamicModelItemsWithPagination", cacheQuery)
 	if shouldCache {
 		if response, ok := s.cache.GetResponse(ctx, redisKey); ok {
 			log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
@@ -1223,6 +1263,24 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 				response["items"] = utils.FilterDocuments(items, container.Fields, input.UserRole)
 			}
 			return response, nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedResponse fiber.Map
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedResponse, ok = s.cache.GetResponse(ctx, redisKey)
+				return ok
+			}) {
+				log.Printf("Fetched paginated items from cache after wait for schema: %s", container.SchemaName)
+				if items, ok := cachedResponseItems(cachedResponse); ok {
+					cachedResponse["items"] = utils.FilterDocuments(items, container.Fields, input.UserRole)
+				}
+				return cachedResponse, nil
+			}
 		}
 	}
 
@@ -1355,10 +1413,25 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 		pipelineStage.PipelineJSON = input.PrepareStage(pipelineStage.PipelineJSON)
 	}
 
-	redisKey, shouldCache := utils.GeneratePipelineRedisKey(input.TenantID, input.ProjectID, input.Schema, input.PipelineName, container)
+	_, shouldCache := utils.GeneratePipelineRedisKey(input.TenantID, input.ProjectID, input.Schema, input.PipelineName, container)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "pipeline_"+input.PipelineName, input.CurrentQuery)
 	if shouldCache {
 		if items, ok := s.cache.GetPipelineItems(ctx, redisKey, input.CurrentQuery); ok {
 			return items, nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedItems []map[string]interface{}
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedItems, ok = s.cache.GetPipelineItems(ctx, redisKey, input.CurrentQuery)
+				return ok
+			}) {
+				return cachedItems, nil
+			}
 		}
 	}
 
@@ -1391,23 +1464,34 @@ func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDy
 
 	pluginFileName := "temp_" + input.FunctionName + ".so"
 	fileName := "temp_" + input.FunctionName + ".go"
-	redisKey, shouldCache := utils.GenerateDynamicFunctionRedisKey(input.TenantID, input.ProjectID, input.Schema, input.FunctionName, container)
+	_, shouldCache := utils.GenerateDynamicFunctionRedisKey(input.TenantID, input.ProjectID, input.Schema, input.FunctionName, container)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "function_"+input.FunctionName, input.CurrentQuery)
 
-	queryChanged := false
 	if shouldCache {
-		storedQuery, err := configs.RedisClient.Get(ctx, redisKey+"-query").Result()
-		if err == nil && storedQuery != input.CurrentQuery {
-			queryChanged = true
-		}
-	}
-
-	if shouldCache && !queryChanged {
 		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
 			return DynamicExecutionResult{
 				Message: "Function result fetched from cache",
 				Data:    result,
 				Source:  "cache",
 			}, nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedResult interface{}
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedResult, ok = s.cache.GetValue(ctx, redisKey)
+				return ok
+			}) {
+				return DynamicExecutionResult{
+					Message: "Function result fetched from cache",
+					Data:    cachedResult,
+					Source:  "cache",
+				}, nil
+			}
 		}
 	}
 
@@ -1509,10 +1593,26 @@ func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDyn
 		}
 	}
 
-	redisKey, shouldCache := utils.GenerateDynamicApiRedisKey(input.TenantID, input.ProjectID, input.Schema, input.APIName, container)
-	if dynamicAPI.IsRedisCached {
+	apiCacheQuery := cacheValueFingerprint(input.Body)
+	_, shouldCache := utils.GenerateDynamicApiRedisKey(input.TenantID, input.ProjectID, input.Schema, input.APIName, container)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "api_"+input.APIName, apiCacheQuery)
+	if shouldCache {
 		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
 			return DynamicExecutionResult{Message: "API result fetched from cache", Data: result, Source: "cache"}, nil
+		}
+
+		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+		} else {
+			var cachedResult interface{}
+			if utils.WaitForCacheFill(ctx, func() bool {
+				var ok bool
+				cachedResult, ok = s.cache.GetValue(ctx, redisKey)
+				return ok
+			}) {
+				return DynamicExecutionResult{Message: "API result fetched from cache", Data: cachedResult, Source: "cache"}, nil
+			}
 		}
 	}
 
@@ -2349,11 +2449,36 @@ func (s *DynamicService) cacheDynamicFunctionResult(ctx context.Context, redisKe
 	configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration)
 }
 
+func schemaCacheKey(ctx context.Context, tenantID, projectID, schemaName string, shouldCache bool, routeName, queryValue string) (string, bool) {
+	if !shouldCache {
+		return "", false
+	}
+
+	version, err := utils.GetSchemaCacheVersion(ctx, tenantID, projectID, schemaName)
+	if err != nil {
+		log.Printf("Failed to get cache version for schema=%s tenant=%s project=%s: %v", schemaName, tenantID, projectID, err)
+		return "", false
+	}
+
+	return utils.BuildVersionedCacheKey(tenantID, projectID, schemaName, version, routeName, utils.HashCacheQuery(queryValue)), true
+}
+
+func cacheValueFingerprint(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(payload)
+}
+
 func cacheDuration(cacheMinutes int) time.Duration {
 	if cacheMinutes > 0 {
 		return time.Duration(cacheMinutes) * time.Minute
 	}
-	return 0
+	return utils.DefaultCacheTTLDuration()
 }
 
 func pluginExecutionMessage(err error) string {

@@ -9,6 +9,12 @@
   "panel": {
     "host": "http://localhost:3000"
   },
+  "cache": {
+    "defaultCacheTTLMinutes": 10,
+    "cacheFillLockTTLSeconds": 15,
+    "cacheFillWaitTimeoutMilliseconds": 800,
+    "cacheFillPollIntervalMilliseconds": 50
+  },
   "limits": {
     "defaultPageLimit": 20,
     "maxPageLimit": 100,
