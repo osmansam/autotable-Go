@@ -19,6 +19,14 @@ func NewDynamicRequestParser(uploadService *files.UploadService) *DynamicRequest
 }
 
 func (p *DynamicRequestParser) ParseCreateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
+	return p.parseItem(c, container)
+}
+
+func (p *DynamicRequestParser) ParseUpdateItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
+	return p.parseItem(c, container)
+}
+
+func (p *DynamicRequestParser) parseItem(c *fiber.Ctx, container *models.ContainerModel) (map[string]interface{}, error) {
 	if hasImageField(container) || strings.Contains(c.Get("Content-Type"), "multipart/form-data") {
 		form, err := c.MultipartForm()
 		if err != nil {

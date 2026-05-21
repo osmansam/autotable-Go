@@ -15,6 +15,24 @@ func NewDynamicCache() *DynamicCache {
 }
 
 func (d *DynamicCache) InvalidateCreateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel) error {
+	return d.invalidateWriteCaches(ctx, tenantID, projectID, schemaName, container)
+}
+
+func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel, onTriggeredSchema func(string)) error {
+	if err := d.invalidateWriteCaches(ctx, tenantID, projectID, schemaName, container); err != nil {
+		return err
+	}
+
+	if container.Redis.IsRedisCached && onTriggeredSchema != nil {
+		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
+			onTriggeredSchema(triggeredSchema)
+		}
+	}
+
+	return nil
+}
+
+func (d *DynamicCache) invalidateWriteCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel) error {
 	if !container.Redis.IsRedisCached {
 		return nil
 	}

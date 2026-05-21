@@ -1218,13 +1218,9 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-
-	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
 	log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
-
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
@@ -1232,283 +1228,33 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	log.Printf("Updating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
-	updateIdStr := c.Params("id")
-	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
-	if err != nil {
-		log.Printf("Provided ID is not in the valid format for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
-	}
-	// Define Redis Lock Key to prevent concurrent updates of the same item
-	lockKey := fmt.Sprintf("lock:update:%s:%s", schemaName, updateId.Hex())
 
-	// Acquire Redis Lock (expires in 10 seconds)
-	lockID, locked := utils.AcquireLock(lockKey, 10*time.Second)
-	if !locked {
-		log.Printf("Another process is already updating this item for schema: %s", schemaName)
-		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
-			Status:  http.StatusConflict,
-			Message: "Another process is already updating this item",
-			Data:    nil,
-		})
-	}
-	defer utils.ReleaseLock(lockKey, lockID) // Ensure lock is released after execution
-
-	// Fetch the associated container model
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		// Use the container model from the context if available
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		// Fetch container model if not available in context
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to fetch container model")
-		}
 	}
 
-	// Check if there is an image field in the container
-	hasImageField := false
-	for _, field := range container.Fields {
-		if field.Type == "image" {
-			hasImageField = true
-			break
-		}
-	}
-
-	var updatedItemMap map[string]interface{}
-	fileURLs := make(map[string]string)
-
-	// Check if request is multipart form
-	contentType := c.Get("Content-Type")
-	if hasImageField || strings.Contains(contentType, "multipart/form-data") {
-		// Handle multipart form data
-		form, err := c.MultipartForm()
-		if err != nil {
-			log.Printf("Error in multipart form for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error in multipart form")
-		}
-		updatedItemMap = utils.ProcessFormFields(form.Value)
-
-		// Convert form field types (string to bool, int, float) based on schema
-		convertFormFieldTypes(updatedItemMap, container)
-
-		// Process image fields
-		for fieldName, files := range form.File {
-			for _, file := range files {
-				tempFilePath := "./temp/" + file.Filename
-				if err := c.SaveFile(file, tempFilePath); err != nil {
-					return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file", Data: err.Error()})
-				}
-				imageURL, err := utils.UploadToCloudinary(tempFilePath)
-				os.Remove(tempFilePath)
-				if err != nil {
-					log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
-					return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary")
-				}
-				fileURLs[fieldName] = imageURL
-			}
-		}
-	} else {
-		// Handle JSON body
-		if err := c.BodyParser(&updatedItemMap); err != nil {
-			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to parse body")
-		}
-	}
-	// Create a set of allowed field names
-	allowedFields := make(map[string]struct{})
-	for _, field := range container.Fields {
-		allowedFields[field.Name] = struct{}{}
-	}
-
-	// Filter out fields not in container.Fields
-	for key := range updatedItemMap {
-		if _, exists := allowedFields[key]; !exists {
-			delete(updatedItemMap, key)
-		}
-	}
-	// Replace file fields with URLs
-	for fieldName, url := range fileURLs {
-		updatedItemMap[fieldName] = url
-	}
-
-	// Automatically update the updatedAt field if defined in the container schema.
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, field := range container.Fields {
-		if field.Name == "updatedAt" {
-			updatedItemMap["updatedAt"] = now
-		}
-	}
-
-	// Validate only the fields being updated (partial validation)
-	err = utils.ValidatePartialUpdate(updatedItemMap, *container)
+	dynamicService := services.NewDynamicService()
+	responseItem, err := dynamicService.UpdateDynamicItem(ctx, services.UpdateDynamicItemInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    schemaName,
+		ID:        c.Params("id"),
+		UserID:    userIDStr,
+		User:      utils.GetUserFromContext(c),
+		Container: container,
+		FiberCtx:  c,
+	})
 	if err != nil {
-		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Validation failed")
-	}
-
-	// Fetch the existing item from project-specific collection
-	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-	var existingItem bson.M
-	err = currentCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingItem)
-	if err != nil {
-		log.Printf("Failed to fetch item for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to fetch item")
-	}
-
-	// Create a copy for audit logging (Before state)
-	beforeDoc := make(map[string]interface{})
-	for k, v := range existingItem {
-		beforeDoc[k] = v
-	}
-
-	// Apply updates from updatedItemMap to existingItem
-	for key, value := range updatedItemMap {
-		existingItem[key] = value
-	}
-
-	// Calculate equation fields based on the merged existingItem
-	for _, field := range container.Fields {
-		if field.Equation != "" {
-			// We need to convert bson.M (existingItem) to map[string]interface{} for the helper if it isn't already compatible
-			// bson.M is map[string]interface{}, so it should be fine.
-			ctx := &utils.EquationContext{
-				TenantID:  tenantID,
-				ProjectID: projectID,
-				Data:      existingItem,
-			}
-			val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
-			if err != nil {
-				log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
-				return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-					Status:  http.StatusBadRequest,
-					Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
-					Data:    err.Error(),
-				})
-			}
-			existingItem[field.Name] = val
-		}
-	}
-	// Checking for Unique fields
-	for _, field := range container.Fields {
-		if field.Unique {
-			fieldValue, found := updatedItemMap[field.Name]
-			if !found {
-				continue
-			}
-
-			// Exclude the current document from the uniqueness check
-			filter := bson.M{
-				field.Name: fieldValue,
-				"_id":      bson.M{"$ne": updateId}, // Exclude current document
-			}
-			count, err := currentCollection.CountDocuments(ctx, filter)
-			if err != nil {
-				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
-				return utils.SendErrorResponse(c, err, "Error checking existing field value.")
-			}
-
-			if count > 0 {
-				log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
-				return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-					"status":  http.StatusBadRequest,
-					"message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
-					"data":    nil,
-				})
-			}
-		}
-	}
-
-	// Convert fields that should be ObjectId or ObjectIdArray to proper types
-	for _, field := range container.Fields {
-		if field.Type == "objectId" {
-			if strVal, ok := existingItem[field.Name].(string); ok {
-				if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-					existingItem[field.Name] = objId
-				}
-			}
-		} else if field.Type == "objectIdArray" {
-			// Handle objectIdArray conversion
-			if val, exists := existingItem[field.Name]; exists && val != nil {
-				// Try []interface{} first (common from JSON parsing)
-				if arrInterface, ok := val.([]interface{}); ok {
-					objIdArray := make([]primitive.ObjectID, 0, len(arrInterface))
-					for _, item := range arrInterface {
-						if strVal, ok := item.(string); ok {
-							if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-								objIdArray = append(objIdArray, objId)
-							}
-						} else if objId, ok := item.(primitive.ObjectID); ok {
-							objIdArray = append(objIdArray, objId)
-						}
-					}
-					existingItem[field.Name] = objIdArray
-				} else if arrString, ok := val.([]string); ok {
-					// Handle []string
-					objIdArray := make([]primitive.ObjectID, 0, len(arrString))
-					for _, strVal := range arrString {
-						if objId, err := primitive.ObjectIDFromHex(strVal); err == nil {
-							objIdArray = append(objIdArray, objId)
-						}
-					}
-					existingItem[field.Name] = objIdArray
-				}
-			}
-		}
-	}
-
-	// Update in collection
-	updateResult, err := currentCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": existingItem})
-	if err != nil {
-		log.Printf("Failed to update item for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to update item")
-	}
-
-	// Log audit
-	if err := utils.LogUpdateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), beforeDoc, existingItem); err != nil {
-		log.Printf("Failed to log update action: %v", err)
-	}
-
-	if updateResult.MatchedCount == 0 {
-		log.Printf("No item found with specified ID for schema: %s", schemaName)
-		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{Status: http.StatusNotFound, Message: "No item found with specified ID", Data: nil})
-	}
-	// Now attempting to delete the related cache
-	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"status":  fiber.StatusInternalServerError,
-				"message": "Failed to delete the cache for the schema.",
-				"data":    err.Error(),
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
 			})
 		}
-
-		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
-			if err != nil {
-				// Log the error and continue with the next iteration
-				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-				continue
-			}
-			// Emit WebSocket invalidate event for triggered schema
-			ws.EmitInvalidate(triggeredSchema, userIDStr, tenantID, projectID)
-		}
+		return utils.SendErrorResponse(c, err, "Failed to update item")
 	}
-
-	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
-
-	// Convert existingItem to map[string]interface{} for response
-	responseItem := make(map[string]interface{})
-	for k, v := range existingItem {
-		responseItem[k] = v
-	}
-
-	// Strip hashed fields from response
-	utils.StripHashed(container.Fields, []map[string]interface{}{responseItem})
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})

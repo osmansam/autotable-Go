@@ -37,6 +37,26 @@ func PrepareCreateItem(tenantID, projectID string, container *models.ContainerMo
 	return nil
 }
 
+func PrepareUpdateFields(container *models.ContainerModel, updatedItemMap map[string]interface{}) error {
+	keepAllowedFields(container, updatedItemMap)
+	setUpdateTimestamp(container, updatedItemMap)
+	return utils.ValidatePartialUpdate(updatedItemMap, *container)
+}
+
+func PrepareMergedUpdateItem(tenantID, projectID string, container *models.ContainerModel, existingItem map[string]interface{}, updatedItemMap map[string]interface{}) error {
+	for key, value := range updatedItemMap {
+		existingItem[key] = value
+	}
+
+	if err := evaluateEquationFields(tenantID, projectID, container, existingItem); err != nil {
+		return err
+	}
+
+	convertObjectIDFields(container, existingItem)
+	convertObjectIDArrayFields(container, existingItem)
+	return nil
+}
+
 func keepAllowedFields(container *models.ContainerModel, itemMap map[string]interface{}) {
 	allowedFields := make(map[string]struct{})
 	for _, field := range container.Fields {
@@ -45,6 +65,15 @@ func keepAllowedFields(container *models.ContainerModel, itemMap map[string]inte
 	for key := range itemMap {
 		if _, exists := allowedFields[key]; !exists {
 			delete(itemMap, key)
+		}
+	}
+}
+
+func setUpdateTimestamp(container *models.ContainerModel, itemMap map[string]interface{}) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, field := range container.Fields {
+		if field.Name == "updatedAt" {
+			itemMap["updatedAt"] = now
 		}
 	}
 }
@@ -91,6 +120,44 @@ func convertObjectIDFields(container *models.ContainerModel, itemMap map[string]
 			if objID, err := primitive.ObjectIDFromHex(strID); err == nil {
 				itemMap[field.Name] = objID
 			}
+		}
+	}
+}
+
+func convertObjectIDArrayFields(container *models.ContainerModel, itemMap map[string]interface{}) {
+	for _, field := range container.Fields {
+		if field.Type != "objectIdArray" {
+			continue
+		}
+
+		val, exists := itemMap[field.Name]
+		if !exists || val == nil {
+			continue
+		}
+
+		if arrInterface, ok := val.([]interface{}); ok {
+			objIDArray := make([]primitive.ObjectID, 0, len(arrInterface))
+			for _, item := range arrInterface {
+				if strVal, ok := item.(string); ok {
+					if objID, err := primitive.ObjectIDFromHex(strVal); err == nil {
+						objIDArray = append(objIDArray, objID)
+					}
+				} else if objID, ok := item.(primitive.ObjectID); ok {
+					objIDArray = append(objIDArray, objID)
+				}
+			}
+			itemMap[field.Name] = objIDArray
+			continue
+		}
+
+		if arrString, ok := val.([]string); ok {
+			objIDArray := make([]primitive.ObjectID, 0, len(arrString))
+			for _, strVal := range arrString {
+				if objID, err := primitive.ObjectIDFromHex(strVal); err == nil {
+					objIDArray = append(objIDArray, objID)
+				}
+			}
+			itemMap[field.Name] = objIDArray
 		}
 	}
 }
