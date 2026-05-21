@@ -10,7 +10,6 @@ import (
 )
 
 func GetNextSequence(ctx context.Context, schemaName string) (int64, error) {
-    // Reference to your counters collection (ensure you’ve initialized this in your app)
     countersColl := configs.DB.Database(os.Getenv("COLLECTION_NAME")).Collection("counters")
     
     filter := bson.M{"_id": schemaName}
