@@ -20,6 +20,7 @@ import (
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
 	"github.com/xuri/excelize/v2"
@@ -251,10 +252,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extract tenant and project context
 	tenantID, projectID, err := getProjectContext(c)
-
-	// Extract userID for WebSocket events
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
 		log.Printf("Project context error: %v", err)
@@ -264,228 +262,32 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	log.Printf("Creating item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
 
-	// Fetch the associated container model
 	var container *models.ContainerModel
-
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		// Use the container model from the context if available
 		container, _ = storedContainer.(*models.ContainerModel)
-	} else {
-		// Fetch container model if not available in context
-		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
-		if err != nil {
-			log.Printf("Failed to fetch container model for schema: %s, error: %v", schemaName, err)
-			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-				Status:  http.StatusInternalServerError,
-				Message: "Failed to fetch container model",
-				Data:    err.Error(),
+	}
+
+	dynamicService := services.NewDynamicService()
+	itemMap, err := dynamicService.CreateDynamicItem(ctx, services.CreateDynamicItemInput{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Schema:    schemaName,
+		UserID:    userIDStr,
+		User:      utils.GetUserFromContext(c),
+		Container: container,
+		FiberCtx:  c,
+	})
+	if err != nil {
+		if serviceErr, ok := err.(*services.ServiceError); ok {
+			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+				Status:  serviceErr.Status,
+				Message: serviceErr.Message,
+				Data:    serviceErr.Data,
 			})
 		}
-	}
-
-	// Check if there is an image field in the container
-	hasImageField := false
-	for _, field := range container.Fields {
-		if field.Type == "image" {
-			hasImageField = true
-			break
-		}
-	}
-
-	var itemMap map[string]interface{}
-	fileURLs := make(map[string]string)
-
-	// Check if request is multipart form
-	contentType := c.Get("Content-Type")
-	if hasImageField || strings.Contains(contentType, "multipart/form-data") {
-		// Parse multipart form for image fields or when explicitly sent as multipart
-		form, err := c.MultipartForm()
-		if err != nil {
-			log.Printf("Error parsing form for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Error parsing form.")
-		}
-		itemMap = utils.ProcessFormFields(form.Value)
-
-		// Convert form field types (string to bool, int, float) based on schema
-		convertFormFieldTypes(itemMap, container)
-
-		// Process image fields
-		for fieldName, files := range form.File {
-			for _, file := range files {
-				tempFilePath := "./temp/" + file.Filename
-				if err := c.SaveFile(file, tempFilePath); err != nil {
-					return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Error saving temp file.", Data: err.Error()})
-				}
-				imageURL, err := utils.UploadToCloudinary(tempFilePath)
-				os.Remove(tempFilePath) // Clean up temp file
-				if err != nil {
-					log.Printf("Error uploading to Cloudinary for schema: %s, error: %v", schemaName, err)
-					return utils.SendErrorResponse(c, err, "Error uploading to Cloudinary.")
-				}
-				fileURLs[fieldName] = imageURL
-			}
-		}
-	} else {
-		// Parse the provided item from request body
-		if err := c.BodyParser(&itemMap); err != nil {
-			log.Printf("Failed to parse body for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to parse body.")
-		}
-	}
-	// Create a set of allowed field names
-	allowedFields := make(map[string]struct{})
-	for _, field := range container.Fields {
-		allowedFields[field.Name] = struct{}{}
-	}
-
-	// Filter out fields not in container.Fields
-	for key := range itemMap {
-		if _, exists := allowedFields[key]; !exists {
-			delete(itemMap, key)
-		}
-	}
-	// Replace file fields with URLs
-	for fieldName, url := range fileURLs {
-		itemMap[fieldName] = url
-	}
-
-	// Automatically set createdAt and updatedAt if they are defined in the container schema.
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, field := range container.Fields {
-		if field.Name == "createdAt" {
-			// Only set createdAt if not already provided.
-			if _, exists := itemMap["createdAt"]; !exists {
-				itemMap["createdAt"] = now
-			}
-		}
-		if field.Name == "updatedAt" {
-			// Always set updatedAt at creation.
-			itemMap["updatedAt"] = now
-		}
-	}
-
-	// Calculate equation fields
-	for _, field := range container.Fields {
-		if field.Equation != "" {
-			ctx := &utils.EquationContext{
-				TenantID:  tenantID,
-				ProjectID: projectID,
-				Data:      itemMap,
-			}
-			val, err := utils.EvaluateEquationWithContext(field.Equation, ctx)
-			if err != nil {
-				log.Printf("Error evaluating equation for field %s: %v", field.Name, err)
-				return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-					Status:  http.StatusBadRequest,
-					Message: fmt.Sprintf("Error evaluating equation for field %s", field.Name),
-					Data:    err.Error(),
-				})
-			}
-			itemMap[field.Name] = val
-		}
-	}
-
-	// Validation
-	err = utils.ValidateContainerModel(itemMap, *container)
-	if err != nil {
-		log.Printf("Validation failed for schema: %s, error: %v", schemaName, err)
-		return utils.SendErrorResponse(c, err, "Validation failed.")
-	}
-
-	// Convert fields that should be ObjectId to ObjectId type
-	for _, field := range container.Fields {
-		if field.Type == "objectId" {
-			if strId, ok := itemMap[field.Name].(string); ok {
-				objId, err := primitive.ObjectIDFromHex(strId)
-				if err == nil {
-					itemMap[field.Name] = objId
-				}
-			}
-		}
-	}
-
-	// Get the project-specific collection for this schema
-	var currentCollection *mongo.Collection = utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
-
-	// Checking for Unique fields
-	for _, field := range container.Fields {
-		if field.Unique {
-			fieldValue, found := itemMap[field.Name]
-			if !found {
-				continue
-			}
-
-			count, err := currentCollection.CountDocuments(ctx, bson.M{field.Name: fieldValue})
-			if err != nil {
-				log.Printf("Error checking existing field value for schema: %s, error: %v", schemaName, err)
-				return utils.SendErrorResponse(c, err, "Error checking existing field value.")
-			}
-
-			if count > 0 {
-				log.Printf("Duplicate field value found for schema: %s, field: %s", schemaName, field.Name)
-				return c.Status(http.StatusBadRequest).JSON(fiber.Map{
-					"status":  http.StatusBadRequest,
-					"message": fmt.Sprintf("A document with the same %s already exists.", field.Name),
-					"data":    nil,
-				})
-			}
-		}
-	}
-
-	// Generate auto-increment id if defined and not provided
-	for _, field := range container.Fields {
-		if field.Type == "autoIncrementId" {
-			if _, exists := itemMap[field.Name]; !exists {
-				seq, err := utils.GetNextSequence(ctx, schemaName)
-				if err != nil {
-					log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", schemaName, err)
-					return utils.SendErrorResponse(c, err, "Failed to generate autoIncrement id")
-				}
-				itemMap[field.Name] = seq
-			}
-		}
-	}
-	// Save the validated item into its associated collection
-	result, err := currentCollection.InsertOne(ctx, itemMap)
-	if err != nil {
-		log.Printf("Failed to save item for schema: %s, error: %v", schemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to save item.")
 	}
 
-	// Capture the generated ID
-	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
-		itemMap["_id"] = oid
-	}
-
-	// Log audit
-	if err := utils.LogCreateAction(ctx, tenantID, projectID, container, utils.GetUserFromContext(c), itemMap); err != nil {
-		log.Printf("Failed to log create action: %v", err)
-	}
-	// Delete the cache for this schema
-	if container.Redis.IsRedisCached {
-		err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container)
-		if err != nil {
-			log.Printf("Failed to delete cache for schema: %s, error: %v", schemaName, err)
-			return utils.SendErrorResponse(c, err, "Failed to delete the cache for the schema.")
-		}
-
-		// Additionally, delete cache for each schema mentioned in TriggeredRedisCaches
-		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-			err = utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container)
-			if err != nil {
-				// Log the error and continue with the next iteration
-				log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-				continue
-			}
-		}
-	}
-	// Emit WebSocket invalidate event for this schema
-	ws.EmitInvalidate(schemaName, userIDStr, tenantID, projectID)
-
-	// Strip hashed fields from response
-	utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
-
-	// Successfully saved the item
 	log.Printf("Item successfully created for schema: %s", schemaName)
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
