@@ -34,9 +34,17 @@ type Config struct {
 	Panel struct {
 		Host string `json:"host"`
 	} `json:"panel"`
+	Cache            CacheConfig  `json:"cache"`
 	Limits           LimitsConfig `json:"limits"`
 	CorsWhitelist    []string     `json:"corsWhitelist"`
 	MigrationEnabled bool         `json:"migrationEnabled"`
+}
+
+type CacheConfig struct {
+	DefaultCacheTTLMinutes            int `json:"defaultCacheTTLMinutes"`
+	CacheFillLockTTLSeconds           int `json:"cacheFillLockTTLSeconds"`
+	CacheFillWaitTimeoutMilliseconds  int `json:"cacheFillWaitTimeoutMilliseconds"`
+	CacheFillPollIntervalMilliseconds int `json:"cacheFillPollIntervalMilliseconds"`
 }
 
 type LimitsConfig struct {
@@ -60,13 +68,17 @@ type BodySizeLimitsConfig struct {
 }
 
 const (
-	DefaultPageLimit      = 20
-	MaxPageLimit          = 100
-	MaxUnboundedReadLimit = 5000
-	MaxExportLimit        = 50000
-	MaxBulkWriteLimit     = 1000
-	MaxBulkUpdateLimit    = 1000
-	MaxBulkDeleteLimit    = 1000
+	DefaultPageLimit                  = 20
+	MaxPageLimit                      = 100
+	MaxUnboundedReadLimit             = 5000
+	MaxExportLimit                    = 50000
+	MaxBulkWriteLimit                 = 1000
+	MaxBulkUpdateLimit                = 1000
+	MaxBulkDeleteLimit                = 1000
+	DefaultCacheTTLMinutes            = 10
+	CacheFillLockTTLSeconds           = 15
+	CacheFillWaitTimeoutMilliseconds  = 800
+	CacheFillPollIntervalMilliseconds = 50
 
 	DefaultBodySizeBytes    = 1 * 1024 * 1024
 	BulkWriteBodySizeBytes  = 10 * 1024 * 1024
@@ -156,6 +168,38 @@ func GetMaxBulkDeleteLimit() int {
 		return MaxBulkDeleteLimit
 	}
 	return limit
+}
+
+func GetDefaultCacheTTL() time.Duration {
+	ttlMinutes := GetAppConfig().Cache.DefaultCacheTTLMinutes
+	if ttlMinutes < 1 {
+		ttlMinutes = DefaultCacheTTLMinutes
+	}
+	return time.Duration(ttlMinutes) * time.Minute
+}
+
+func GetCacheFillLockTTL() time.Duration {
+	seconds := GetAppConfig().Cache.CacheFillLockTTLSeconds
+	if seconds < 1 {
+		seconds = CacheFillLockTTLSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func GetCacheFillWaitTimeout() time.Duration {
+	milliseconds := GetAppConfig().Cache.CacheFillWaitTimeoutMilliseconds
+	if milliseconds < 1 {
+		milliseconds = CacheFillWaitTimeoutMilliseconds
+	}
+	return time.Duration(milliseconds) * time.Millisecond
+}
+
+func GetCacheFillPollInterval() time.Duration {
+	milliseconds := GetAppConfig().Cache.CacheFillPollIntervalMilliseconds
+	if milliseconds < 1 {
+		milliseconds = CacheFillPollIntervalMilliseconds
+	}
+	return time.Duration(milliseconds) * time.Millisecond
 }
 
 func GetDefaultBodySizeLimit() int {

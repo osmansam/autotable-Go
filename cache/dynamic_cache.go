@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -51,12 +50,7 @@ func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]inte
 }
 
 func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[string]interface{}, ttlMinutes int) {
-	payload, err := json.Marshal(items)
-	if err != nil {
-		return
-	}
-	ttl := time.Duration(ttlMinutes) * time.Minute
-	configs.RedisClient.Set(ctx, key, payload, ttl)
+	_ = utils.SetCache(ctx, key, items, cacheTTL(ttlMinutes))
 }
 
 func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, bool) {
@@ -74,12 +68,7 @@ func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, 
 }
 
 func (d *DynamicCache) SetResponse(ctx context.Context, key string, response fiber.Map, ttlMinutes int) {
-	payload, err := json.Marshal(response)
-	if err != nil {
-		return
-	}
-	ttl := time.Duration(ttlMinutes) * time.Minute
-	configs.RedisClient.Set(ctx, key, payload, ttl)
+	_ = utils.SetCache(ctx, key, response, cacheTTL(ttlMinutes))
 }
 
 func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, bool) {
@@ -97,11 +86,7 @@ func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, b
 }
 
 func (d *DynamicCache) SetValue(ctx context.Context, key string, value interface{}, ttl time.Duration) {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return
-	}
-	configs.RedisClient.Set(ctx, key, payload, ttl)
+	_ = utils.SetCache(ctx, key, value, ttl)
 }
 
 func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery string) ([]map[string]interface{}, bool) {
@@ -119,22 +104,13 @@ func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery s
 		return
 	}
 
-	var expiration time.Duration
-	if cacheMinutes > 0 {
-		expiration = time.Duration(cacheMinutes) * time.Minute
-	}
-
+	expiration := cacheTTL(cacheMinutes)
 	configs.RedisClient.Set(ctx, key, payload, expiration)
 	configs.RedisClient.Set(ctx, key+"-query", currentQuery, expiration)
 }
 
 func (d *DynamicCache) SetItem(ctx context.Context, key string, item map[string]interface{}, ttlMinutes int) {
-	payload, err := json.Marshal(item)
-	if err != nil {
-		return
-	}
-	ttl := time.Duration(ttlMinutes) * time.Minute
-	configs.RedisClient.Set(ctx, key, payload, ttl)
+	_ = utils.SetCache(ctx, key, item, cacheTTL(ttlMinutes))
 }
 
 func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel, onTriggeredSchema func(string)) error {
@@ -152,20 +128,16 @@ func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, pro
 }
 
 func (d *DynamicCache) invalidateWriteCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel) error {
-	if !container.Redis.IsRedisCached {
+	if container == nil {
 		return nil
 	}
 
-	if err := utils.DeleteCacheForSchema(ctx, tenantID, projectID, schemaName, container); err != nil {
-		return err
-	}
+	return utils.InvalidateSchemaAndTriggeredCaches(ctx, tenantID, projectID, schemaName, container.Redis.TriggeredRedisCaches)
+}
 
-	for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
-		if err := utils.DeleteCacheForSchema(ctx, tenantID, projectID, triggeredSchema, container); err != nil {
-			log.Printf("Error deleting cache for schema %s: %v", triggeredSchema, err)
-			continue
-		}
+func cacheTTL(ttlMinutes int) time.Duration {
+	if ttlMinutes > 0 {
+		return time.Duration(ttlMinutes) * time.Minute
 	}
-
-	return nil
+	return utils.DefaultCacheTTLDuration()
 }
