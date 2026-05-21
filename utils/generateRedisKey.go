@@ -61,7 +61,7 @@ func IncrementSchemaCacheVersion(ctx context.Context, tenantID, projectID, schem
 	versionKey := BuildSchemaCacheVersionKey(tenantID, projectID, schemaName)
 	err := configs.RedisClient.Incr(ctx, versionKey).Err()
 	configs.RedisCircuitRecordResult(err)
-	return nil
+	return err
 }
 
 func BuildVersionedCacheKey(tenantID string, projectID string, schemaName string, version int64, routeName string, queryHash string) string {

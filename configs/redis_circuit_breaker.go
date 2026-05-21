@@ -2,12 +2,15 @@ package configs
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 )
+
+var ErrRedisCircuitOpen = errors.New("redis circuit breaker is open")
 
 var redisCircuit = struct {
 	sync.Mutex
@@ -41,7 +44,7 @@ func RedisCircuitAllow() bool {
 
 func RedisGetString(ctx context.Context, key string) (string, error) {
 	if !RedisCircuitAllow() {
-		return "", redis.Nil
+		return "", ErrRedisCircuitOpen
 	}
 
 	value, err := RedisClient.Get(ctx, key).Result()
@@ -71,7 +74,7 @@ func RedisDelKeys(ctx context.Context, keys ...string) error {
 
 func RedisFlushAll(ctx context.Context) error {
 	if !RedisCircuitAllow() {
-		return nil
+		return ErrRedisCircuitOpen
 	}
 
 	err := RedisClient.FlushAll(ctx).Err()
