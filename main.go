@@ -68,6 +68,7 @@ func main() {
 	// WS endpoint
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
+	go ws.RunRedisSubscriber()
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
