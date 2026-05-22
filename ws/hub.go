@@ -4,7 +4,9 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +26,16 @@ type Event struct {
 	Timestamp int64  `json:"ts"`
 }
 
+type redisEventEnvelope struct {
+	Origin    string `json:"origin"`
+	Type      string `json:"type"`
+	Schema    string `json:"schema"`
+	UserId    string `json:"userId,omitempty"`
+	TenantID  string `json:"tenantId"`
+	ProjectID string `json:"projectId"`
+	Timestamp int64  `json:"ts"`
+}
+
 // ClientInfo stores metadata about each WebSocket client
 type ClientInfo struct {
 	Conn      *websocket.Conn
@@ -32,9 +44,13 @@ type ClientInfo struct {
 }
 
 var (
-	clients   = make(map[*websocket.Conn]*ClientInfo)
-	clientsMu sync.RWMutex
-	Broadcast = make(chan Event, 128)
+	clients        = make(map[*websocket.Conn]*ClientInfo)
+	clientsMu      sync.RWMutex
+	Broadcast      = make(chan Event, 128)
+	redisWSChan    = "websocket:events"
+	instanceID     = newInstanceID()
+	pubSubBackoff  = 1 * time.Second
+	pubSubMaxDelay = 30 * time.Second
 )
 
 // RunBroadcaster keeps sending events to connected clients in the same tenant/project.
@@ -65,6 +81,122 @@ func RunBroadcaster() {
 				matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
 		}
 	}
+}
+
+// RunRedisSubscriber relays websocket events published by other app instances to local clients.
+func RunRedisSubscriber() {
+	backoff := pubSubBackoff
+
+	for {
+		if configs.RedisClient == nil {
+			time.Sleep(backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+
+		ctx := context.Background()
+		pubsub := configs.RedisClient.Subscribe(ctx, redisWSChan)
+		if _, err := pubsub.Receive(ctx); err != nil {
+			configs.RedisCircuitRecordResult(err)
+			_ = pubsub.Close()
+			log.Printf("WebSocket: Redis pub/sub subscribe failed: %v", err)
+			time.Sleep(backoff)
+			backoff = nextBackoff(backoff)
+			continue
+		}
+
+		configs.RedisCircuitRecordSuccess()
+		backoff = pubSubBackoff
+		log.Printf("WebSocket: Redis pub/sub subscribed to channel %q", redisWSChan)
+
+		for {
+			msg, err := pubsub.ReceiveMessage(ctx)
+			if err != nil {
+				configs.RedisCircuitRecordResult(err)
+				_ = pubsub.Close()
+				log.Printf("WebSocket: Redis pub/sub receive failed: %v", err)
+				time.Sleep(backoff)
+				backoff = nextBackoff(backoff)
+				break
+			}
+
+			var envelope redisEventEnvelope
+			if err := json.Unmarshal([]byte(msg.Payload), &envelope); err != nil {
+				log.Printf("WebSocket: Redis pub/sub invalid payload: %v", err)
+				continue
+			}
+			if envelope.Origin == instanceID {
+				continue
+			}
+
+			Broadcast <- envelope.toEvent()
+		}
+	}
+}
+
+func publishEvent(ev Event) {
+	Broadcast <- ev
+
+	if configs.RedisClient == nil {
+		return
+	}
+	if !configs.RedisCircuitAllow() {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	payload, err := json.Marshal(newRedisEventEnvelope(ev))
+	if err != nil {
+		log.Printf("WebSocket: Failed to marshal Redis pub/sub event: %v", err)
+		return
+	}
+
+	err = configs.RedisClient.Publish(ctx, redisWSChan, payload).Err()
+	configs.RedisCircuitRecordResult(err)
+	if err != nil {
+		log.Printf("WebSocket: Failed to publish Redis pub/sub event: %v", err)
+	}
+}
+
+func newRedisEventEnvelope(ev Event) redisEventEnvelope {
+	return redisEventEnvelope{
+		Origin:    instanceID,
+		Type:      ev.Type,
+		Schema:    ev.Schema,
+		UserId:    ev.UserId,
+		TenantID:  ev.TenantID,
+		ProjectID: ev.ProjectID,
+		Timestamp: ev.Timestamp,
+	}
+}
+
+func (e redisEventEnvelope) toEvent() Event {
+	return Event{
+		Type:      e.Type,
+		Schema:    e.Schema,
+		UserId:    e.UserId,
+		TenantID:  e.TenantID,
+		ProjectID: e.ProjectID,
+		Timestamp: e.Timestamp,
+	}
+}
+
+func newInstanceID() string {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		hostname = "unknown-host"
+	}
+	return fmt.Sprintf("%s:%d:%d", hostname, os.Getpid(), time.Now().UnixNano())
+}
+
+func nextBackoff(current time.Duration) time.Duration {
+	next := current * 2
+	if next > pubSubMaxDelay {
+		return pubSubMaxDelay
+	}
+	return next
 }
 
 // resolveTenantAndProjectIDs converts slugs to actual database IDs
@@ -209,36 +341,36 @@ func HandleWS(c *websocket.Conn) {
 func EmitInvalidate(schema string, userId string, tenantID string, projectID string) {
 	log.Printf("WebSocket: Emitting invalidate event - schema: %s, userId: %s, tenantID: %s, projectID: %s", schema, userId, tenantID, projectID)
 
-	Broadcast <- Event{
+	publishEvent(Event{
 		Type:      "invalidate",
 		Schema:    schema,
 		UserId:    userId,
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		Timestamp: time.Now().Unix(),
-	}
+	})
 }
 
 // EmitPageChanged pushes a pageChanged event to clients in the same tenant/project.
 func EmitPageChanged(userId string, tenantID string, projectID string) {
-	Broadcast <- Event{
+	publishEvent(Event{
 		Type:      "pageChanged",
 		Schema:    "pages",
 		UserId:    userId,
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		Timestamp: time.Now().Unix(),
-	}
+	})
 }
 
 // EmitContainerChanged pushes a containerChanged event to clients in the same tenant/project.
 func EmitContainerChanged(userId string, tenantID string, projectID string) {
-	Broadcast <- Event{
+	publishEvent(Event{
 		Type:      "containerChanged",
 		Schema:    "containers",
 		UserId:    userId,
 		TenantID:  tenantID,
 		ProjectID: projectID,
 		Timestamp: time.Now().Unix(),
-	}
+	})
 }
