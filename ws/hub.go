@@ -167,13 +167,13 @@ func RunRedisSubscriber() {
 				continue
 			}
 
-			Broadcast <- envelope.toEvent()
+			enqueueBroadcast(envelope.toEvent(), "redis pub/sub")
 		}
 	}
 }
 
 func publishEvent(ev Event) {
-	Broadcast <- ev
+	enqueueBroadcast(ev, "local publish")
 
 	if configs.RedisClient == nil {
 		return
@@ -195,6 +195,15 @@ func publishEvent(ev Event) {
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		log.Printf("WebSocket: Failed to publish Redis pub/sub event: %v", err)
+	}
+}
+
+func enqueueBroadcast(ev Event, source string) {
+	select {
+	case Broadcast <- ev:
+	default:
+		log.Printf("WebSocket: Dropped broadcast event from %s because queue is full - type: %s, schema: %s, tenantID: %s, projectID: %s",
+			source, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
 	}
 }
 
@@ -245,7 +254,7 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 
 	// Try Redis cache first
 	cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
-	if configs.RedisCircuitAllow() {
+	if configs.RedisClient != nil && configs.RedisCircuitAllow() {
 		cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
 		configs.RedisCircuitRecordResult(err)
 		if err == nil && cachedValue != "" {
@@ -269,7 +278,11 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	}
 
 	// Extract tenant ID as hex string
-	tenantID = tenantResult["_id"].(primitive.ObjectID).Hex()
+	tenantObjID, ok := tenantResult["_id"].(primitive.ObjectID)
+	if !ok {
+		return "", "", fmt.Errorf("invalid tenant _id")
+	}
+	tenantID = tenantObjID.Hex()
 
 	// Find project by slug and tenant
 	var projectResult bson.M
@@ -280,13 +293,17 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	}
 
 	// Extract project ID as hex string
-	projectID = projectResult["_id"].(primitive.ObjectID).Hex()
+	projectObjID, ok := projectResult["_id"].(primitive.ObjectID)
+	if !ok {
+		return "", "", fmt.Errorf("invalid project _id")
+	}
+	projectID = projectObjID.Hex()
 
 	log.Printf("WebSocket: Resolved slugs - tenant '%s' -> %s, project '%s' -> %s",
 		tenantSlug, tenantID, projectSlug, projectID)
 
 	// Cache the result for future use (24 hours)
-	if configs.RedisCircuitAllow() {
+	if configs.RedisClient != nil && configs.RedisCircuitAllow() {
 		err := configs.RedisClient.Set(ctx, cacheKey, tenantID+"|"+projectID, 24*time.Hour).Err()
 		configs.RedisCircuitRecordResult(err)
 	}
