@@ -12,6 +12,7 @@ The WebSocket implementation now supports multi-tenancy, ensuring that events ar
 2. **Event Routing**: Events are only sent to clients that belong to the same tenant/project combination
 3. **Client Metadata**: Server stores client metadata including tenant and project IDs
 4. **Redis Pub/Sub Fan-Out**: Each app instance publishes websocket events to Redis channel `websocket:events`; other instances subscribe and deliver matching events to their local clients
+5. **Buffered Client Sends**: Broadcasts enqueue messages into each client's buffered send channel; slow clients are disconnected if their buffer fills
 
 ### Client-Side Connection
 

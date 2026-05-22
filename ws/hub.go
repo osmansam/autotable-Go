@@ -41,6 +41,7 @@ type ClientInfo struct {
 	Conn      *websocket.Conn
 	TenantID  string
 	ProjectID string
+	Send      chan []byte
 }
 
 var (
@@ -49,38 +50,75 @@ var (
 	Broadcast      = make(chan Event, 128)
 	redisWSChan    = "websocket:events"
 	instanceID     = newInstanceID()
+	clientSendSize = 64
+	writeWait      = 10 * time.Second
 	pubSubBackoff  = 1 * time.Second
 	pubSubMaxDelay = 30 * time.Second
 )
+
+type staleClient struct {
+	conn *websocket.Conn
+	info *ClientInfo
+}
 
 // RunBroadcaster keeps sending events to connected clients in the same tenant/project.
 func RunBroadcaster() {
 	for ev := range Broadcast {
 		payload, _ := json.Marshal(ev)
+		var staleClients []staleClient
 
 		clientsMu.RLock()
 		matchCount := 0
+		queuedCount := 0
 		for conn, info := range clients {
 			// Only send to clients in the same tenant and project
 			if info.TenantID == ev.TenantID && info.ProjectID == ev.ProjectID {
 				matchCount++
-				if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-					conn.Close()
-					clientsMu.RUnlock()
-					clientsMu.Lock()
-					delete(clients, conn)
-					clientsMu.Unlock()
-					clientsMu.RLock()
+				select {
+				case info.Send <- payload:
+					queuedCount++
+				default:
+					staleClients = append(staleClients, staleClient{conn: conn, info: info})
 				}
 			}
 		}
 		clientsMu.RUnlock()
 
+		for _, stale := range staleClients {
+			unregisterClient(stale.conn, stale.info, "send buffer full")
+		}
+
 		if matchCount > 0 {
-			log.Printf("WebSocket: Broadcast sent to %d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
-				matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
+			log.Printf("WebSocket: Broadcast queued to %d/%d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
+				queuedCount, matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
 		}
 	}
+}
+
+func writePump(info *ClientInfo) {
+	for payload := range info.Send {
+		_ = info.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+		if err := info.Conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			unregisterClient(info.Conn, info, "write failed")
+			return
+		}
+	}
+}
+
+func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
+	clientsMu.Lock()
+	if current, ok := clients[conn]; !ok || current != info {
+		clientsMu.Unlock()
+		return
+	}
+
+	delete(clients, conn)
+	remaining := len(clients)
+	close(info.Send)
+	clientsMu.Unlock()
+
+	log.Printf("WebSocket: Client disconnected - tenantID: %s, projectID: %s, reason: %s (remaining: %d)", info.TenantID, info.ProjectID, reason, remaining)
+	_ = conn.Close()
 }
 
 // RunRedisSubscriber relays websocket events published by other app instances to local clients.
@@ -311,6 +349,7 @@ func HandleWS(c *websocket.Conn) {
 		Conn:      c,
 		TenantID:  tenantID,
 		ProjectID: projectID,
+		Send:      make(chan []byte, clientSendSize),
 	}
 
 	clientsMu.Lock()
@@ -321,13 +360,10 @@ func HandleWS(c *websocket.Conn) {
 	log.Printf("WebSocket: Total connected clients: %d", totalClients)
 
 	defer func() {
-		clientsMu.Lock()
-		delete(clients, c)
-		remaining := len(clients)
-		clientsMu.Unlock()
-		log.Printf("WebSocket: Client disconnected - tenantID: %s, projectID: %s (remaining: %d)", tenantID, projectID, remaining)
-		c.Close()
+		unregisterClient(c, clientInfo, "read closed")
 	}()
+
+	go writePump(clientInfo)
 
 	// Keep connection alive and handle any incoming messages
 	for {
