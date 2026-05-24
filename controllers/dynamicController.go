@@ -31,6 +31,81 @@ func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
 	return tenantID, projectID, nil
 }
 
+func beginDynamicIdempotency(ctx context.Context, c *fiber.Ctx, tenantID, projectID, userID string) (string, bool, error) {
+	key := utils.BuildIdempotencyRedisKey(tenantID, projectID, userID, c)
+	if key == "" {
+		return "", true, nil
+	}
+	requestHash := utils.BuildIdempotencyRequestHash(c)
+	c.Locals("idempotencyRequestHash", requestHash)
+
+	begin, err := utils.BeginIdempotentRequest(ctx, key, requestHash)
+	if err != nil {
+		if err == utils.ErrIdempotencyRequestMismatch {
+			return "", false, utils.SendIdempotencyRequestMismatch(c)
+		}
+		log.Printf("Idempotency begin failed; continuing without idempotency: %v", err)
+		return "", true, nil
+	}
+
+	switch begin.Status {
+	case utils.IdempotencyCompleted:
+		if begin.Result != nil {
+			return "", false, c.Status(begin.Result.Status).JSON(begin.Result.Body)
+		}
+		return "", false, utils.SendIdempotencyInProgress(c)
+	case utils.IdempotencyOwned:
+		return key, true, nil
+	}
+
+	result, err := utils.WaitForIdempotentResult(ctx, key, requestHash)
+	if err != nil {
+		if err == utils.ErrIdempotencyRequestMismatch {
+			return "", false, utils.SendIdempotencyRequestMismatch(c)
+		}
+		log.Printf("Idempotency result wait failed: %v", err)
+		return "", false, utils.SendIdempotencyInProgress(c)
+	}
+	if result == nil {
+		return "", false, utils.SendIdempotencyInProgress(c)
+	}
+
+	return "", false, c.Status(result.Status).JSON(result.Body)
+}
+
+func sendIdempotentResponse(_ context.Context, c *fiber.Ctx, key string, status int, message string, data interface{}) error {
+	body := responses.GeneralResponse{
+		Status:  status,
+		Message: message,
+		Data:    data,
+	}
+	requestHash, _ := c.Locals("idempotencyRequestHash").(string)
+
+	if key != "" {
+		storeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := utils.StoreIdempotentResult(storeCtx, key, utils.IdempotencyResult{
+			Status:      status,
+			RequestHash: requestHash,
+			Body:        body,
+		}); err != nil {
+			log.Printf("Failed to store idempotency result: %v", err)
+		}
+	}
+
+	return c.Status(status).JSON(body)
+}
+
+func sendDynamicServiceError(ctx context.Context, c *fiber.Ctx, key string, err error, genericMessage string) error {
+	if serviceErr, ok := err.(*services.ServiceError); ok {
+		return sendIdempotentResponse(ctx, c, key, serviceErr.Status, serviceErr.Message, serviceErr.Data)
+	}
+
+	log.Printf("Internal error: %v", err)
+	return sendIdempotentResponse(ctx, c, key, http.StatusInternalServerError, genericMessage, nil)
+}
+
 // create an item for a given collection
 func CreateDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -41,6 +116,10 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
 	}
 
 	schemaName := c.Query("schemaName")
@@ -62,20 +141,11 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 		FiberCtx:  c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to save item.")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to save item.")
 	}
 
 	log.Printf("Item successfully created for schema: %s", schemaName)
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status: http.StatusCreated, Message: "Item successfully created.", Data: itemMap,
-	})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusCreated, "Item successfully created.", itemMap)
 }
 func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -86,6 +156,10 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
 	}
 
 	schemaName := c.Query("schemaName")
@@ -107,22 +181,11 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		FiberCtx:  c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to insert multiple items.")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to insert multiple items.")
 	}
 
 	log.Printf("Multiple items successfully created for schema: %s", schemaName)
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "Multiple items successfully created.",
-		Data:    result,
-	})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusCreated, "Multiple items successfully created.", result)
 }
 
 // GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
@@ -215,6 +278,10 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
+	}
 
 	schemaName := c.Query("schemaName")
 	log.Printf("Deleting item for schema: %s (tenant: %s, project: %s)", schemaName, tenantID, projectID)
@@ -235,22 +302,11 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to delete the item from the specified collection.")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to delete the item from the specified collection.")
 	}
 
 	log.Printf("Item successfully deleted for schema: %s", schemaName)
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Item successfully deleted from the specified collection.",
-		Data:    responseItem,
-	})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusOK, "Item successfully deleted from the specified collection.", responseItem)
 }
 
 func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
@@ -262,6 +318,10 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
 	}
 
 	schemaName := c.Query("schemaName")
@@ -283,22 +343,11 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 		FiberCtx:  c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to parse request body")
 	}
 
 	log.Printf("Multiple deletion process completed for schema: %s", schemaName)
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Multiple deletion process completed",
-		Data:    responseData,
-	})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusOK, "Multiple deletion process completed", responseData)
 }
 
 // update an item in the collection
@@ -312,6 +361,10 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
 	}
 
 	schemaName := c.Query("schemaName")
@@ -334,18 +387,11 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 		FiberCtx:  c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to update item")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to update item")
 	}
 
 	log.Printf("Item successfully updated for schema: %s", schemaName)
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Item successfully updated", Data: responseItem})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusOK, "Item successfully updated", responseItem)
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -356,6 +402,10 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
+	if !shouldContinue {
+		return err
 	}
 
 	schemaName := c.Query("schemaName")
@@ -377,22 +427,11 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 		FiberCtx:  c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to parse request body")
 	}
 
 	log.Printf("Multiple items update completed for schema: %s", schemaName)
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Multiple items update completed",
-		Data:    responseData,
-	})
+	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusOK, "Multiple items update completed", responseData)
 }
 
 func GetDynamicModelItem(c *fiber.Ctx) error {
