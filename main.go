@@ -122,7 +122,7 @@ func corsFromConfig(cfg *configs.Config) fiber.Handler {
 			_, ok := allowedOrigins[origin]
 			return ok
 		},
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, Idempotency-Key",
 	})
 }
 
