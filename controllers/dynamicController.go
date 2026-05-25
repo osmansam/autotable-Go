@@ -108,7 +108,7 @@ func sendDynamicServiceError(ctx context.Context, c *fiber.Ctx, key string, err 
 
 // create an item for a given collection
 func CreateDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -148,7 +148,7 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusCreated, "Item successfully created.", itemMap)
 }
 func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -190,7 +190,7 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 // GetAllDynamicModelItems fetches all items for a given collection and performs population if needed.
 func GetAllDynamicModelItems(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -229,7 +229,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 // GetItemsForSelection retrieves items with only _id and the specified fieldName for a schema
 func GetItemsForSelection(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -269,7 +269,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 
 // delete an item from the collection
 func DeleteDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -310,7 +310,7 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 }
 
 func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -352,7 +352,7 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 // update an item in the collection
 func UpdateDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -394,7 +394,7 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	return sendIdempotentResponse(ctx, c, idempotencyKey, http.StatusOK, "Item successfully updated", responseItem)
 }
 func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -435,7 +435,7 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 }
 
 func GetDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -483,7 +483,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 
 // handleSearch for a given collection
 func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -535,7 +535,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 // HandleFilterDynamicModelItem filters items for a given collection using dynamic query parameters.
 func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -600,7 +600,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
 // get all item for given collection
 func GetPipeline(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -645,7 +645,7 @@ func GetPipeline(c *fiber.Ctx) error {
 
 // GetAllDynamicModelItemsWithPagination gets items from a collection with pagination.
 func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -705,7 +705,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
 // executeDynamicCode executes dynamic code from a request.
 func ExecuteDynamicCode(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -750,7 +750,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 	})
 }
 func TestPipeline(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -797,7 +797,7 @@ func TestPipeline(c *fiber.Ctx) error {
 
 // TODO:redis generate key and delete key will added into this function and then the route will be added and tested again
 func ExecuteDynamicAPI(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -848,7 +848,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 
 // ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.
 func ExportDynamicModelItems(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := utils.RequestContextWithTimeout(c, 30*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)

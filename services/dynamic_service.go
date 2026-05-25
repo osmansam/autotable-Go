@@ -278,7 +278,7 @@ func (s *DynamicService) ParseExportRequest(c *fiber.Ctx) (requests.ExportReques
 }
 
 func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDynamicItemInput) (map[string]interface{}, error) {
-	container, err := s.resolveContainer(input)
+	container, err := s.resolveContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -363,7 +363,7 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 }
 
 func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input CreateMultipleDynamicItemsInput) (*mongo.InsertManyResult, error) {
-	container, err := s.resolveCreateMultipleContainer(input)
+	container, err := s.resolveCreateMultipleContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -475,7 +475,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
-	container, err := s.resolveUpdateContainer(input)
+	container, err := s.resolveUpdateContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -586,7 +586,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 }
 
 func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input UpdateMultipleDynamicItemsInput) (fiber.Map, error) {
-	container, err := s.resolveUpdateMultipleContainer(input)
+	container, err := s.resolveUpdateMultipleContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -662,7 +662,7 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
-	allContainers, err := s.repository.GetAllContainerModels()
+	allContainers, err := s.repository.GetAllContainerModels(ctx)
 	if err != nil {
 		log.Printf("Failed to retrieve container models for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -680,7 +680,7 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 		return nil, err
 	}
 
-	container, err := s.resolveDeleteContainer(input)
+	container, err := s.resolveDeleteContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -739,7 +739,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 		return nil, parseBulkDeleteError(err)
 	}
 
-	allContainers, err := s.repository.GetAllContainerModels()
+	allContainers, err := s.repository.GetAllContainerModels(ctx)
 	if err != nil {
 		log.Printf("Failed to retrieve container models for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -749,7 +749,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 		}
 	}
 
-	container, err := s.resolveDeleteMultipleContainer(input)
+	container, err := s.resolveDeleteMultipleContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -797,7 +797,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 }
 
 func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDynamicItemsInput) ([]map[string]interface{}, error) {
-	container, err := s.resolveGetAllContainer(input)
+	container, err := s.resolveGetAllContainer(ctx, input)
 	if err != nil {
 		if input.Schema == "" {
 			return nil, &ServiceError{
@@ -891,7 +891,7 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	container, err := s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	container, err := s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 	if err != nil {
 		log.Printf("Failed to get container model for schema %s: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -948,7 +948,7 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 }
 
 func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicItemInput) (GetDynamicItemResult, error) {
-	container, err := s.resolveGetDynamicContainer(input)
+	container, err := s.resolveGetDynamicContainer(ctx, input)
 	if err != nil {
 		if input.Schema == "" {
 			return GetDynamicItemResult{}, &ServiceError{
@@ -1046,7 +1046,7 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 }
 
 func (s *DynamicService) SearchDynamicItems(ctx context.Context, input SearchDynamicItemsInput) (interface{}, error) {
-	container, err := s.resolveSearchContainer(input)
+	container, err := s.resolveSearchContainer(ctx, input)
 	if err != nil {
 		if input.Schema == "" {
 			return nil, &ServiceError{
@@ -1134,7 +1134,7 @@ func (s *DynamicService) SearchDynamicItems(ctx context.Context, input SearchDyn
 }
 
 func (s *DynamicService) FilterDynamicItems(ctx context.Context, input FilterDynamicItemsInput) (interface{}, error) {
-	container, err := s.resolveFilterContainer(input)
+	container, err := s.resolveFilterContainer(ctx, input)
 	if err != nil {
 		if input.Schema == "" {
 			return nil, &ServiceError{
@@ -1231,7 +1231,7 @@ func (s *DynamicService) FilterDynamicItems(ctx context.Context, input FilterDyn
 }
 
 func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, input GetPaginatedDynamicItemsInput) (interface{}, error) {
-	container, err := s.resolvePaginatedContainer(input)
+	container, err := s.resolvePaginatedContainer(ctx, input)
 	if err != nil {
 		if input.Schema == "" {
 			return nil, &ServiceError{
@@ -1391,7 +1391,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 		}
 	}
 
-	container, err := s.resolvePipelineContainer(input)
+	container, err := s.resolvePipelineContainer(ctx, input)
 	if err != nil {
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -1453,7 +1453,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 }
 
 func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDynamicCodeInput) (DynamicExecutionResult, error) {
-	container, err := s.resolveDynamicCodeContainer(input)
+	container, err := s.resolveDynamicCodeContainer(ctx, input)
 	if err != nil {
 		return DynamicExecutionResult{}, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -1539,7 +1539,7 @@ func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDy
 }
 
 func (s *DynamicService) TestPipeline(ctx context.Context, input TestPipelineInput) ([]map[string]interface{}, error) {
-	container, err := s.resolveTestPipelineContainer(input)
+	container, err := s.resolveTestPipelineContainer(ctx, input)
 	if err != nil {
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -1567,7 +1567,7 @@ func (s *DynamicService) TestPipeline(ctx context.Context, input TestPipelineInp
 }
 
 func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDynamicAPIInput) (DynamicExecutionResult, error) {
-	container, err := s.resolveDynamicAPIContainer(input)
+	container, err := s.resolveDynamicAPIContainer(ctx, input)
 	if err != nil {
 		return DynamicExecutionResult{}, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -1643,7 +1643,7 @@ func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDyn
 		}
 	}
 
-	container, err := s.repository.GetContainerModel(input.TenantID, input.ProjectID, req.SchemaName)
+	container, err := s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, req.SchemaName)
 	if err != nil {
 		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
 	}
@@ -1913,124 +1913,124 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 	}}, beforeDoc, existingItem
 }
 
-func (s *DynamicService) resolveContainer(input CreateDynamicItemInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveContainer(ctx context.Context, input CreateDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveCreateMultipleContainer(input CreateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveCreateMultipleContainer(ctx context.Context, input CreateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveUpdateContainer(input UpdateDynamicItemInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveUpdateContainer(ctx context.Context, input UpdateDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveUpdateMultipleContainer(input UpdateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveUpdateMultipleContainer(ctx context.Context, input UpdateMultipleDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveDeleteContainer(input DeleteDynamicItemInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveDeleteContainer(ctx context.Context, input DeleteDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveDeleteMultipleContainer(input DeleteMultipleDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveDeleteMultipleContainer(ctx context.Context, input DeleteMultipleDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveGetAllContainer(input GetAllDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveGetAllContainer(ctx context.Context, input GetAllDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveGetDynamicContainer(input GetDynamicItemInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveGetDynamicContainer(ctx context.Context, input GetDynamicItemInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveSearchContainer(input SearchDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveSearchContainer(ctx context.Context, input SearchDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveFilterContainer(input FilterDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveFilterContainer(ctx context.Context, input FilterDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolvePaginatedContainer(input GetPaginatedDynamicItemsInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolvePaginatedContainer(ctx context.Context, input GetPaginatedDynamicItemsInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
 	if input.Schema == "" {
 		return nil, utils.ErrNoSchemaName
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolvePipelineContainer(input GetPipelineInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolvePipelineContainer(ctx context.Context, input GetPipelineInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveDynamicCodeContainer(input ExecuteDynamicCodeInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveDynamicCodeContainer(ctx context.Context, input ExecuteDynamicCodeInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveTestPipelineContainer(input TestPipelineInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveTestPipelineContainer(ctx context.Context, input TestPipelineInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveDynamicAPIContainer(input ExecuteDynamicAPIInput) (*models.ContainerModel, error) {
+func (s *DynamicService) resolveDynamicAPIContainer(ctx context.Context, input ExecuteDynamicAPIInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}
-	return s.repository.GetContainerModel(input.TenantID, input.ProjectID, input.Schema)
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
 func (s *DynamicService) ensureUniqueFields(ctx context.Context, input CreateDynamicItemInput, container *models.ContainerModel, itemMap map[string]interface{}) error {

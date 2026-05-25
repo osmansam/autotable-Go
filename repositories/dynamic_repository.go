@@ -16,12 +16,12 @@ func NewDynamicRepository() *DynamicRepository {
 	return &DynamicRepository{}
 }
 
-func (r *DynamicRepository) GetContainerModel(tenantID, projectID, schemaName string) (*models.ContainerModel, error) {
-	return utils.GetContainerModel(tenantID, projectID, schemaName)
+func (r *DynamicRepository) GetContainerModel(ctx context.Context, tenantID, projectID, schemaName string) (*models.ContainerModel, error) {
+	return utils.GetContainerModelWithContext(ctx, tenantID, projectID, schemaName)
 }
 
-func (r *DynamicRepository) GetAllContainerModels() ([]models.ContainerModel, error) {
-	return utils.GetAllContainerModels()
+func (r *DynamicRepository) GetAllContainerModels(ctx context.Context) ([]models.ContainerModel, error) {
+	return utils.GetAllContainerModelsWithContext(ctx)
 }
 
 func (r *DynamicRepository) GetCollection(tenantID, projectID, schemaName string) *mongo.Collection {
