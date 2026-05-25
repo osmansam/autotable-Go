@@ -17,6 +17,7 @@ import (
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/routes"
+	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
 )
 
@@ -30,6 +31,9 @@ func main() {
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	app := fiber.New(fiber.Config{
 		BodyLimit: configs.GetMaxRequestBodySizeLimit(),
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			return utils.SendErrorResponse(c, err, "Internal server error")
+		},
 	})
 
 	app.Use(requestid.New())
