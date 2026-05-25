@@ -98,12 +98,40 @@ func sendIdempotentResponse(_ context.Context, c *fiber.Ctx, key string, status 
 }
 
 func sendDynamicServiceError(ctx context.Context, c *fiber.Ctx, key string, err error, genericMessage string) error {
+	normalized := utils.NormalizeErrorResponse(err, genericMessage)
+	if normalized.Quiet {
+		return nil
+	}
+	if normalized.Status != http.StatusInternalServerError {
+		return sendIdempotentResponse(ctx, c, key, normalized.Status, normalized.Message, nil)
+	}
+
 	if serviceErr, ok := err.(*services.ServiceError); ok {
 		return sendIdempotentResponse(ctx, c, key, serviceErr.Status, serviceErr.Message, serviceErr.Data)
 	}
 
 	log.Printf("Internal error: %v", err)
-	return sendIdempotentResponse(ctx, c, key, http.StatusInternalServerError, genericMessage, nil)
+	return sendIdempotentResponse(ctx, c, key, normalized.Status, normalized.Message, nil)
+}
+
+func sendDynamicError(c *fiber.Ctx, err error, genericMessage string) error {
+	normalized := utils.NormalizeErrorResponse(err, genericMessage)
+	if normalized.Quiet {
+		return nil
+	}
+	if normalized.Status != http.StatusInternalServerError {
+		return utils.SendResponse(c, normalized.Status, normalized.Message, nil)
+	}
+
+	if serviceErr, ok := err.(*services.ServiceError); ok {
+		return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
+			Status:  serviceErr.Status,
+			Message: serviceErr.Message,
+			Data:    serviceErr.Data,
+		})
+	}
+
+	return utils.SendErrorResponse(c, err, genericMessage)
 }
 
 // create an item for a given collection
@@ -214,14 +242,7 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+		return sendDynamicError(c, err, "Failed to fetch items")
 	}
 
 	return c.JSON(items)
@@ -252,14 +273,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		UserRole:  userRole,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+		return sendDynamicError(c, err, "Failed to fetch items")
 	}
 
 	return c.JSON(items)
@@ -460,14 +474,7 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Item not found")
+		return sendDynamicError(c, err, "Item not found")
 	}
 
 	if result.FromCache {
@@ -520,14 +527,7 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "query failed")
+		return sendDynamicError(c, err, "query failed")
 	}
 
 	return c.JSON(result)
@@ -585,14 +585,7 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to fetch filtered items")
+		return sendDynamicError(c, err, "Failed to fetch filtered items")
 	}
 
 	return c.JSON(result)
@@ -630,14 +623,7 @@ func GetPipeline(c *fiber.Ctx) error {
 		},
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to execute dynamic pipeline")
+		return sendDynamicError(c, err, "Failed to execute dynamic pipeline")
 	}
 
 	return c.JSON(items)
@@ -690,14 +676,7 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		Container:   container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to fetch items")
+		return sendDynamicError(c, err, "Failed to fetch items")
 	}
 
 	return c.JSON(result)
@@ -732,14 +711,7 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 		FiberCtx:     c,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to execute function")
+		return sendDynamicError(c, err, "Failed to execute function")
 	}
 
 	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
@@ -778,14 +750,7 @@ func TestPipeline(c *fiber.Ctx) error {
 		},
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to execute test pipeline")
+		return sendDynamicError(c, err, "Failed to execute test pipeline")
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -828,14 +793,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 		Container: container,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to execute API call")
+		return sendDynamicError(c, err, "Failed to execute API call")
 	}
 
 	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
@@ -869,14 +827,7 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 		Request:   req,
 	})
 	if err != nil {
-		if serviceErr, ok := err.(*services.ServiceError); ok {
-			return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
-				Status:  serviceErr.Status,
-				Message: serviceErr.Message,
-				Data:    serviceErr.Data,
-			})
-		}
-		return utils.SendErrorResponse(c, err, "Failed to export items")
+		return sendDynamicError(c, err, "Failed to export items")
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
