@@ -11,13 +11,20 @@ import (
 
 // GetAllContainerModels retrieves all container models from the database
 func GetAllContainerModels() ([]models.ContainerModel, error) {
+	return GetAllContainerModelsWithContext(context.Background())
+}
+
+func GetAllContainerModelsWithContext(ctx context.Context) ([]models.ContainerModel, error) {
 	var containers []models.ContainerModel
 
 	// Setting up the MongoDB collection
-	containerCollection := configs.GetCollection( "containers")
+	containerCollection := configs.GetCollection("containers")
 
 	// Context to manage timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Fetching all documents

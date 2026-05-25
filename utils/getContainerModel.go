@@ -11,7 +11,14 @@ import (
 // GetContainerModel fetches container model for a project-specific collection
 // This requires tenantID and projectID to access the correct containers metadata
 func GetContainerModel(tenantID, projectID, schemaName string) (*models.ContainerModel, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return GetContainerModelWithContext(context.Background(), tenantID, projectID, schemaName)
+}
+
+func GetContainerModelWithContext(ctx context.Context, tenantID, projectID, schemaName string) (*models.ContainerModel, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Get project-specific container collection
@@ -22,10 +29,10 @@ func GetContainerModel(tenantID, projectID, schemaName string) (*models.Containe
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Sort fields by order before returning
 	containerModel.SortFieldsByOrder()
-	
+
 	return &containerModel, nil
 }
 
