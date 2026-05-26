@@ -320,10 +320,6 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 	}
 
-	if err := s.ensureUniqueFields(ctx, input, container, itemMap); err != nil {
-		return nil, err
-	}
-
 	if err := s.applyAutoIncrementFields(ctx, input.Schema, container, itemMap); err != nil {
 		log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -335,6 +331,9 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 
 	result, err := s.repository.Insert(ctx, input.TenantID, input.ProjectID, input.Schema, itemMap)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, duplicateKeyServiceError(container, err)
+		}
 		log.Printf("Failed to save item for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -413,12 +412,11 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		}
 	}
 
-	if err := s.ensureUniqueCreateItems(ctx, input, container, items); err != nil {
-		return nil, err
-	}
-
 	result, err := s.repository.InsertMany(ctx, input.TenantID, input.ProjectID, input.Schema, items)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, duplicateKeyServiceError(container, err)
+		}
 		log.Printf("Failed to insert multiple items for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -540,12 +538,11 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 		}
 	}
 
-	if err := s.ensureUniqueUpdateFields(ctx, input, container, updatedItemMap, updateID); err != nil {
-		return nil, err
-	}
-
 	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, duplicateKeyServiceError(container, err)
+		}
 		log.Printf("Failed to update item for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -1870,33 +1867,16 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 		}}, nil, nil
 	}
 
-	for _, field := range container.Fields {
-		if !field.Unique {
-			continue
-		}
-		fieldValue, found := item[field.Name]
-		if !found {
-			continue
-		}
-		count, err := s.repository.CountByFieldExcludingID(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, fieldValue, updateID)
-		if err != nil {
-			return bulkUpdateItemResult{Failed: map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": "Error checking unique field: " + err.Error(),
-			}}, nil, nil
-		}
-		if count > 0 {
-			return bulkUpdateItemResult{Failed: map[string]interface{}{
-				"id":    idStr,
-				"item":  item,
-				"error": fmt.Sprintf("A document with the same %s already exists", field.Name),
-			}}, nil, nil
-		}
-	}
-
 	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			serviceErr := duplicateKeyServiceError(container, err)
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": serviceErr.Message,
+			}}, nil, nil
+		}
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
@@ -2037,123 +2017,41 @@ func (s *DynamicService) resolveDynamicAPIContainer(ctx context.Context, input E
 	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) ensureUniqueFields(ctx context.Context, input CreateDynamicItemInput, container *models.ContainerModel, itemMap map[string]interface{}) error {
-	for _, field := range container.Fields {
-		if !field.Unique {
-			continue
-		}
-
-		fieldValue, found := itemMap[field.Name]
-		if !found {
-			continue
-		}
-
-		count, err := s.repository.CountByField(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, fieldValue)
-		if err != nil {
-			log.Printf("Error checking existing field value for schema: %s, error: %v", input.Schema, err)
-			return &ServiceError{
-				Status:  http.StatusInternalServerError,
-				Message: "Error checking existing field value.",
-				Err:     err,
-			}
-		}
-
-		if count > 0 {
-			log.Printf("Duplicate field value found for schema: %s, field: %s", input.Schema, field.Name)
-			return &ServiceError{
-				Status:  http.StatusBadRequest,
-				Message: fmt.Sprintf("A document with the same %s already exists.", field.Name),
-				Data:    nil,
-			}
-		}
+func duplicateKeyServiceError(container *models.ContainerModel, err error) *ServiceError {
+	fieldName := duplicateKeyFieldName(container, err)
+	message := "A document with the same unique field already exists."
+	if fieldName != "" {
+		message = fmt.Sprintf("A document with the same %s already exists.", fieldName)
 	}
-	return nil
+
+	return &ServiceError{
+		Status:  http.StatusConflict,
+		Message: message,
+		Data:    nil,
+		Err:     err,
+	}
 }
 
-func (s *DynamicService) ensureUniqueUpdateFields(ctx context.Context, input UpdateDynamicItemInput, container *models.ContainerModel, updatedItemMap map[string]interface{}, updateID primitive.ObjectID) error {
+func duplicateKeyFieldName(container *models.ContainerModel, err error) string {
+	if container == nil || err == nil {
+		return ""
+	}
+
+	errText := strings.ToLower(err.Error())
 	for _, field := range container.Fields {
 		if !field.Unique {
 			continue
 		}
-
-		fieldValue, found := updatedItemMap[field.Name]
-		if !found {
-			continue
-		}
-
-		count, err := s.repository.CountByFieldExcludingID(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, fieldValue, updateID)
-		if err != nil {
-			log.Printf("Error checking existing field value for schema: %s, error: %v", input.Schema, err)
-			return &ServiceError{
-				Status:  http.StatusInternalServerError,
-				Message: "Error checking existing field value.",
-				Err:     err,
-			}
-		}
-
-		if count > 0 {
-			log.Printf("Duplicate field value found for schema: %s, field: %s", input.Schema, field.Name)
-			return &ServiceError{
-				Status:  http.StatusBadRequest,
-				Message: fmt.Sprintf("A document with the same %s already exists.", field.Name),
-				Data:    nil,
-			}
-		}
-	}
-	return nil
-}
-
-func (s *DynamicService) ensureUniqueCreateItems(ctx context.Context, input CreateMultipleDynamicItemsInput, container *models.ContainerModel, items []map[string]interface{}) error {
-	for _, field := range container.Fields {
-		if !field.Unique {
-			continue
-		}
-
-		valueSet := make(map[interface{}]bool)
-		values := make([]interface{}, 0, len(items))
-		for i, item := range items {
-			fieldValue, found := item[field.Name]
-			if !found {
-				continue
-			}
-			if _, exists := valueSet[fieldValue]; exists {
-				msg := fmt.Sprintf("Duplicate value for unique field '%s' in item index %d", field.Name, i)
-				log.Printf("%s", msg)
-				return &ServiceError{
-					Status:  http.StatusBadRequest,
-					Message: msg,
-					Data:    nil,
-				}
-			}
-			valueSet[fieldValue] = true
-			values = append(values, fieldValue)
-		}
-
-		if len(values) == 0 {
-			continue
-		}
-
-		count, err := s.repository.CountByFieldIn(ctx, input.TenantID, input.ProjectID, input.Schema, field.Name, values)
-		if err != nil {
-			log.Printf("Error checking unique field '%s' for schema: %s, error: %v", field.Name, input.Schema, err)
-			return &ServiceError{
-				Status:  http.StatusInternalServerError,
-				Message: fmt.Sprintf("Error checking unique field '%s'.", field.Name),
-				Err:     err,
-			}
-		}
-		if count > 0 {
-			msg := fmt.Sprintf("A document with the same '%s' already exists.", field.Name)
-			log.Printf("%s", msg)
-			return &ServiceError{
-				Status:  http.StatusBadRequest,
-				Message: msg,
-				Data:    nil,
-			}
+		fieldName := strings.ToLower(field.Name)
+		indexName := strings.ToLower(fmt.Sprintf("idx_%s_unique", field.Name))
+		if strings.Contains(errText, indexName) ||
+			strings.Contains(errText, fieldName+"_1") ||
+			strings.Contains(errText, fieldName+":") {
+			return field.Name
 		}
 	}
 
-	return nil
+	return ""
 }
 
 func (s *DynamicService) ensureDeleteReferences(ctx context.Context, tenantID, projectID, schemaName string, deleteID primitive.ObjectID, allContainers []models.ContainerModel) error {
