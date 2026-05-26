@@ -329,8 +329,21 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 	}
 
-	result, err := s.repository.Insert(ctx, input.TenantID, input.ProjectID, input.Schema, itemMap)
-	if err != nil {
+	var result *mongo.InsertOneResult
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		var insertErr error
+		result, insertErr = s.repository.Insert(txCtx, input.TenantID, input.ProjectID, input.Schema, itemMap)
+		if insertErr != nil {
+			return insertErr
+		}
+
+		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+			itemMap["_id"] = oid
+		}
+
+		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationCreate, input.UserID, container,
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationCreate, input.User, nil, itemMap))
+	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
 		}
@@ -342,24 +355,6 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 	}
 
-	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
-		itemMap["_id"] = oid
-	}
-
-	if err := utils.LogCreateAction(ctx, input.TenantID, input.ProjectID, container, input.User, itemMap); err != nil {
-		log.Printf("Failed to log create action: %v", err)
-	}
-
-	if err := s.cache.InvalidateCreateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container); err != nil {
-		log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the cache for the schema.",
-			Err:     err,
-		}
-	}
-
-	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
 	utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
 
 	return itemMap, nil
@@ -412,8 +407,29 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		}
 	}
 
-	result, err := s.repository.InsertMany(ctx, input.TenantID, input.ProjectID, input.Schema, items)
-	if err != nil {
+	var result *mongo.InsertManyResult
+	var bulkCreatedDocs []interface{}
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		var insertErr error
+		result, insertErr = s.repository.InsertMany(txCtx, input.TenantID, input.ProjectID, input.Schema, items)
+		if insertErr != nil {
+			return insertErr
+		}
+
+		bulkCreatedDocs = make([]interface{}, 0, len(result.InsertedIDs))
+		for i, insertedID := range result.InsertedIDs {
+			if oid, ok := insertedID.(primitive.ObjectID); ok && i < len(items) {
+				items[i]["_id"] = oid
+				bulkCreatedDocs = append(bulkCreatedDocs, items[i])
+			}
+		}
+
+		if len(bulkCreatedDocs) == 0 {
+			return nil
+		}
+		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkCreate, input.UserID, container,
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkCreate, input.User, nil, bulkCreatedDocs))
+	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
 		}
@@ -424,33 +440,6 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 			Err:     err,
 		}
 	}
-
-	bulkCreatedDocs := make([]interface{}, 0, len(result.InsertedIDs))
-	for i, insertedID := range result.InsertedIDs {
-		if oid, ok := insertedID.(primitive.ObjectID); ok && i < len(items) {
-			items[i]["_id"] = oid
-			bulkCreatedDocs = append(bulkCreatedDocs, items[i])
-		}
-	}
-
-	if len(bulkCreatedDocs) > 0 {
-		if err := utils.LogBulkCreateAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkCreatedDocs); err != nil {
-			log.Printf("Failed to log bulk create: %v", err)
-		}
-	}
-
-	if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
-		s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
-	}); err != nil {
-		log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the cache for the schema.",
-			Err:     err,
-		}
-	}
-
-	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
 	return result, nil
 }
 
@@ -538,8 +527,19 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 		}
 	}
 
-	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
-	if err != nil {
+	var updateResult *mongo.UpdateResult
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		var updateErr error
+		updateResult, updateErr = s.repository.UpdateByID(txCtx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
+		if updateErr != nil {
+			return updateErr
+		}
+		if updateResult.MatchedCount == 0 {
+			return nil
+		}
+		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationUpdate, input.UserID, container,
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationUpdate, input.User, beforeDoc, existingItem))
+	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
 		}
@@ -551,11 +551,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 		}
 	}
 
-	if err := utils.LogUpdateAction(ctx, input.TenantID, input.ProjectID, container, input.User, beforeDoc, existingItem); err != nil {
-		log.Printf("Failed to log update action: %v", err)
-	}
-
-	if updateResult.MatchedCount == 0 {
+	if updateResult == nil || updateResult.MatchedCount == 0 {
 		log.Printf("No item found with specified ID for schema: %s", input.Schema)
 		return nil, &ServiceError{
 			Status:  http.StatusNotFound,
@@ -563,19 +559,6 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 			Data:    nil,
 		}
 	}
-
-	if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
-		s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
-	}); err != nil {
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the cache for the schema.",
-			Data:    err.Error(),
-			Err:     err,
-		}
-	}
-
-	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
 
 	responseItem := make(map[string]interface{})
 	for k, v := range existingItem {
@@ -605,33 +588,43 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 
 	var successfulUpdates []interface{}
 	var failedUpdates []map[string]interface{}
-	var bulkBeforeDocs []interface{}
-	var bulkAfterDocs []interface{}
 
-	for _, item := range items {
-		result, beforeDoc, afterDoc := s.updateOneFromBulk(ctx, input, container, item)
-		if result.Failed != nil {
-			failedUpdates = append(failedUpdates, result.Failed)
-			continue
-		}
-		successfulUpdates = append(successfulUpdates, result.Success)
-		bulkBeforeDocs = append(bulkBeforeDocs, beforeDoc)
-		bulkAfterDocs = append(bulkAfterDocs, afterDoc)
-	}
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		localSuccessfulUpdates := make([]interface{}, 0, len(items))
+		localFailedUpdates := make([]map[string]interface{}, 0)
+		localBulkBeforeDocs := make([]interface{}, 0, len(items))
+		localBulkAfterDocs := make([]interface{}, 0, len(items))
 
-	if len(bulkAfterDocs) > 0 {
-		if err := utils.LogBulkUpdateAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkBeforeDocs, bulkAfterDocs); err != nil {
-			log.Printf("Failed to log bulk update: %v", err)
+		for _, item := range items {
+			result, beforeDoc, afterDoc := s.updateOneFromBulk(txCtx, input, container, item)
+			if result.Failed != nil {
+				localFailedUpdates = append(localFailedUpdates, result.Failed)
+				continue
+			}
+			localSuccessfulUpdates = append(localSuccessfulUpdates, result.Success)
+			localBulkBeforeDocs = append(localBulkBeforeDocs, beforeDoc)
+			localBulkAfterDocs = append(localBulkAfterDocs, afterDoc)
 		}
-	}
 
-	if len(successfulUpdates) > 0 {
-		if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
-			s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
-		}); err != nil {
-			log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		if len(localSuccessfulUpdates) == 0 {
+			failedUpdates = localFailedUpdates
+			return nil
 		}
-		s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
+		if err := s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkUpdate, input.UserID, container,
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkUpdate, input.User, localBulkBeforeDocs, localBulkAfterDocs)); err != nil {
+			return err
+		}
+
+		successfulUpdates = localSuccessfulUpdates
+		failedUpdates = localFailedUpdates
+		return nil
+	}); err != nil {
+		log.Printf("Failed to update multiple items for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to update multiple items",
+			Err:     err,
+		}
 	}
 
 	return fiber.Map{
@@ -677,10 +670,6 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 		return nil, err
 	}
 
-	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, true); err != nil {
-		return nil, err
-	}
-
 	container, err := s.resolveDeleteContainer(ctx, input)
 	if err != nil {
 		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
@@ -691,12 +680,28 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 		}
 	}
 
-	deletedDoc, findErr := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
-	if findErr != nil {
-		log.Printf("Failed to fetch item before delete for schema: %s, error: %v", input.Schema, findErr)
-	}
+	var deletedDoc bson.M
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		if err := s.forceDeleteReferences(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, true); err != nil {
+			return err
+		}
 
-	if _, err := s.repository.DeleteByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID); err != nil {
+		var findErr error
+		deletedDoc, findErr = s.repository.FindByID(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID)
+		if findErr != nil {
+			log.Printf("Failed to fetch item before delete for schema: %s, error: %v", input.Schema, findErr)
+		}
+
+		if _, err := s.repository.DeleteByID(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID); err != nil {
+			return err
+		}
+
+		var auditLog *models.AuditLog
+		if deletedDoc != nil {
+			auditLog = buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationDelete, input.User, deletedDoc, nil)
+		}
+		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationDelete, input.UserID, container, auditLog)
+	}); err != nil {
 		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
@@ -704,23 +709,6 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 			Err:     err,
 		}
 	}
-
-	if deletedDoc != nil {
-		if err := utils.LogDeleteAction(ctx, input.TenantID, input.ProjectID, container, input.User, deletedDoc); err != nil {
-			log.Printf("Failed to log delete action: %v", err)
-		}
-	}
-
-	if err := s.cache.InvalidateCreateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container); err != nil {
-		log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the cache for the schema.",
-			Err:     err,
-		}
-	}
-
-	s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
 
 	responseItem := make(map[string]interface{})
 	if deletedDoc != nil {
@@ -762,32 +750,42 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 
 	var successfulDeletes []interface{}
 	var failedDeletes []map[string]interface{}
-	var bulkDeletedDocs []interface{}
 
-	for _, item := range items {
-		result, deletedDoc := s.deleteOneFromBulk(ctx, input, allContainers, item)
-		if result.Failed != nil {
-			failedDeletes = append(failedDeletes, result.Failed)
-			continue
-		}
-		successfulDeletes = append(successfulDeletes, result.Success)
-		if deletedDoc != nil {
-			bulkDeletedDocs = append(bulkDeletedDocs, deletedDoc)
-		}
-	}
+	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		localSuccessfulDeletes := make([]interface{}, 0, len(items))
+		localFailedDeletes := make([]map[string]interface{}, 0)
+		localBulkDeletedDocs := make([]interface{}, 0, len(items))
 
-	if len(successfulDeletes) > 0 {
-		if err := s.cache.InvalidateUpdateCaches(ctx, input.TenantID, input.ProjectID, input.Schema, container, func(triggeredSchema string) {
-			s.events.EmitInvalidate(triggeredSchema, input.UserID, input.TenantID, input.ProjectID)
-		}); err != nil {
-			log.Printf("Failed to delete cache for schema: %s, error: %v", input.Schema, err)
+		for _, item := range items {
+			result, deletedDoc := s.deleteOneFromBulk(txCtx, input, allContainers, item)
+			if result.Failed != nil {
+				localFailedDeletes = append(localFailedDeletes, result.Failed)
+				continue
+			}
+			localSuccessfulDeletes = append(localSuccessfulDeletes, result.Success)
+			if deletedDoc != nil {
+				localBulkDeletedDocs = append(localBulkDeletedDocs, deletedDoc)
+			}
 		}
-		s.events.EmitInvalidate(input.Schema, input.UserID, input.TenantID, input.ProjectID)
-	}
 
-	if len(bulkDeletedDocs) > 0 {
-		if err := utils.LogBulkDeleteAction(ctx, input.TenantID, input.ProjectID, container, input.User, bulkDeletedDocs); err != nil {
-			log.Printf("Failed to log bulk delete: %v", err)
+		if len(localSuccessfulDeletes) == 0 {
+			failedDeletes = localFailedDeletes
+			return nil
+		}
+		if err := s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkDelete, input.UserID, container,
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkDelete, input.User, localBulkDeletedDocs, nil)); err != nil {
+			return err
+		}
+
+		successfulDeletes = localSuccessfulDeletes
+		failedDeletes = localFailedDeletes
+		return nil
+	}); err != nil {
+		log.Printf("Failed to delete multiple items for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete multiple items",
+			Err:     err,
 		}
 	}
 

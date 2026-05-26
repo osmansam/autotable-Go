@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"expvar"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/routes"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
 )
@@ -73,6 +75,7 @@ func main() {
 	app.Get("/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster()
 	go ws.RunRedisSubscriber()
+	go services.StartDynamicOutboxProcessor(context.Background())
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {

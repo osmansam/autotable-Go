@@ -2,12 +2,17 @@ package repositories
 
 import (
 	"context"
+	"time"
 
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
 
 type DynamicRepository struct{}
@@ -124,4 +129,109 @@ func (r *DynamicRepository) UpdateByID(ctx context.Context, tenantID, projectID,
 
 func (r *DynamicRepository) NextSequence(ctx context.Context, schemaName string) (int64, error) {
 	return utils.GetNextSequence(ctx, schemaName)
+}
+
+func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
+	configs.InitDB()
+	session, err := configs.DB.StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+
+	txnOptions := options.Transaction().
+		SetReadConcern(readconcern.Snapshot()).
+		SetWriteConcern(writeconcern.New(writeconcern.WMajority()))
+
+	_, err = session.WithTransaction(ctx, func(sessionCtx mongo.SessionContext) (interface{}, error) {
+		return nil, fn(sessionCtx)
+	}, txnOptions)
+	return err
+}
+
+func (r *DynamicRepository) InsertOutboxEvent(ctx context.Context, event models.DynamicOutboxEvent) (*mongo.InsertOneResult, error) {
+	return configs.GetCollection("dynamic_outbox").InsertOne(ctx, event)
+}
+
+func (r *DynamicRepository) EnsureOutboxIndexes(ctx context.Context) error {
+	_, err := configs.GetCollection("dynamic_outbox").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "status", Value: 1},
+				{Key: "nextAttemptAt", Value: 1},
+				{Key: "createdAt", Value: 1},
+			},
+			Options: options.Index().SetName("idx_dynamic_outbox_claim").SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "schemaName", Value: 1},
+				{Key: "createdAt", Value: -1},
+			},
+			Options: options.Index().SetName("idx_dynamic_outbox_scope").SetBackground(true),
+		},
+	})
+	return err
+}
+
+func (r *DynamicRepository) ClaimPendingOutboxEvent(ctx context.Context, now time.Time) (*models.DynamicOutboxEvent, error) {
+	collection := configs.GetCollection("dynamic_outbox")
+	filter := bson.M{
+		"status": bson.M{"$in": []string{
+			models.DynamicOutboxStatusPending,
+			models.DynamicOutboxStatusProcessing,
+		}},
+		"nextAttemptAt": bson.M{"$lte": primitive.NewDateTimeFromTime(now)},
+		"$expr": bson.M{
+			"$lt": []interface{}{"$attempts", "$maxAttempts"},
+		},
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"status":        models.DynamicOutboxStatusProcessing,
+			"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(30 * time.Second)),
+			"updatedAt":     primitive.NewDateTimeFromTime(now),
+		},
+		"$inc": bson.M{"attempts": 1},
+	}
+	opts := options.FindOneAndUpdate().SetSort(bson.D{{Key: "createdAt", Value: 1}}).SetReturnDocument(options.After)
+
+	var event models.DynamicOutboxEvent
+	err := collection.FindOneAndUpdate(ctx, filter, update, opts).Decode(&event)
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+func (r *DynamicRepository) MarkOutboxEventDone(ctx context.Context, eventID primitive.ObjectID) error {
+	now := time.Now()
+	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, eventID, bson.M{
+		"$set": bson.M{
+			"status":      models.DynamicOutboxStatusDone,
+			"updatedAt":   primitive.NewDateTimeFromTime(now),
+			"processedAt": primitive.NewDateTimeFromTime(now),
+		},
+		"$unset": bson.M{"lastError": ""},
+	})
+	return err
+}
+
+func (r *DynamicRepository) MarkOutboxEventFailed(ctx context.Context, event models.DynamicOutboxEvent, errMessage string, retryAfter time.Duration) error {
+	now := time.Now()
+	status := models.DynamicOutboxStatusPending
+	if event.Attempts >= event.MaxAttempts {
+		status = models.DynamicOutboxStatusFailed
+	}
+	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, event.ID, bson.M{
+		"$set": bson.M{
+			"status":        status,
+			"lastError":     errMessage,
+			"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(retryAfter)),
+			"updatedAt":     primitive.NewDateTimeFromTime(now),
+		},
+	})
+	return err
 }
