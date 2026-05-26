@@ -218,17 +218,16 @@ func CreateContainer(c *fiber.Ctx) error {
 		Indexes:          container.Indexes,
 	}
 
+	if err := utils.EnsureIndexes(ctx, &newContainer, tenantID, projectID); err != nil {
+		log.Printf("Failed to create indexes for schema %s: %v", newContainer.SchemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to apply database indexes for the container.")
+	}
+
 	log.Println("Inserting new container into the database")
 	result, err := containerCollection.InsertOne(ctx, newContainer)
 	if err != nil {
 		log.Printf("Failed to insert container: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
-	}
-
-	// Create indexes for the new container
-	if err := utils.EnsureIndexes(ctx, &newContainer, tenantID, projectID); err != nil {
-		log.Printf("Warning: Failed to create indexes for schema %s: %v", newContainer.SchemaName, err)
-		// Don't fail the request, just log the warning
 	}
 
 	// Invalidate Redis cache for all containers (project-specific)
@@ -434,9 +433,23 @@ func UpdateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Provided ID is not in the valid format.")
 	}
 
-	log.Println("Checking for existing container with the same schema name")
 	var existingContainer models.ContainerModel
-	err = containerCollection.FindOne(ctx, bson.M{"schemaName": updatedContainer.SchemaName, "_id": bson.M{"$ne": updateId}}).Decode(&existingContainer)
+	if err := containerCollection.FindOne(ctx, bson.M{"_id": updateId}).Decode(&existingContainer); err != nil {
+		if err == mongo.ErrNoDocuments {
+			log.Println("No container found with the specified schema name")
+			return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+				Status:  http.StatusNotFound,
+				Message: "No container found with the specified schema name.",
+				Data:    nil,
+			})
+		}
+		log.Printf("Database error: %v", err)
+		return utils.SendErrorResponse(c, err, "Database error occurred while fetching the container.")
+	}
+
+	log.Println("Checking for existing container with the same schema name")
+	var schemaConflict models.ContainerModel
+	err = containerCollection.FindOne(ctx, bson.M{"schemaName": updatedContainer.SchemaName, "_id": bson.M{"$ne": updateId}}).Decode(&schemaConflict)
 	if err == nil {
 		log.Println("Another container with the specified schema name already exists")
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -488,6 +501,11 @@ func UpdateContainer(c *fiber.Ctx) error {
 	updatedContainer.Pipelines = existingContainer.Pipelines
 	updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
 
+	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
+		log.Printf("Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
+		return utils.SendErrorResponse(c, err, "Failed to apply database indexes for the container.")
+	}
+
 	log.Println("Updating container in the database")
 	updateResult, err := containerCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedContainer})
 	if err != nil {
@@ -502,12 +520,6 @@ func UpdateContainer(c *fiber.Ctx) error {
 			Message: "No container found with the specified schema name.",
 			Data:    nil,
 		})
-	}
-
-	// Rebuild indexes for the updated container
-	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
-		log.Printf("Warning: Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
-		// Don't fail the request, just log the warning
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)

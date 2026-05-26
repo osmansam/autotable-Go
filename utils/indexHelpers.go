@@ -19,6 +19,9 @@ func EnsureIndexes(ctx context.Context, container *models.ContainerModel, tenant
 		return fmt.Errorf("container model is nil")
 	}
 
+	collectionName := GetProjectCollectionName(tenantID, projectID, container.SchemaName)
+	log.Printf("Ensuring indexes for collection %s", collectionName)
+
 	// Get project-specific collection
 	collection := GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName)
 	if collection == nil {
@@ -27,14 +30,12 @@ func EnsureIndexes(ctx context.Context, container *models.ContainerModel, tenant
 
 	// Create indexes from Field.Unique (automatic unique indexes)
 	if err := createUniqueFieldIndexes(ctx, collection, container); err != nil {
-		log.Printf("Warning: Failed to create unique field indexes for %s: %v", container.SchemaName, err)
-		// Don't return error, continue with other indexes
+		return err
 	}
 
 	// Create indexes from container.Indexes (custom performance indexes)
 	if err := createCustomIndexes(ctx, collection, container); err != nil {
-		log.Printf("Warning: Failed to create custom indexes for %s: %v", container.SchemaName, err)
-		// Don't return error, continue
+		return err
 	}
 
 	log.Printf("Successfully ensured indexes for schema: %s", container.SchemaName)
@@ -43,8 +44,10 @@ func EnsureIndexes(ctx context.Context, container *models.ContainerModel, tenant
 
 // createUniqueFieldIndexes creates unique indexes for fields marked as Unique
 func createUniqueFieldIndexes(ctx context.Context, collection *mongo.Collection, container *models.ContainerModel) error {
+	hasUniqueField := false
 	for _, field := range container.Fields {
 		if field.Unique {
+			hasUniqueField = true
 			indexModel := mongo.IndexModel{
 				Keys: bson.D{{Key: field.Name, Value: 1}}, // Ascending order
 				Options: options.Index().
@@ -55,16 +58,18 @@ func createUniqueFieldIndexes(ctx context.Context, collection *mongo.Collection,
 
 			indexName, err := collection.Indexes().CreateOne(ctx, indexModel)
 			if err != nil {
-				// Check if error is because index already exists
-				if !mongo.IsDuplicateKeyError(err) && !isIndexExistsError(err) {
-					log.Printf("Failed to create unique index for field %s.%s: %v", container.SchemaName, field.Name, err)
+				if isIndexExistsError(err) {
+					log.Printf("Index already exists for field %s.%s", container.SchemaName, field.Name)
 					continue
 				}
-				log.Printf("Index already exists for field %s.%s", container.SchemaName, field.Name)
+				return fmt.Errorf("failed to create unique index for field %s.%s: %w", container.SchemaName, field.Name, err)
 			} else {
 				log.Printf("Created unique index '%s' for field %s.%s", indexName, container.SchemaName, field.Name)
 			}
 		}
+	}
+	if !hasUniqueField {
+		log.Printf("No unique field indexes declared for schema %s", container.SchemaName)
 	}
 	return nil
 }
@@ -114,11 +119,11 @@ func createCustomIndexes(ctx context.Context, collection *mongo.Collection, cont
 
 		indexName, err := collection.Indexes().CreateOne(ctx, indexModel)
 		if err != nil {
-			if !isIndexExistsError(err) {
-				log.Printf("Failed to create index %s for schema %s: %v", idx.Name, container.SchemaName, err)
+			if isIndexExistsError(err) {
+				log.Printf("Index %s already exists for schema %s", idx.Name, container.SchemaName)
 				continue
 			}
-			log.Printf("Index %s already exists for schema %s", idx.Name, container.SchemaName)
+			return fmt.Errorf("failed to create index %s for schema %s: %w", idx.Name, container.SchemaName, err)
 		} else {
 			log.Printf("Created index '%s' for schema %s", indexName, container.SchemaName)
 		}
@@ -175,7 +180,7 @@ func RebuildIndexes(ctx context.Context, container *models.ContainerModel, tenan
 	// Drop existing indexes (use full collection name)
 	collectionName := GetProjectCollectionName(tenantID, projectID, container.SchemaName)
 	if err := DropIndexes(ctx, collectionName); err != nil {
-		log.Printf("Warning: Failed to drop indexes for %s: %v", collectionName, err)
+		return err
 	}
 
 	// Wait a bit for indexes to be fully dropped
@@ -190,16 +195,13 @@ func isIndexExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// MongoDB returns error code 85 or 86 for index already exists
-	// Also check for error message containing "already exists"
+	// CreateOne is idempotent for matching index specs. Conflicting specs must fail,
+	// especially for unique indexes, because the DB would not enforce the container.
 	errMsg := err.Error()
-	return mongo.IsDuplicateKeyError(err) ||
-		containsAny(errMsg, []string{
-			"already exists",
-			"IndexOptionsConflict",
-			"Index with name",
-			"index already exists",
-		})
+	return containsAny(errMsg, []string{
+		"all indexes already exist",
+		"All indexes already exist",
+	})
 }
 
 // containsAny checks if a string contains any of the given substrings

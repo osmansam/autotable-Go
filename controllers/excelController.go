@@ -146,6 +146,14 @@ func UploadExcel(c *fiber.Ctx) error {
 	// Get project-specific container collection
 	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
+	if err := utils.EnsureIndexes(c.Context(), &container, tenantID, projectID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: fmt.Sprintf("Failed to apply database indexes for container: %v", err),
+			Data:    nil,
+		})
+	}
+
 	_, err = containersCollection.InsertOne(c.Context(), container)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{

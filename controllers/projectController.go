@@ -101,6 +101,9 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		Indexes:          []models.Index{},
 	}
 
+	if err := utils.EnsureIndexes(ctx, &roleContainer, tenantID, projectID); err != nil {
+		return fmt.Errorf("failed to create indexes for role schema: %w", err)
+	}
 	_, err := containersCollection.InsertOne(ctx, roleContainer)
 	if err != nil {
 		log.Printf("Failed to create role schema: %v", err)
@@ -167,6 +170,9 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		Indexes:          []models.Index{},
 	}
 
+	if err := utils.EnsureIndexes(ctx, &authContainer, tenantID, projectID); err != nil {
+		return fmt.Errorf("failed to create indexes for auth schema: %w", err)
+	}
 	_, err = containersCollection.InsertOne(ctx, authContainer)
 	if err != nil {
 		log.Printf("Failed to create auth schema: %v", err)

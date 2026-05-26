@@ -54,6 +54,6 @@
       "uploadBodySizeBytes": 26214400
     }
   },
-  "corsWhitelist": ["http://localhost:3005", "http://localhost:3000"],
+  "corsWhitelist": ["http://localhost:3001", "http://localhost:3005"],
   "migrationEnabled": false
 }

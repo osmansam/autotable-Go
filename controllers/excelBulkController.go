@@ -136,6 +136,14 @@ func UploadMultipleExcel(c *fiber.Ctx) error {
 			Indexes:          []models.Index{},
 		}
 
+		if err := utils.EnsureIndexes(c.Context(), &container, tenantID, projectID); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  fiber.StatusInternalServerError,
+				Message: fmt.Sprintf("Failed to apply database indexes for container %s: %v", analysis.SchemaName, err),
+				Data:    nil,
+			})
+		}
+
 		_, err := containersCollection.InsertOne(c.Context(), container)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(responses.GeneralResponse{
