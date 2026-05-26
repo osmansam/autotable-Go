@@ -49,7 +49,7 @@ func ValidateSlug(slug string) bool {
 	// Only lowercase letters, numbers, and hyphens
 	// Must start with a letter
 	// No consecutive hyphens
-	match, _ := regexp.MatchString(`^[a-z][a-z0-9-]*[a-z0-9]$`, slug)
+	match := regexp.MustCompile(`^[a-z][a-z0-9-]*[a-z0-9]$`).MatchString(slug)
 	return match && !regexp.MustCompile(`--`).MatchString(slug)
 }
 
@@ -57,8 +57,7 @@ func ValidateSlug(slug string) bool {
 func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error {
 	// Get the containers collection for this project
 	containersCollectionName := GetCollectionNameForProject(tenantID, projectID, "containers")
-	db := configs.ConnectDB().Database(projectsCollection.Database().Name())
-	containersCollection := db.Collection(containersCollectionName)
+	containersCollection := projectsCollection.Database().Collection(containersCollectionName)
 
 	// 1. Create the 'role' schema first
 	log.Println("Creating default 'role' schema for project")
@@ -94,12 +93,12 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 			CacheTime:            0,
 			TriggeredRedisCaches: []string{},
 		},
-		IsAuthContainer: false,
-		PopulatedRoutes: []string{},
-		Pipelines:       []models.PipelineStage{},
+		IsAuthContainer:  false,
+		PopulatedRoutes:  []string{},
+		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
-		DynamicApis:     []models.DynamicApiModel{},
-		Indexes:         []models.Index{},
+		DynamicApis:      []models.DynamicApiModel{},
+		Indexes:          []models.Index{},
 	}
 
 	_, err := containersCollection.InsertOne(ctx, roleContainer)
@@ -159,13 +158,13 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 			CacheTime:            0,
 			TriggeredRedisCaches: []string{},
 		},
-		IsAuthContainer: true,
+		IsAuthContainer:  true,
 		IsRegisterActive: true,
-		PopulatedRoutes: []string{},
-		Pipelines:       []models.PipelineStage{},
+		PopulatedRoutes:  []string{},
+		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
-		DynamicApis:     []models.DynamicApiModel{},
-		Indexes:         []models.Index{},
+		DynamicApis:      []models.DynamicApiModel{},
+		Indexes:          []models.Index{},
 	}
 
 	_, err = containersCollection.InsertOne(ctx, authContainer)
@@ -180,7 +179,7 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 
 // CreateProject creates a new project within a tenant
 func CreateProject(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 	defer cancel()
 
 	var input CreateProjectInput
@@ -258,6 +257,13 @@ func CreateProject(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+	if err != mongo.ErrNoDocuments {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to validate project slug",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	// Create project
 	newProject := models.Project{
@@ -297,7 +303,9 @@ func CreateProject(c *fiber.Ctx) error {
 	_, err = projectMembershipsCollection.InsertOne(ctx, projectMembership)
 	if err != nil {
 		// Rollback: delete the project
-		projectsCollection.DeleteOne(ctx, bson.M{"_id": newProject.ID})
+		if _, rollbackErr := projectsCollection.DeleteOne(ctx, bson.M{"_id": newProject.ID}); rollbackErr != nil {
+			log.Printf("Failed to rollback project creation after membership error: %v", rollbackErr)
+		}
 		log.Printf("Failed to create project membership: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
@@ -315,8 +323,7 @@ func CreateProject(c *fiber.Ctx) error {
 	)
 
 	// Create the containers metadata collection with a unique index on schemaName
-	db := configs.ConnectDB().Database(projectsCollection.Database().Name())
-	containersCol := db.Collection(containersCollectionName)
+	containersCol := projectsCollection.Database().Collection(containersCollectionName)
 
 	// Create unique index on schemaName within this project
 	indexModel := mongo.IndexModel{
@@ -342,16 +349,16 @@ func CreateProject(c *fiber.Ctx) error {
 		Status:  http.StatusCreated,
 		Message: "Project created successfully",
 		Data: &fiber.Map{
-			"project":                newProject,
-			"membership":             projectMembership,
-			"containersCollection":   containersCollectionName,
+			"project":              newProject,
+			"membership":           projectMembership,
+			"containersCollection": containersCollectionName,
 		},
 	})
 }
 
 // GetAllProjects lists all projects in the tenant
 func GetAllProjects(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 	defer cancel()
 
 	// Get tenant from context
@@ -396,7 +403,7 @@ func GetAllProjects(c *fiber.Ctx) error {
 
 // GetProject retrieves a single project by ID
 func GetProject(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 	defer cancel()
 
 	projectID := c.Params("id")
@@ -411,7 +418,14 @@ func GetProject(c *fiber.Ctx) error {
 
 	// Get tenant from context
 	tenantID := c.Locals("tenantID").(string)
-	tenantOID, _ := primitive.ObjectIDFromHex(tenantID)
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid tenant ID",
+			Data:    nil,
+		})
+	}
 
 	// Find project and verify it belongs to the tenant
 	var project models.Project
@@ -437,10 +451,17 @@ func GetProject(c *fiber.Ctx) error {
 	}
 
 	// Get project members count
-	memberCount, _ := projectMembershipsCollection.CountDocuments(ctx, bson.M{
+	memberCount, err := projectMembershipsCollection.CountDocuments(ctx, bson.M{
 		"projectId": projectOID,
 		"status":    models.MembershipStatusActive,
 	})
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to count project members",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -454,7 +475,7 @@ func GetProject(c *fiber.Ctx) error {
 
 // UpdateProject updates a project's details
 func UpdateProject(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 	defer cancel()
 
 	projectID := c.Params("id")
@@ -496,7 +517,14 @@ func UpdateProject(c *fiber.Ctx) error {
 
 	// Get tenant from context
 	tenantID := c.Locals("tenantID").(string)
-	tenantOID, _ := primitive.ObjectIDFromHex(tenantID)
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid tenant ID",
+			Data:    nil,
+		})
+	}
 
 	// Check if project exists and belongs to tenant
 	var existingProject models.Project
@@ -510,6 +538,13 @@ func UpdateProject(c *fiber.Ctx) error {
 			Status:  http.StatusNotFound,
 			Message: "Project not found",
 			Data:    nil,
+		})
+	}
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch project",
+			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
 
@@ -538,9 +573,16 @@ func UpdateProject(c *fiber.Ctx) error {
 				Data:    nil,
 			})
 		}
+		if err != mongo.ErrNoDocuments {
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to validate project slug",
+				Data:    &fiber.Map{"error": err.Error()},
+			})
+		}
 
 		updateDoc["slug"] = *input.Slug
-		
+
 		// When slug changes, we should also update tenantSlug cache key in Redis
 		// The old cache entry will expire naturally after 1 hour
 	}
@@ -552,7 +594,10 @@ func UpdateProject(c *fiber.Ctx) error {
 	// Update project
 	result, err := projectsCollection.UpdateOne(
 		ctx,
-		bson.M{"_id": projectOID},
+		bson.M{
+			"_id":      projectOID,
+			"tenantId": tenantOID,
+		},
 		bson.M{"$set": updateDoc},
 	)
 
@@ -574,7 +619,16 @@ func UpdateProject(c *fiber.Ctx) error {
 
 	// Fetch updated project
 	var updatedProject models.Project
-	projectsCollection.FindOne(ctx, bson.M{"_id": projectOID}).Decode(&updatedProject)
+	if err = projectsCollection.FindOne(ctx, bson.M{
+		"_id":      projectOID,
+		"tenantId": tenantOID,
+	}).Decode(&updatedProject); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch updated project",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
@@ -585,7 +639,7 @@ func UpdateProject(c *fiber.Ctx) error {
 
 // DeleteProject deletes a project (admin only)
 func DeleteProject(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.Context(), 30*time.Second)
 	defer cancel()
 
 	projectID := c.Params("id")
@@ -600,7 +654,14 @@ func DeleteProject(c *fiber.Ctx) error {
 
 	// Get tenant from context
 	tenantID := c.Locals("tenantID").(string)
-	tenantOID, _ := primitive.ObjectIDFromHex(tenantID)
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid tenant ID",
+			Data:    nil,
+		})
+	}
 
 	// Check if project exists
 	var project models.Project
@@ -616,12 +677,31 @@ func DeleteProject(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch project",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	// Delete project memberships
-	projectMembershipsCollection.DeleteMany(ctx, bson.M{"projectId": projectOID})
+	if _, err = projectMembershipsCollection.DeleteMany(ctx, bson.M{
+		"projectId": projectOID,
+		"tenantId":  tenantOID,
+	}); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete project memberships",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
 
 	// Delete project
-	_, err = projectsCollection.DeleteOne(ctx, bson.M{"_id": projectOID})
+	_, err = projectsCollection.DeleteOne(ctx, bson.M{
+		"_id":      projectOID,
+		"tenantId": tenantOID,
+	})
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
@@ -636,7 +716,7 @@ func DeleteProject(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Project deleted successfully",
-		Data:    &fiber.Map{
+		Data: &fiber.Map{
 			"warning": "Project collections were not automatically deleted. Contact admin for cleanup if needed.",
 		},
 	})

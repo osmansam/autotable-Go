@@ -2,10 +2,27 @@
   "redis": {
     "port": "6379",
     "host": "localhost",
+    "password": "",
+    "pool": {
+      "poolSize": 10,
+      "minIdleConnections": 2,
+      "poolTimeoutSeconds": 4,
+      "idleTimeoutSeconds": 300,
+      "idleCheckFrequencySeconds": 60,
+      "maxConnectionAgeSeconds": 0
+    },
     "circuitBreaker": {
       "enabled": true,
       "failureThreshold": 3,
       "openDurationSeconds": 30
+    }
+  },
+  "mongo": {
+    "pool": {
+      "minPoolSize": 0,
+      "maxPoolSize": 100,
+      "maxConnectionIdleSeconds": 300,
+      "connectTimeoutSeconds": 10
     }
   },
   "app": {
@@ -37,6 +54,6 @@
       "uploadBodySizeBytes": 26214400
     }
   },
-  "corsWhitelist": ["http://localhost:3000"],
+  "corsWhitelist": ["http://localhost:3005", "http://localhost:3000"],
   "migrationEnabled": false
 }
