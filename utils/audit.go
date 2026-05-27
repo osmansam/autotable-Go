@@ -3,14 +3,18 @@ package utils
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+var auditEventIDIndexCollections sync.Map
 
 // GetUserFromContext extracts user info from Fiber context.
 func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
@@ -20,25 +24,25 @@ func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
 	}
 
 	role, _ := c.Locals("userRole").(string)
-    roles := []string{}
-    if role != "" {
-        roles = []string{role}
-    }
+	roles := []string{}
+	if role != "" {
+		roles = []string{role}
+	}
 
 	userID, err := primitive.ObjectIDFromHex(userIDStr)
 	if err != nil {
 		// Log error or handle if userID is not ObjectID (though it should be based on other code)
-        // If it's not a valid ObjectID, we can't store it in the ObjectID field.
-        // But let's assume it is valid as per system design.
-        log.Printf("Warning: UserID in context is not a valid ObjectID: %s", userIDStr)
+		// If it's not a valid ObjectID, we can't store it in the ObjectID field.
+		// But let's assume it is valid as per system design.
+		log.Printf("Warning: UserID in context is not a valid ObjectID: %s", userIDStr)
 		return nil
 	}
 
 	return &models.AuditUser{
 		ID:    userID,
 		Roles: roles,
-        // Email is not in context locals currently, so we leave it empty.
-        // It might be fetched if needed, but for now we stick to what we have efficiently.
+		// Email is not in context locals currently, so we leave it empty.
+		// It might be fetched if needed, but for now we stick to what we have efficiently.
 	}
 }
 
@@ -51,9 +55,49 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 
 	// Use project-specific audit_logs collection
 	collection := GetProjectCollection(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
+	if auditLog.EventID != primitive.NilObjectID {
+		if err := ensureAuditEventIDIndex(ctx, collection); err != nil {
+			log.Printf("Failed to ensure audit eventId index: %v", err)
+			return err
+		}
+
+		_, err := collection.UpdateOne(
+			ctx,
+			bson.M{"eventId": auditLog.EventID},
+			bson.M{"$setOnInsert": auditLog},
+			options.Update().SetUpsert(true),
+		)
+		if err != nil {
+			log.Printf("Failed to upsert audit log: %v", err)
+			return err
+		}
+		return nil
+	}
+
 	_, err := collection.InsertOne(ctx, auditLog)
 	if err != nil {
 		log.Printf("Failed to insert audit log: %v", err)
+		return err
+	}
+	return nil
+}
+
+func ensureAuditEventIDIndex(ctx context.Context, collection *mongo.Collection) error {
+	indexKey := collection.Name() + ":eventId"
+	if _, loaded := auditEventIDIndexCollections.LoadOrStore(indexKey, struct{}{}); loaded {
+		return nil
+	}
+
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "eventId", Value: 1}},
+		Options: options.Index().
+			SetName("idx_audit_event_id_unique").
+			SetUnique(true).
+			SetSparse(true).
+			SetBackground(true),
+	})
+	if err != nil && !isIndexExistsError(err) {
+		auditEventIDIndexCollections.Delete(indexKey)
 		return err
 	}
 	return nil
@@ -89,7 +133,7 @@ func LogCreateAction(ctx context.Context, tenantID, projectID string, container 
 	if container == nil {
 		return nil
 	}
-	
+
 	docID := extractDocumentID(createdDoc)
 	var docIDs []primitive.ObjectID
 	if docID != primitive.NilObjectID {
@@ -154,7 +198,7 @@ func LogDeleteAction(ctx context.Context, tenantID, projectID string, container 
 	if container == nil {
 		return nil
 	}
-	
+
 	docID := extractDocumentID(deletedDoc)
 	var docIDs []primitive.ObjectID
 	if docID != primitive.NilObjectID {
@@ -175,7 +219,7 @@ func LogDeleteAction(ctx context.Context, tenantID, projectID string, container 
 		auditLog.UserEmail = user.Email
 		auditLog.Roles = user.Roles
 	}
-	
+
 	return LogAudit(ctx, auditLog)
 }
 
@@ -321,7 +365,7 @@ func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Add tenant and project filters to ensure isolation
 	if tenantID != "" {
 		filter["tenantId"] = tenantID
@@ -369,7 +413,7 @@ func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 
 	if startDateStr != "" || endDateStr != "" {
 		dateFilter := bson.M{}
-		
+
 		if startDateStr != "" {
 			startTime, err := time.Parse(time.RFC3339, startDateStr)
 			if err != nil {
@@ -377,7 +421,7 @@ func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 			}
 			dateFilter["$gte"] = primitive.NewDateTimeFromTime(startTime)
 		}
-		
+
 		if endDateStr != "" {
 			endTime, err := time.Parse(time.RFC3339, endDateStr)
 			if err != nil {
@@ -385,7 +429,7 @@ func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 			}
 			dateFilter["$lte"] = primitive.NewDateTimeFromTime(endTime)
 		}
-		
+
 		filter["timestamp"] = dateFilter
 	}
 
@@ -420,7 +464,7 @@ func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
 	sortField := c.Query("sort", "timestamp")
 	ascStr := c.Query("asc", "false")
 	asc := ascStr == "true"
-	
+
 	sortDir := int32(-1) // Default descending
 	if asc {
 		sortDir = 1
@@ -438,7 +482,7 @@ func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
 
 	// Build find options
 	opts := options.Find().SetSort(sort)
-	
+
 	if pager.Enabled {
 		// Get total count for pagination
 		totalItems, err := collection.CountDocuments(ctx, filter)

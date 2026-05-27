@@ -4,21 +4,22 @@ import "go.mongodb.org/mongo-driver/bson/primitive"
 
 // AuditLog represents a record in the audit_logs collection.
 type AuditLog struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty"`
-	TenantID    string             `bson:"tenantId,omitempty"`   // Project tenant ID
-	ProjectID   string             `bson:"projectId,omitempty"`  // Project ID
-	Timestamp   primitive.DateTime `bson:"timestamp"`
-	UserID      primitive.ObjectID `bson:"userId,omitempty"`
-	UserEmail   string             `bson:"userEmail,omitempty"`
-	Roles       []string           `bson:"roles,omitempty"`
-	SchemaName  string             `bson:"schemaName,omitempty"`
+	ID          primitive.ObjectID   `bson:"_id,omitempty"`
+	EventID     primitive.ObjectID   `bson:"eventId,omitempty"`
+	TenantID    string               `bson:"tenantId,omitempty"`  // Project tenant ID
+	ProjectID   string               `bson:"projectId,omitempty"` // Project ID
+	Timestamp   primitive.DateTime   `bson:"timestamp"`
+	UserID      primitive.ObjectID   `bson:"userId,omitempty"`
+	UserEmail   string               `bson:"userEmail,omitempty"`
+	Roles       []string             `bson:"roles,omitempty"`
+	SchemaName  string               `bson:"schemaName,omitempty"`
 	DocumentIDs []primitive.ObjectID `bson:"documentIds,omitempty"` // one or many
-	Action      string             `bson:"action"`                  // "create", "update", "delete", "bulk_create", "bulk_update", "bulk_delete", "login", "logout", "custom"
-	Description string             `bson:"description,omitempty"`
-	Before      interface{}        `bson:"before,omitempty"` // snapshot or diff before change
-	After       interface{}        `bson:"after,omitempty"`  // snapshot or diff after change
-	IP          string             `bson:"ip,omitempty"`
-	UserAgent   string             `bson:"userAgent,omitempty"`
+	Action      string               `bson:"action"`                // "create", "update", "delete", "bulk_create", "bulk_update", "bulk_delete", "login", "logout", "custom"
+	Description string               `bson:"description,omitempty"`
+	Before      interface{}          `bson:"before,omitempty"` // snapshot or diff before change
+	After       interface{}          `bson:"after,omitempty"`  // snapshot or diff after change
+	IP          string               `bson:"ip,omitempty"`
+	UserAgent   string               `bson:"userAgent,omitempty"`
 }
 
 // AuditUser represents the user context for audit logging.
