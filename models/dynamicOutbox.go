@@ -37,6 +37,7 @@ type DynamicOutboxEvent struct {
 	CreatedAt     primitive.DateTime   `bson:"createdAt" json:"createdAt"`
 	UpdatedAt     primitive.DateTime   `bson:"updatedAt" json:"updatedAt"`
 	ProcessedAt   primitive.DateTime   `bson:"processedAt,omitempty" json:"processedAt,omitempty"`
+	ExpireAt      primitive.DateTime   `bson:"expireAt,omitempty" json:"expireAt,omitempty"`
 	LastError     string               `bson:"lastError,omitempty" json:"lastError,omitempty"`
 	Payload       DynamicOutboxPayload `bson:"payload" json:"payload"`
 }

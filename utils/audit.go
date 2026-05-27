@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -14,7 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var auditEventIDIndexCollections sync.Map
+var auditLogIndexCollections sync.Map
 
 // GetUserFromContext extracts user info from Fiber context.
 func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
@@ -55,12 +56,12 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 
 	// Use project-specific audit_logs collection
 	collection := GetProjectCollection(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
-	if auditLog.EventID != primitive.NilObjectID {
-		if err := ensureAuditEventIDIndex(ctx, collection); err != nil {
-			log.Printf("Failed to ensure audit eventId index: %v", err)
-			return err
-		}
+	if err := ensureAuditLogIndexesForCollection(ctx, collection); err != nil {
+		log.Printf("Failed to ensure audit log indexes: %v", err)
+		return err
+	}
 
+	if auditLog.EventID != primitive.NilObjectID {
 		_, err := collection.UpdateOne(
 			ctx,
 			bson.M{"eventId": auditLog.EventID},
@@ -82,22 +83,46 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 	return nil
 }
 
-func ensureAuditEventIDIndex(ctx context.Context, collection *mongo.Collection) error {
-	indexKey := collection.Name() + ":eventId"
-	if _, loaded := auditEventIDIndexCollections.LoadOrStore(indexKey, struct{}{}); loaded {
+func EnsureAuditLogIndexes(ctx context.Context, tenantID, projectID string) error {
+	return ensureAuditLogIndexesForCollection(ctx, GetProjectCollection(tenantID, projectID, "audit_logs"))
+}
+
+func ensureAuditLogIndexesForCollection(ctx context.Context, collection *mongo.Collection) error {
+	indexKey := collection.Name()
+	if _, loaded := auditLogIndexCollections.LoadOrStore(indexKey, struct{}{}); loaded {
 		return nil
 	}
 
-	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "eventId", Value: 1}},
-		Options: options.Index().
-			SetName("idx_audit_event_id_unique").
-			SetUnique(true).
-			SetSparse(true).
-			SetBackground(true),
+	_, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "timestamp", Value: 1}},
+			Options: options.Index().
+				SetName("idx_audit_logs_ttl").
+				SetExpireAfterSeconds(configs.GetAuditLogRetentionSeconds()).
+				SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "schemaName", Value: 1},
+				{Key: "timestamp", Value: -1},
+			},
+			Options: options.Index().
+				SetName("idx_audit_logs_scope").
+				SetBackground(true),
+		},
+		{
+			Keys: bson.D{{Key: "eventId", Value: 1}},
+			Options: options.Index().
+				SetName("idx_audit_event_id_unique").
+				SetUnique(true).
+				SetSparse(true).
+				SetBackground(true),
+		},
 	})
 	if err != nil && !isIndexExistsError(err) {
-		auditEventIDIndexCollections.Delete(indexKey)
+		auditLogIndexCollections.Delete(indexKey)
 		return err
 	}
 	return nil

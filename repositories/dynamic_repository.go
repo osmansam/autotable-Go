@@ -172,6 +172,10 @@ func (r *DynamicRepository) EnsureOutboxIndexes(ctx context.Context) error {
 			},
 			Options: options.Index().SetName("idx_dynamic_outbox_scope").SetBackground(true),
 		},
+		{
+			Keys:    bson.D{{Key: "expireAt", Value: 1}},
+			Options: options.Index().SetName("idx_dynamic_outbox_expire_at_ttl").SetExpireAfterSeconds(0).SetBackground(true),
+		},
 	})
 	return err
 }
@@ -213,6 +217,7 @@ func (r *DynamicRepository) MarkOutboxEventDone(ctx context.Context, eventID pri
 			"status":      models.DynamicOutboxStatusDone,
 			"updatedAt":   primitive.NewDateTimeFromTime(now),
 			"processedAt": primitive.NewDateTimeFromTime(now),
+			"expireAt":    primitive.NewDateTimeFromTime(now.Add(configs.GetOutboxDoneRetention())),
 		},
 		"$unset": bson.M{"lastError": ""},
 	})
@@ -222,16 +227,19 @@ func (r *DynamicRepository) MarkOutboxEventDone(ctx context.Context, eventID pri
 func (r *DynamicRepository) MarkOutboxEventFailed(ctx context.Context, event models.DynamicOutboxEvent, errMessage string, retryAfter time.Duration) error {
 	now := time.Now()
 	status := models.DynamicOutboxStatusPending
+	setFields := bson.M{
+		"status":        status,
+		"lastError":     errMessage,
+		"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(retryAfter)),
+		"updatedAt":     primitive.NewDateTimeFromTime(now),
+	}
+	update := bson.M{"$set": setFields, "$unset": bson.M{"expireAt": ""}}
 	if event.Attempts >= event.MaxAttempts {
 		status = models.DynamicOutboxStatusFailed
+		setFields["status"] = status
+		setFields["expireAt"] = primitive.NewDateTimeFromTime(now.Add(configs.GetOutboxFailedRetention()))
+		delete(update, "$unset")
 	}
-	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, event.ID, bson.M{
-		"$set": bson.M{
-			"status":        status,
-			"lastError":     errMessage,
-			"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(retryAfter)),
-			"updatedAt":     primitive.NewDateTimeFromTime(now),
-		},
-	})
+	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, event.ID, update)
 	return err
 }

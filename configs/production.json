@@ -37,6 +37,13 @@
     "cacheFillWaitTimeoutMilliseconds": 800,
     "cacheFillPollIntervalMilliseconds": 50
   },
+  "outbox": {
+    "doneRetentionHours": 24,
+    "failedRetentionDays": 30
+  },
+  "audit": {
+    "logRetentionDays": 180
+  },
   "limits": {
     "defaultPageLimit": 20,
     "maxPageLimit": 100,

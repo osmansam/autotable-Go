@@ -41,6 +41,8 @@ type Config struct {
 		Host string `json:"host"`
 	} `json:"panel"`
 	Cache            CacheConfig  `json:"cache"`
+	Outbox           OutboxConfig `json:"outbox"`
+	Audit            AuditConfig  `json:"audit"`
 	Limits           LimitsConfig `json:"limits"`
 	CorsWhitelist    []string     `json:"corsWhitelist"`
 	MigrationEnabled bool         `json:"migrationEnabled"`
@@ -51,6 +53,15 @@ type CacheConfig struct {
 	CacheFillLockTTLSeconds           int `json:"cacheFillLockTTLSeconds"`
 	CacheFillWaitTimeoutMilliseconds  int `json:"cacheFillWaitTimeoutMilliseconds"`
 	CacheFillPollIntervalMilliseconds int `json:"cacheFillPollIntervalMilliseconds"`
+}
+
+type OutboxConfig struct {
+	DoneRetentionHours  int `json:"doneRetentionHours"`
+	FailedRetentionDays int `json:"failedRetentionDays"`
+}
+
+type AuditConfig struct {
+	LogRetentionDays int `json:"logRetentionDays"`
 }
 
 type RedisCircuitBreakerConfig struct {
@@ -107,6 +118,9 @@ const (
 	CacheFillLockTTLSeconds           = 15
 	CacheFillWaitTimeoutMilliseconds  = 800
 	CacheFillPollIntervalMilliseconds = 50
+	OutboxDoneRetentionHours          = 24
+	OutboxFailedRetentionDays         = 30
+	AuditLogRetentionDays             = 180
 	RedisCircuitFailureThreshold      = 3
 	RedisCircuitOpenDurationSeconds   = 30
 	RedisPoolSize                     = 10
@@ -240,6 +254,30 @@ func GetCacheFillPollInterval() time.Duration {
 		milliseconds = CacheFillPollIntervalMilliseconds
 	}
 	return time.Duration(milliseconds) * time.Millisecond
+}
+
+func GetOutboxDoneRetention() time.Duration {
+	hours := GetAppConfig().Outbox.DoneRetentionHours
+	if hours < 1 {
+		hours = OutboxDoneRetentionHours
+	}
+	return time.Duration(hours) * time.Hour
+}
+
+func GetOutboxFailedRetention() time.Duration {
+	days := GetAppConfig().Outbox.FailedRetentionDays
+	if days < 1 {
+		days = OutboxFailedRetentionDays
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func GetAuditLogRetentionSeconds() int32 {
+	days := GetAppConfig().Audit.LogRetentionDays
+	if days < 1 {
+		days = AuditLogRetentionDays
+	}
+	return int32(days * 24 * 60 * 60)
 }
 
 func GetRedisPoolSize() int {
