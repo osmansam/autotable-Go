@@ -18,11 +18,12 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`             // "invalidate", "pageChanged", "containerChanged"
-	Schema    string `json:"schema"`           // schema name
-	UserId    string `json:"userId,omitempty"` // user who triggered the event
-	TenantID  string `json:"-"`                // tenant ID (not sent to client, used for routing)
-	ProjectID string `json:"-"`                // project ID (not sent to client, used for routing)
+	Type      string `json:"type"`              // "invalidate", "pageChanged", "containerChanged"
+	Schema    string `json:"schema"`            // schema name
+	EventID   string `json:"eventId,omitempty"` // stable idempotency key for outbox-backed events
+	UserId    string `json:"userId,omitempty"`  // user who triggered the event
+	TenantID  string `json:"-"`                 // tenant ID (not sent to client, used for routing)
+	ProjectID string `json:"-"`                 // project ID (not sent to client, used for routing)
 	Timestamp int64  `json:"ts"`
 }
 
@@ -30,6 +31,7 @@ type redisEventEnvelope struct {
 	Origin    string `json:"origin"`
 	Type      string `json:"type"`
 	Schema    string `json:"schema"`
+	EventID   string `json:"eventId,omitempty"`
 	UserId    string `json:"userId,omitempty"`
 	TenantID  string `json:"tenantId"`
 	ProjectID string `json:"projectId"`
@@ -212,6 +214,7 @@ func newRedisEventEnvelope(ev Event) redisEventEnvelope {
 		Origin:    instanceID,
 		Type:      ev.Type,
 		Schema:    ev.Schema,
+		EventID:   ev.EventID,
 		UserId:    ev.UserId,
 		TenantID:  ev.TenantID,
 		ProjectID: ev.ProjectID,
@@ -223,6 +226,7 @@ func (e redisEventEnvelope) toEvent() Event {
 	return Event{
 		Type:      e.Type,
 		Schema:    e.Schema,
+		EventID:   e.EventID,
 		UserId:    e.UserId,
 		TenantID:  e.TenantID,
 		ProjectID: e.ProjectID,
@@ -391,12 +395,17 @@ func HandleWS(c *websocket.Conn) {
 }
 
 // EmitInvalidate pushes an invalidate event to clients in the same tenant/project.
-func EmitInvalidate(schema string, userId string, tenantID string, projectID string) {
-	log.Printf("WebSocket: Emitting invalidate event - schema: %s, userId: %s, tenantID: %s, projectID: %s", schema, userId, tenantID, projectID)
+func EmitInvalidate(schema string, userId string, tenantID string, projectID string, eventID ...string) {
+	idempotencyKey := ""
+	if len(eventID) > 0 {
+		idempotencyKey = eventID[0]
+	}
+	log.Printf("WebSocket: Emitting invalidate event - schema: %s, userId: %s, tenantID: %s, projectID: %s, eventID: %s", schema, userId, tenantID, projectID, idempotencyKey)
 
 	publishEvent(Event{
 		Type:      "invalidate",
 		Schema:    schema,
+		EventID:   idempotencyKey,
 		UserId:    userId,
 		TenantID:  tenantID,
 		ProjectID: projectID,

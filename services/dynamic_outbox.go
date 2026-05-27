@@ -66,7 +66,7 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 }
 
 type modelsOutboxEvents interface {
-	EmitInvalidate(schemaName, userID, tenantID, projectID string)
+	EmitInvalidate(schemaName, userID, tenantID, projectID string, eventID ...string)
 }
 
 func dispatchDynamicOutboxEvent(ctx context.Context, event *models.DynamicOutboxEvent, events modelsOutboxEvents) error {
@@ -83,7 +83,7 @@ func dispatchDynamicOutboxEvent(ctx context.Context, event *models.DynamicOutbox
 	}
 
 	for _, schemaName := range uniqueSchemaNames(event.Payload.InvalidateSchemas) {
-		events.EmitInvalidate(schemaName, event.Payload.UserID, event.TenantID, event.ProjectID)
+		events.EmitInvalidate(schemaName, event.Payload.UserID, event.TenantID, event.ProjectID, event.ID.Hex())
 	}
 
 	return nil
@@ -95,20 +95,15 @@ func (s *DynamicService) insertDynamicPostWrite(ctx context.Context, tenantID, p
 	return err
 }
 
-func (s *DynamicService) enqueueDynamicPostWrite(ctx context.Context, tenantID, projectID, schemaName, operation, userID string, container *models.ContainerModel, auditLog *models.AuditLog) {
-	event := buildDynamicPostWriteEvent(tenantID, projectID, schemaName, operation, userID, container, auditLog)
-	if _, err := s.repository.InsertOutboxEvent(ctx, event); err != nil {
-		log.Printf("dynamic outbox: failed to enqueue %s event for schema %s: %v", operation, schemaName, err)
-		if dispatchErr := dispatchDynamicOutboxEvent(ctx, &event, s.events); dispatchErr != nil {
-			log.Printf("dynamic outbox: inline fallback failed for schema %s: %v", schemaName, dispatchErr)
-		}
-	}
-}
-
 func buildDynamicPostWriteEvent(tenantID, projectID, schemaName, operation, userID string, container *models.ContainerModel, auditLog *models.AuditLog) models.DynamicOutboxEvent {
 	now := time.Now()
+	eventID := primitive.NewObjectID()
+	if auditLog != nil {
+		auditLog.EventID = eventID
+	}
+
 	return models.DynamicOutboxEvent{
-		ID:            primitive.NewObjectID(),
+		ID:            eventID,
 		TenantID:      tenantID,
 		ProjectID:     projectID,
 		SchemaName:    schemaName,
