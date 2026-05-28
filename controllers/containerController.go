@@ -26,6 +26,9 @@ type DynamicFunctionsUpdate struct {
 type PipelinesUpdate struct {
 	Pipelines []models.PipelineStage `json:"Pipelines"`
 }
+type WorkflowsUpdate struct {
+	Workflows []models.DynamicWorkflow `json:"Workflows"`
+}
 
 var validate = validator.New()
 
@@ -81,6 +84,7 @@ func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Coll
 		PopulatedRoutes:  []string{},
 		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
+		Workflows:        []models.DynamicWorkflow{},
 		DynamicApis:      []models.DynamicApiModel{},
 		Indexes:          []models.Index{},
 	}
@@ -500,6 +504,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 
 	updatedContainer.Pipelines = existingContainer.Pipelines
 	updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
+	updatedContainer.Workflows = existingContainer.Workflows
 
 	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
 		log.Printf("Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
@@ -608,6 +613,77 @@ func UpdatePipelines(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{
 		"status":  http.StatusOK,
 		"message": "Pipelines successfully updated",
+		"data":    updateResult,
+	})
+}
+
+// UpdateWorkflows updates the Workflows of a specific container
+func UpdateWorkflows(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+
+	containerIdStr := c.Params("id")
+	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+	if err != nil {
+		log.Printf("Invalid container ID format: %v", err)
+		return utils.SendErrorResponse(c, err, "Invalid container ID format")
+	}
+
+	log.Println("Parsing request body for UpdateWorkflows")
+	var update WorkflowsUpdate
+	if err := c.BodyParser(&update); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+
+	log.Println("Updating Workflows in the container")
+	updateResult, err := containerCollection.UpdateOne(
+		ctx,
+		bson.M{"_id": containerId},
+		bson.M{"$set": bson.M{"workflows": update.Workflows}},
+	)
+	if err != nil {
+		log.Printf("Failed to update Workflows: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to update Workflows")
+	}
+
+	if updateResult.MatchedCount == 0 {
+		log.Println("No container found with the specified ID")
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"status":  http.StatusNotFound,
+			"message": "No container found with the specified ID",
+		})
+	}
+
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
+	)
+	log.Println("Invalidated containers cache after workflows update")
+
+	// Emit WebSocket event for container change
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+
+	log.Println("Workflows successfully updated")
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  http.StatusOK,
+		"message": "Workflows successfully updated",
 		"data":    updateResult,
 	})
 }

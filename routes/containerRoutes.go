@@ -63,6 +63,17 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 		controllers.UpdatePipelines,
 	)
 
+	// Update workflows - requires project admin or developer role
+	containerGroup.Patch("/workflows/:id",
+		middlewares.TenantAuthorize([]string{
+			models.ProjectRoleAdmin,
+			models.ProjectRoleDeveloper,
+		}),
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.UpdateWorkflows,
+	)
+
 	// Get single container - any project member can view
 	containerGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetContainer)
 
