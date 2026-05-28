@@ -51,7 +51,7 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 			return
 		}
 
-		if err := dispatchDynamicOutboxEvent(ctx, event, events); err != nil {
+		if err := dispatchDynamicOutboxEvent(ctx, repository, event, events); err != nil {
 			log.Printf("dynamic outbox: failed to dispatch event %s: %v", event.ID.Hex(), err)
 			if markErr := repository.MarkOutboxEventFailed(ctx, *event, err.Error(), outboxRetryDelay(event.Attempts)); markErr != nil {
 				log.Printf("dynamic outbox: failed to mark event %s failed: %v", event.ID.Hex(), markErr)
@@ -69,7 +69,11 @@ type modelsOutboxEvents interface {
 	EmitInvalidate(schemaName, userID, tenantID, projectID string, eventID ...string)
 }
 
-func dispatchDynamicOutboxEvent(ctx context.Context, event *models.DynamicOutboxEvent, events modelsOutboxEvents) error {
+func dispatchDynamicOutboxEvent(ctx context.Context, repository *repositories.DynamicRepository, event *models.DynamicOutboxEvent, events modelsOutboxEvents) error {
+	if event.Operation == models.DynamicOutboxOperationWorkflowStep {
+		return processWorkflowOutboxStep(ctx, repository, event)
+	}
+
 	if event.Payload.AuditLog != nil {
 		if err := utils.LogAudit(ctx, *event.Payload.AuditLog); err != nil {
 			return err

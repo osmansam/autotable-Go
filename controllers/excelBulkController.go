@@ -129,6 +129,7 @@ func UploadMultipleExcel(c *fiber.Ctx) error {
 			},
 			Pipelines:        []models.PipelineStage{},
 			DynamicFunctions: []models.DynamicFunction{},
+			Workflows:        []models.DynamicWorkflow{},
 			DynamicApis:      []models.DynamicApiModel{},
 			IsAuthContainer:  false,
 			IsRegisterActive: false,

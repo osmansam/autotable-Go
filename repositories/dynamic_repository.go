@@ -150,6 +150,21 @@ func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.S
 }
 
 func (r *DynamicRepository) InsertOutboxEvent(ctx context.Context, event models.DynamicOutboxEvent) (*mongo.InsertOneResult, error) {
+	if event.Payload.IdempotencyKey != "" {
+		_, err := configs.GetCollection("dynamic_outbox").UpdateOne(
+			ctx,
+			bson.M{"payload.idempotencyKey": event.Payload.IdempotencyKey},
+			bson.M{"$setOnInsert": event},
+			options.Update().SetUpsert(true),
+		)
+		if err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				return &mongo.InsertOneResult{InsertedID: event.ID}, nil
+			}
+			return nil, err
+		}
+		return &mongo.InsertOneResult{InsertedID: event.ID}, nil
+	}
 	return configs.GetCollection("dynamic_outbox").InsertOne(ctx, event)
 }
 
@@ -176,7 +191,55 @@ func (r *DynamicRepository) EnsureOutboxIndexes(ctx context.Context) error {
 			Keys:    bson.D{{Key: "expireAt", Value: 1}},
 			Options: options.Index().SetName("idx_dynamic_outbox_expire_at_ttl").SetExpireAfterSeconds(0).SetBackground(true),
 		},
+		{
+			Keys: bson.D{{Key: "payload.idempotencyKey", Value: 1}},
+			Options: options.Index().
+				SetName("idx_dynamic_outbox_idempotency_key").
+				SetUnique(true).
+				SetSparse(true).
+				SetBackground(true),
+		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = configs.GetCollection("dynamic_workflow_step_executions").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "idempotencyKey", Value: 1}},
+		Options: options.Index().SetName("idx_workflow_step_executions_idempotency_key").SetUnique(true).SetBackground(true),
+	})
+	return err
+}
+
+func (r *DynamicRepository) WorkflowStepExecutionDone(ctx context.Context, idempotencyKey string) (bool, error) {
+	if idempotencyKey == "" {
+		return false, nil
+	}
+	err := configs.GetCollection("dynamic_workflow_step_executions").
+		FindOne(ctx, bson.M{"idempotencyKey": idempotencyKey}).Err()
+	if err == nil {
+		return true, nil
+	}
+	if err == mongo.ErrNoDocuments {
+		return false, nil
+	}
+	return false, err
+}
+
+func (r *DynamicRepository) MarkWorkflowStepExecutionDone(ctx context.Context, idempotencyKey string, eventID primitive.ObjectID) error {
+	if idempotencyKey == "" {
+		return nil
+	}
+	now := time.Now()
+	_, err := configs.GetCollection("dynamic_workflow_step_executions").UpdateOne(
+		ctx,
+		bson.M{"idempotencyKey": idempotencyKey},
+		bson.M{"$setOnInsert": bson.M{
+			"idempotencyKey": idempotencyKey,
+			"eventId":        eventID,
+			"createdAt":      primitive.NewDateTimeFromTime(now),
+		}},
+		options.Update().SetUpsert(true),
+	)
 	return err
 }
 

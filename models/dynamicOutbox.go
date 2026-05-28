@@ -10,18 +10,31 @@ const (
 )
 
 const (
-	DynamicOutboxOperationCreate     = "create"
-	DynamicOutboxOperationUpdate     = "update"
-	DynamicOutboxOperationDelete     = "delete"
-	DynamicOutboxOperationBulkCreate = "bulk_create"
-	DynamicOutboxOperationBulkUpdate = "bulk_update"
-	DynamicOutboxOperationBulkDelete = "bulk_delete"
+	DynamicOutboxOperationCreate       = "create"
+	DynamicOutboxOperationUpdate       = "update"
+	DynamicOutboxOperationDelete       = "delete"
+	DynamicOutboxOperationBulkCreate   = "bulk_create"
+	DynamicOutboxOperationBulkUpdate   = "bulk_update"
+	DynamicOutboxOperationBulkDelete   = "bulk_delete"
+	DynamicOutboxOperationWorkflowStep = "workflow_step"
 )
 
 type DynamicOutboxPayload struct {
-	AuditLog          *AuditLog `bson:"auditLog,omitempty" json:"auditLog,omitempty"`
-	InvalidateSchemas []string  `bson:"invalidateSchemas,omitempty" json:"invalidateSchemas,omitempty"`
-	UserID            string    `bson:"userId,omitempty" json:"userId,omitempty"`
+	AuditLog          *AuditLog              `bson:"auditLog,omitempty" json:"auditLog,omitempty"`
+	InvalidateSchemas []string               `bson:"invalidateSchemas,omitempty" json:"invalidateSchemas,omitempty"`
+	UserID            string                 `bson:"userId,omitempty" json:"userId,omitempty"`
+	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+	StepID            string                 `bson:"stepId,omitempty" json:"stepId,omitempty"`
+	StepName          string                 `bson:"stepName,omitempty" json:"stepName,omitempty"`
+	StepType          string                 `bson:"stepType,omitempty" json:"stepType,omitempty"`
+	StepTimeoutSec    int                    `bson:"stepTimeoutSec,omitempty" json:"stepTimeoutSec,omitempty"`
+	WorkflowDepth     int                    `bson:"workflowDepth,omitempty" json:"workflowDepth,omitempty"`
+	TargetSchema      string                 `bson:"targetSchema,omitempty" json:"targetSchema,omitempty"`
+	Record            map[string]interface{} `bson:"record,omitempty" json:"record,omitempty"`
+	OldRecord         map[string]interface{} `bson:"oldRecord,omitempty" json:"oldRecord,omitempty"`
+	StepOutputs       map[string]interface{} `bson:"stepOutputs,omitempty" json:"stepOutputs,omitempty"`
+	Config            map[string]interface{} `bson:"config,omitempty" json:"config,omitempty"`
+	IdempotencyKey    string                 `bson:"idempotencyKey,omitempty" json:"idempotencyKey,omitempty"`
 }
 
 type DynamicOutboxEvent struct {

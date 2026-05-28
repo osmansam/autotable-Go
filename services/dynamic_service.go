@@ -225,6 +225,19 @@ type ExecuteDynamicAPIInput struct {
 	Container *models.ContainerModel
 }
 
+type ExecuteWorkflowInput struct {
+	TenantID     string
+	ProjectID    string
+	Schema       string
+	WorkflowName string
+	Record       map[string]interface{}
+	OldRecord    map[string]interface{}
+	StepOutputs  map[string]interface{}
+	UserID       string
+	AuditUser    *models.AuditUser
+	Container    *models.ContainerModel
+}
+
 type ExportDynamicItemsInput struct {
 	TenantID  string
 	ProjectID string
@@ -331,6 +344,20 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 
 	var result *mongo.InsertOneResult
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		workflowPayload := workflowExecutionPayload{
+			TenantID:    input.TenantID,
+			ProjectID:   input.ProjectID,
+			SchemaName:  input.Schema,
+			Record:      itemMap,
+			StepOutputs: map[string]interface{}{},
+			UserID:      input.UserID,
+			AuditUser:   input.User,
+			Container:   container,
+		}
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeCreate); err != nil {
+			return err
+		}
+
 		var insertErr error
 		result, insertErr = s.repository.Insert(txCtx, input.TenantID, input.ProjectID, input.Schema, itemMap)
 		if insertErr != nil {
@@ -339,6 +366,14 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 
 		if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
 			itemMap["_id"] = oid
+		}
+
+		workflowPayload.Record = itemMap
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterCreate); err != nil {
+			return err
+		}
+		if err := s.enqueueOutboxWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterCreate); err != nil {
+			return err
 		}
 
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationCreate, input.UserID, container,
@@ -529,6 +564,21 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 
 	var updateResult *mongo.UpdateResult
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		workflowPayload := workflowExecutionPayload{
+			TenantID:    input.TenantID,
+			ProjectID:   input.ProjectID,
+			SchemaName:  input.Schema,
+			Record:      existingItem,
+			OldRecord:   beforeDoc,
+			StepOutputs: map[string]interface{}{},
+			UserID:      input.UserID,
+			AuditUser:   input.User,
+			Container:   container,
+		}
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeUpdate); err != nil {
+			return err
+		}
+
 		var updateErr error
 		updateResult, updateErr = s.repository.UpdateByID(txCtx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
 		if updateErr != nil {
@@ -536,6 +586,12 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 		}
 		if updateResult.MatchedCount == 0 {
 			return nil
+		}
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
+			return err
+		}
+		if err := s.enqueueOutboxWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
+			return err
 		}
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationUpdate, input.UserID, container,
 			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationUpdate, input.User, beforeDoc, existingItem))
@@ -596,7 +652,10 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 		localBulkAfterDocs := make([]interface{}, 0, len(items))
 
 		for _, item := range items {
-			result, beforeDoc, afterDoc := s.updateOneFromBulk(txCtx, input, container, item)
+			result, beforeDoc, afterDoc, workflowErr := s.updateOneFromBulk(txCtx, input, container, item)
+			if workflowErr != nil {
+				return workflowErr
+			}
 			if result.Failed != nil {
 				localFailedUpdates = append(localFailedUpdates, result.Failed)
 				continue
@@ -692,7 +751,36 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 			log.Printf("Failed to fetch item before delete for schema: %s, error: %v", input.Schema, findErr)
 		}
 
+		var workflowRecord map[string]interface{}
+		if deletedDoc != nil {
+			workflowRecord = map[string]interface{}{}
+			for k, v := range deletedDoc {
+				workflowRecord[k] = v
+			}
+		}
+		workflowPayload := workflowExecutionPayload{
+			TenantID:    input.TenantID,
+			ProjectID:   input.ProjectID,
+			SchemaName:  input.Schema,
+			Record:      workflowRecord,
+			OldRecord:   workflowRecord,
+			StepOutputs: map[string]interface{}{},
+			UserID:      input.UserID,
+			AuditUser:   input.User,
+			Container:   container,
+		}
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeDelete); err != nil {
+			return err
+		}
+
 		if _, err := s.repository.DeleteByID(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID); err != nil {
+			return err
+		}
+
+		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
+			return err
+		}
+		if err := s.enqueueOutboxWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
 			return err
 		}
 
@@ -757,7 +845,10 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 		localBulkDeletedDocs := make([]interface{}, 0, len(items))
 
 		for _, item := range items {
-			result, deletedDoc := s.deleteOneFromBulk(txCtx, input, allContainers, item)
+			result, deletedDoc, workflowErr := s.deleteOneFromBulk(txCtx, input, container, allContainers, item)
+			if workflowErr != nil {
+				return workflowErr
+			}
 			if result.Failed != nil {
 				localFailedDeletes = append(localFailedDeletes, result.Failed)
 				continue
@@ -1632,6 +1723,49 @@ func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDyn
 	return DynamicExecutionResult{Message: "API result fetched", Data: apiResult, Source: "API call"}, nil
 }
 
+func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkflowInput) (DynamicExecutionResult, error) {
+	container, err := s.resolveWorkflowContainer(ctx, input)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
+	}
+
+	workflow, found := findWorkflow(container, input.WorkflowName)
+	if !found {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusNotFound, Message: "Workflow not found", Data: nil}
+	}
+	if !workflow.IsActive {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusForbidden, Message: "Workflow is disabled", Data: nil}
+	}
+
+	payload := workflowExecutionPayload{
+		TenantID:     input.TenantID,
+		ProjectID:    input.ProjectID,
+		SchemaName:   input.Schema,
+		WorkflowName: workflow.Name,
+		Record:       cloneWorkflowMap(input.Record),
+		OldRecord:    cloneWorkflowMap(input.OldRecord),
+		StepOutputs:  cloneWorkflowMap(input.StepOutputs),
+		UserID:       input.UserID,
+		AuditUser:    input.AuditUser,
+		Container:    container,
+	}
+	if payload.Record == nil {
+		payload.Record = map[string]interface{}{}
+	}
+	if payload.OldRecord == nil {
+		payload.OldRecord = map[string]interface{}{}
+	}
+	if payload.StepOutputs == nil {
+		payload.StepOutputs = map[string]interface{}{}
+	}
+
+	if err := s.runWorkflowDefinition(ctx, payload, workflow); err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute workflow", Err: err}
+	}
+
+	return DynamicExecutionResult{Message: "Workflow executed successfully", Data: payload.StepOutputs, Source: "workflow"}, nil
+}
+
 func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDynamicItemsInput) (ExportDynamicItemsResult, error) {
 	req := input.Request
 	if req.SchemaName == "" {
@@ -1720,13 +1854,13 @@ type bulkDeleteItemResult struct {
 	Failed  map[string]interface{}
 }
 
-func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMultipleDynamicItemsInput, allContainers []models.ContainerModel, item map[string]interface{}) (bulkDeleteItemResult, interface{}) {
+func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input DeleteMultipleDynamicItemsInput, container *models.ContainerModel, allContainers []models.ContainerModel, item map[string]interface{}) (bulkDeleteItemResult, interface{}, error) {
 	idStr, errMessage := extractBulkUpdateID(item)
 	if errMessage != "" {
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
 			"item":  item,
 			"error": errMessage,
-		}}, nil
+		}}, nil, nil
 	}
 
 	deleteID, err := primitive.ObjectIDFromHex(idStr)
@@ -1735,7 +1869,7 @@ func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Provided ID is not in the valid format",
-		}}, nil
+		}}, nil, nil
 	}
 
 	lockKey := fmt.Sprintf("lock:delete:%s:%s", input.Schema, deleteID.Hex())
@@ -1745,7 +1879,7 @@ func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Another process is already deleting this item",
-		}}, nil
+		}}, nil, nil
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
@@ -1755,13 +1889,13 @@ func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMult
 				"id":    idStr,
 				"item":  item,
 				"error": serviceErr.Message,
-			}}, nil
+			}}, nil, nil
 		}
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": err.Error(),
-		}}, nil
+		}}, nil, nil
 	}
 
 	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, false); err != nil {
@@ -1773,35 +1907,61 @@ func (s *DynamicService) deleteOneFromBulk(ctx context.Context, input DeleteMult
 		log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", input.Schema, findErr)
 	}
 
+	var workflowRecord map[string]interface{}
+	if deletedDoc != nil {
+		workflowRecord = map[string]interface{}{}
+		for k, v := range deletedDoc {
+			workflowRecord[k] = v
+		}
+	}
+	workflowPayload := workflowExecutionPayload{
+		TenantID:    input.TenantID,
+		ProjectID:   input.ProjectID,
+		SchemaName:  input.Schema,
+		Record:      workflowRecord,
+		OldRecord:   workflowRecord,
+		StepOutputs: map[string]interface{}{},
+		UserID:      input.UserID,
+		AuditUser:   input.User,
+		Container:   container,
+	}
+	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerBeforeDelete); err != nil {
+		return bulkDeleteItemResult{}, nil, err
+	}
+
 	deleteResult, err := s.repository.DeleteByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
 	if err != nil {
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": "Failed to delete item: " + err.Error(),
-		}}, nil
+		}}, nil, nil
 	}
 	if deleteResult.DeletedCount == 0 {
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": "No item found with the specified ID",
-		}}, nil
+		}}, nil, nil
+	}
+
+	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
+		return bulkDeleteItemResult{}, nil, err
 	}
 
 	return bulkDeleteItemResult{Success: map[string]interface{}{
 		"id":     idStr,
 		"result": deleteResult,
-	}}, deletedDoc
+	}}, deletedDoc, nil
 }
 
-func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}) {
+func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}, error) {
 	idStr, errMessage := extractBulkUpdateID(item)
 	if errMessage != "" {
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"item":  item,
 			"error": errMessage,
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 
 	updateID, err := primitive.ObjectIDFromHex(idStr)
@@ -1810,7 +1970,7 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Provided ID is not in the valid format",
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 
 	lockKey := fmt.Sprintf("lock:update:%s:%s", input.Schema, updateID.Hex())
@@ -1820,7 +1980,7 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Another process is already updating this item",
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
@@ -1832,7 +1992,7 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Validation failed: " + err.Error(),
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 
 	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID)
@@ -1841,7 +2001,7 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 			"id":    idStr,
 			"item":  item,
 			"error": "Failed to fetch existing item: " + err.Error(),
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 
 	beforeDoc := make(map[string]interface{})
@@ -1856,13 +2016,28 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 				"id":    idStr,
 				"item":  item,
 				"error": fmt.Sprintf("Error evaluating equation for field %s: %v", equationErr.FieldName, equationErr.Err),
-			}}, nil, nil
+			}}, nil, nil, nil
 		}
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": err.Error(),
-		}}, nil, nil
+		}}, nil, nil, nil
+	}
+
+	workflowPayload := workflowExecutionPayload{
+		TenantID:    input.TenantID,
+		ProjectID:   input.ProjectID,
+		SchemaName:  input.Schema,
+		Record:      existingItem,
+		OldRecord:   beforeDoc,
+		StepOutputs: map[string]interface{}{},
+		UserID:      input.UserID,
+		AuditUser:   input.User,
+		Container:   container,
+	}
+	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerBeforeUpdate); err != nil {
+		return bulkUpdateItemResult{}, nil, nil, err
 	}
 
 	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
@@ -1873,26 +2048,30 @@ func (s *DynamicService) updateOneFromBulk(ctx context.Context, input UpdateMult
 				"id":    idStr,
 				"item":  item,
 				"error": serviceErr.Message,
-			}}, nil, nil
+			}}, nil, nil, nil
 		}
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": "Failed to update item: " + err.Error(),
-		}}, nil, nil
+		}}, nil, nil, nil
 	}
 	if updateResult.MatchedCount == 0 {
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
 			"error": "No matching item found to update",
-		}}, nil, nil
+		}}, nil, nil, nil
+	}
+
+	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
+		return bulkUpdateItemResult{}, nil, nil, err
 	}
 
 	return bulkUpdateItemResult{Success: map[string]interface{}{
 		"id":     idStr,
 		"result": updateResult,
-	}}, beforeDoc, existingItem
+	}}, beforeDoc, existingItem, nil
 }
 
 func (s *DynamicService) resolveContainer(ctx context.Context, input CreateDynamicItemInput) (*models.ContainerModel, error) {
@@ -2009,6 +2188,13 @@ func (s *DynamicService) resolveTestPipelineContainer(ctx context.Context, input
 }
 
 func (s *DynamicService) resolveDynamicAPIContainer(ctx context.Context, input ExecuteDynamicAPIInput) (*models.ContainerModel, error) {
+	if input.Container != nil {
+		return input.Container, nil
+	}
+	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
+}
+
+func (s *DynamicService) resolveWorkflowContainer(ctx context.Context, input ExecuteWorkflowInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
 		return input.Container, nil
 	}

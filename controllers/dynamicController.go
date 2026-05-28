@@ -804,6 +804,73 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 	})
 }
 
+func ExecuteWorkflow(c *fiber.Ctx) error {
+	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
+	defer cancel()
+
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		log.Printf("Project context error: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
+	schemaName := c.Query("schemaName")
+	workflowName := c.Params("workflowName")
+	if workflowName == "" {
+		workflowName = c.Query("workflowName")
+	}
+
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	}
+
+	var requestBody map[string]interface{}
+	if err := c.BodyParser(&requestBody); err != nil && len(c.Body()) > 0 {
+		return utils.SendErrorResponse(c, err, "Invalid request body")
+	}
+
+	record := requestBody
+	if nested, ok := requestBody["record"].(map[string]interface{}); ok {
+		record = nested
+	}
+
+	var oldRecord map[string]interface{}
+	if nested, ok := requestBody["oldRecord"].(map[string]interface{}); ok {
+		oldRecord = nested
+	}
+
+	stepOutputs := map[string]interface{}{}
+	if nested, ok := requestBody["stepOutputs"].(map[string]interface{}); ok {
+		stepOutputs = nested
+	}
+
+	userID, _ := c.Locals("userID").(string)
+	dynamicService := services.NewDynamicService()
+	result, err := dynamicService.ExecuteWorkflow(ctx, services.ExecuteWorkflowInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		Schema:       schemaName,
+		WorkflowName: workflowName,
+		Record:       record,
+		OldRecord:    oldRecord,
+		StepOutputs:  stepOutputs,
+		UserID:       userID,
+		AuditUser:    utils.GetUserFromContext(c),
+		Container:    container,
+	})
+	if err != nil {
+		return sendDynamicError(c, err, "Failed to execute workflow")
+	}
+
+	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: result.Message,
+		Data:    result.Data,
+		Source:  utils.PointerToString(result.Source),
+	})
+}
+
 // ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.
 func ExportDynamicModelItems(c *fiber.Ctx) error {
 	ctx, cancel := utils.RequestContextWithTimeout(c, 30*time.Second)

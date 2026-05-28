@@ -132,48 +132,69 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 	c.Locals("containerModel", container)
 
 	isDynamicFunc := routeName == "ExecuteDynamicCode"
-		isPipeline := routeName == "GetPipeline"
-		isExecuteApi := routeName == "ExecuteDynamicAPI"
-		var isAuthenticated bool
-		var isAuthorized bool
-		var isActive bool
-		var authorizeRole []string
-		if isPipeline {
-			pipelineName := c.Query("pipelineName")
-			for _, pipeline := range container.Pipelines {
-				if pipeline.Name == pipelineName {
-					isAuthenticated = pipeline.IsAuthenticated
-					isAuthorized = pipeline.IsAuthorized
-					isActive = pipeline.IsActive
-					authorizeRole = pipeline.AuthorizeRole
-					break
-				}
+	isPipeline := routeName == "GetPipeline"
+	isExecuteApi := routeName == "ExecuteDynamicAPI"
+	isExecuteWorkflow := routeName == "ExecuteWorkflow"
+	var isAuthenticated bool
+	var isAuthorized bool
+	var isActive bool
+	var authorizeRole []string
+	if isPipeline {
+		pipelineName := c.Query("pipelineName")
+		for _, pipeline := range container.Pipelines {
+			if pipeline.Name == pipelineName {
+				isAuthenticated = pipeline.IsAuthenticated
+				isAuthorized = pipeline.IsAuthorized
+				isActive = pipeline.IsActive
+				authorizeRole = pipeline.AuthorizeRole
+				break
 			}
-		}else if isDynamicFunc {
-			functionName := c.Query("functionName")
-			for _, function := range container.DynamicFunctions {
-				if function.Name == functionName {
-					isAuthenticated = function.IsAuthenticated
-					isAuthorized = function.IsAuthorized
-					isActive = function.IsActive
-					authorizeRole = function.AuthorizeRole
-					c.Locals("dynamicFunction", function)
-					break
-				}
+		}
+	} else if isDynamicFunc {
+		functionName := c.Query("functionName")
+		for _, function := range container.DynamicFunctions {
+			if function.Name == functionName {
+				isAuthenticated = function.IsAuthenticated
+				isAuthorized = function.IsAuthorized
+				isActive = function.IsActive
+				authorizeRole = function.AuthorizeRole
+				c.Locals("dynamicFunction", function)
+				break
 			}
-		}else if isExecuteApi {
-			apiName := c.Query("apiName")
-			for _, api := range container.DynamicApis {
-				if api.Name == apiName {
-					isAuthenticated = api.IsAuthenticated
-					isAuthorized = api.IsAuthorized
-					isActive = api.IsActive
-					authorizeRole = api.AuthorizeRole
-					c.Locals("apiName", api)
-					break
-				}
+		}
+	} else if isExecuteApi {
+		apiName := c.Query("apiName")
+		for _, api := range container.DynamicApis {
+			if api.Name == apiName {
+				isAuthenticated = api.IsAuthenticated
+				isAuthorized = api.IsAuthorized
+				isActive = api.IsActive
+				authorizeRole = api.AuthorizeRole
+				c.Locals("apiName", api)
+				break
 			}
-		}else {
+		}
+	} else if isExecuteWorkflow {
+		workflowName := c.Params("workflowName")
+		if workflowName == "" {
+			workflowName = c.Query("workflowName")
+		}
+		found := false
+		for _, workflow := range container.Workflows {
+			if workflow.Name == workflowName {
+				isAuthenticated = workflow.IsAuthenticated
+				isAuthorized = workflow.IsAuthorized
+				isActive = workflow.IsActive
+				authorizeRole = workflow.AuthorizeRole
+				c.Locals("workflow", workflow)
+				found = true
+				break
+			}
+		}
+		if !found {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Workflow not found"})
+		}
+	} else {
 			var route models.RouteSpec
 			switch routeName {
 			case "CreateDynamicModelItem":
@@ -210,9 +231,9 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			}
 			isAuthenticated = route.IsAuthenticated
 			isAuthorized = route.IsAuthorized
-			isActive= route.IsActive
+			isActive = route.IsActive
 			authorizeRole = route.AuthorizeRole
-		}
+	}
 
 		if isAuthenticated || !isActive {
 			// Store expected tenant and project IDs in context for validation

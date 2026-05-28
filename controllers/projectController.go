@@ -97,6 +97,7 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		PopulatedRoutes:  []string{},
 		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
+		Workflows:        []models.DynamicWorkflow{},
 		DynamicApis:      []models.DynamicApiModel{},
 		Indexes:          []models.Index{},
 	}
@@ -166,6 +167,7 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		PopulatedRoutes:  []string{},
 		Pipelines:        []models.PipelineStage{},
 		DynamicFunctions: []models.DynamicFunction{},
+		Workflows:        []models.DynamicWorkflow{},
 		DynamicApis:      []models.DynamicApiModel{},
 		Indexes:          []models.Index{},
 	}
