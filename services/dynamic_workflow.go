@@ -234,6 +234,7 @@ func (s *DynamicService) workflowCreateRecord(ctx context.Context, step models.D
 	if err != nil {
 		return nil, err
 	}
+	workflowStringifyObjectIDsForValidation(targetContainer, document)
 	if err := validators.PrepareCreateItem(payload.TenantID, payload.ProjectID, targetContainer, document); err != nil {
 		return nil, err
 	}
@@ -278,6 +279,7 @@ func (s *DynamicService) workflowUpdateRecord(ctx context.Context, step models.D
 		if err != nil {
 			return nil, err
 		}
+		workflowStringifyObjectIDsForValidation(targetContainer, update)
 		if err := validators.PrepareUpdateFields(targetContainer, update); err != nil {
 			return nil, err
 		}
@@ -561,6 +563,49 @@ func workflowTargetSchema(step models.DynamicWorkflowStep, fallback string) stri
 		return step.TargetSchema
 	}
 	return fallback
+}
+
+func workflowStringifyObjectIDsForValidation(container *models.ContainerModel, item map[string]interface{}) {
+	if container == nil || item == nil {
+		return
+	}
+	for _, field := range container.Fields {
+		value, ok := item[field.Name]
+		if !ok || value == nil {
+			continue
+		}
+		switch field.Type {
+		case "objectId":
+			if objectID, ok := value.(primitive.ObjectID); ok {
+				item[field.Name] = objectID.Hex()
+			}
+		case "objectIdArray":
+			item[field.Name] = workflowStringifyObjectIDArray(value)
+		}
+	}
+}
+
+func workflowStringifyObjectIDArray(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []primitive.ObjectID:
+		result := make([]interface{}, 0, len(typed))
+		for _, objectID := range typed {
+			result = append(result, objectID.Hex())
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			if objectID, ok := item.(primitive.ObjectID); ok {
+				result = append(result, objectID.Hex())
+				continue
+			}
+			result = append(result, item)
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 func workflowStepIdempotencyKey(payload workflowExecutionPayload, workflowName string, step models.DynamicWorkflowStep) string {
