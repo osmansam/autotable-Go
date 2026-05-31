@@ -33,7 +33,12 @@ type DynamicOutboxPayload struct {
 	Record            map[string]interface{} `bson:"record,omitempty" json:"record,omitempty"`
 	OldRecord         map[string]interface{} `bson:"oldRecord,omitempty" json:"oldRecord,omitempty"`
 	StepOutputs       map[string]interface{} `bson:"stepOutputs,omitempty" json:"stepOutputs,omitempty"`
+	Variables         map[string]interface{} `bson:"variables,omitempty" json:"variables,omitempty"`
+	Loop              map[string]interface{} `bson:"loop,omitempty" json:"loop,omitempty"`
 	Config            map[string]interface{} `bson:"config,omitempty" json:"config,omitempty"`
+	Steps             []DynamicWorkflowStep  `bson:"steps,omitempty" json:"steps,omitempty"`
+	ElseSteps         []DynamicWorkflowStep  `bson:"elseSteps,omitempty" json:"elseSteps,omitempty"`
+	Branches          []WorkflowBranch       `bson:"branches,omitempty" json:"branches,omitempty"`
 	IdempotencyKey    string                 `bson:"idempotencyKey,omitempty" json:"idempotencyKey,omitempty"`
 }
 

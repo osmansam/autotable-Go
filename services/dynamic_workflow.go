@@ -19,6 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type workflowExecutionPayload struct {
@@ -26,9 +27,14 @@ type workflowExecutionPayload struct {
 	ProjectID      string
 	SchemaName     string
 	WorkflowName   string
+	WorkflowMode   string
+	ExecutionMode  string
+	StopOnError    bool
 	Record         map[string]interface{}
 	OldRecord      map[string]interface{}
 	StepOutputs    map[string]interface{}
+	Variables      map[string]interface{}
+	Loop           map[string]interface{}
 	UserID         string
 	AuditUser      *models.AuditUser
 	Container      *models.ContainerModel
@@ -42,6 +48,8 @@ const (
 	maxWorkflowDepth             = 4
 	maxWorkflowSteps             = 100
 	maxWorkflowOutboxEvents      = 100
+	maxWorkflowLoopItems         = 500
+	maxWorkflowQueryLimit        = 500
 	minWorkflowCallAPITimeoutSec = 1
 )
 
@@ -57,14 +65,12 @@ func (s *DynamicService) runWorkflowDefinition(ctx context.Context, payload work
 	if err := validateWorkflowExecutionBounds(payload, workflow); err != nil {
 		return err
 	}
-	if payload.StepOutputs == nil {
-		payload.StepOutputs = map[string]interface{}{}
-	}
+	ensureWorkflowPayloadMaps(&payload)
 	if payload.OutboxEvents == nil {
 		outboxEvents := 0
 		payload.OutboxEvents = &outboxEvents
 	}
-	if !workflowConditionsMatch(workflow.Conditions, payload.Record, payload.OldRecord, payload.UserID) {
+	if !workflowConditionsMatch(workflow.Conditions, payload) {
 		return nil
 	}
 
@@ -91,41 +97,15 @@ func (s *DynamicService) runWorkflowSteps(ctx context.Context, payload workflowE
 		return steps[i].Order < steps[j].Order
 	})
 
-	for _, step := range steps {
-		if !step.IsActive || workflowStepExecutionMode(step, workflow.Mode) != executionMode {
-			continue
-		}
-		if !workflowConditionsMatch(step.Conditions, payload.Record, payload.OldRecord, payload.UserID) {
-			continue
-		}
-
-		stepPayload := payload
-		stepPayload.WorkflowName = workflow.Name
-
-		var err error
-		var output interface{}
-		if executionMode == models.WorkflowModeOutbox {
-			err = s.enqueueWorkflowStep(ctx, payload, workflow.Name, step)
-		} else {
-			output, err = s.processWorkflowStepForMode(ctx, step, stepPayload, executionMode)
-			if err == nil && step.Name != "" {
-				payload.StepOutputs[step.Name] = output
-			}
-		}
-		if err != nil && workflow.StopOnError && !step.ContinueOnError {
-			return fmt.Errorf("workflow %s step %s failed: %w", workflow.Name, step.Name, err)
-		}
-	}
-	return nil
+	ensureWorkflowPayloadMaps(&payload)
+	return s.runWorkflowStepList(ctx, payload, workflow.Name, workflow.Mode, executionMode, workflow.StopOnError, steps)
 }
 
 func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflowExecutionPayload, trigger, executionMode string) error {
 	if payload.Container == nil || len(payload.Container.Workflows) == 0 {
 		return nil
 	}
-	if payload.StepOutputs == nil {
-		payload.StepOutputs = map[string]interface{}{}
-	}
+	ensureWorkflowPayloadMaps(&payload)
 	if payload.OutboxEvents == nil {
 		outboxEvents := 0
 		payload.OutboxEvents = &outboxEvents
@@ -138,7 +118,7 @@ func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflow
 		if err := validateWorkflowExecutionBounds(payload, workflow); err != nil {
 			return err
 		}
-		if !workflowConditionsMatch(workflow.Conditions, payload.Record, payload.OldRecord, payload.UserID) {
+		if !workflowConditionsMatch(workflow.Conditions, payload) {
 			continue
 		}
 
@@ -148,32 +128,60 @@ func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflow
 			return steps[i].Order < steps[j].Order
 		})
 
-		for _, step := range steps {
-			if !step.IsActive || workflowStepExecutionMode(step, workflow.Mode) != executionMode {
-				continue
-			}
-			if !workflowConditionsMatch(step.Conditions, payload.Record, payload.OldRecord, payload.UserID) {
-				continue
-			}
-
-			stepPayload := payload
-			stepPayload.WorkflowName = workflow.Name
-			var err error
-			if executionMode == models.WorkflowModeOutbox {
-				err = s.enqueueWorkflowStep(workflowCtx, payload, workflow.Name, step)
-			} else {
-				var output interface{}
-				output, err = s.processWorkflowStepForMode(workflowCtx, step, stepPayload, executionMode)
-				if err == nil && step.Name != "" {
-					payload.StepOutputs[step.Name] = output
-				}
-			}
-			if err != nil && workflow.StopOnError && !step.ContinueOnError {
-				cancel()
-				return fmt.Errorf("workflow %s step %s failed: %w", workflow.Name, step.Name, err)
-			}
+		if err := s.runWorkflowStepList(workflowCtx, payload, workflow.Name, workflow.Mode, executionMode, workflow.StopOnError, steps); err != nil {
+			cancel()
+			return err
 		}
 		cancel()
+	}
+	return nil
+}
+
+func ensureWorkflowPayloadMaps(payload *workflowExecutionPayload) {
+	if payload.StepOutputs == nil {
+		payload.StepOutputs = map[string]interface{}{}
+	}
+	if payload.Variables == nil {
+		payload.Variables = map[string]interface{}{}
+	}
+	if payload.Loop == nil {
+		payload.Loop = map[string]interface{}{}
+	}
+}
+
+func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload workflowExecutionPayload, workflowName, workflowMode, executionMode string, stopOnError bool, steps []models.DynamicWorkflowStep) error {
+	ensureWorkflowPayloadMaps(&payload)
+	orderedSteps := append([]models.DynamicWorkflowStep(nil), steps...)
+	sort.SliceStable(orderedSteps, func(i, j int) bool {
+		return orderedSteps[i].Order < orderedSteps[j].Order
+	})
+
+	for _, step := range orderedSteps {
+		if !step.IsActive || workflowStepExecutionMode(step, workflowMode) != executionMode {
+			continue
+		}
+		if step.Type != models.WorkflowStepTypeIf && !workflowConditionsMatch(step.Conditions, payload) {
+			continue
+		}
+
+		stepPayload := payload
+		stepPayload.WorkflowName = workflowName
+		stepPayload.WorkflowMode = workflowMode
+		stepPayload.ExecutionMode = executionMode
+		stepPayload.StopOnError = stopOnError
+		var err error
+		var output interface{}
+		if executionMode == models.WorkflowModeOutbox {
+			err = s.enqueueWorkflowStep(ctx, stepPayload, workflowName, step)
+		} else {
+			output, err = s.processWorkflowStepForMode(ctx, step, stepPayload, executionMode)
+			if err == nil && step.Name != "" {
+				payload.StepOutputs[step.Name] = output
+			}
+		}
+		if err != nil && stopOnError && !step.ContinueOnError {
+			return fmt.Errorf("workflow %s step %s failed: %w", workflowName, step.Name, err)
+		}
 	}
 	return nil
 }
@@ -186,6 +194,7 @@ func (s *DynamicService) processWorkflowStepForMode(ctx context.Context, step mo
 }
 
 func (s *DynamicService) processWorkflowStepWithTimeout(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	ensureWorkflowPayloadMaps(&payload)
 	stepCtx := ctx
 	var cancel context.CancelFunc
 	if step.TimeoutSec > 0 {
@@ -215,6 +224,20 @@ func (s *DynamicService) processWorkflowStep(ctx context.Context, step models.Dy
 		return nil, fmt.Errorf("workflow dynamic_function steps require a request context and are not supported by the write workflow processor yet")
 	case models.WorkflowStepTypeEmitOutboxEvent:
 		return s.workflowEmitOutboxEvent(ctx, step, payload)
+	case models.WorkflowStepTypeGetRecord:
+		return s.workflowGetRecord(ctx, step, payload)
+	case models.WorkflowStepTypeFindRecords:
+		return s.workflowFindRecords(ctx, step, payload)
+	case models.WorkflowStepTypeIf:
+		return s.workflowIf(ctx, step, payload)
+	case models.WorkflowStepTypeForEach:
+		return s.workflowForEach(ctx, step, payload)
+	case models.WorkflowStepTypeSetVariable:
+		return s.workflowSetVariable(step, payload)
+	case models.WorkflowStepTypeExecuteWorkflow:
+		return s.workflowExecuteWorkflow(ctx, step, payload)
+	case models.WorkflowStepTypeExecuteDynamicAPI:
+		return s.workflowExecuteDynamicAPI(ctx, step, payload)
 	default:
 		return nil, fmt.Errorf("unsupported workflow step type: %s", step.Type)
 	}
@@ -329,6 +352,317 @@ func (s *DynamicService) workflowDeleteRecord(ctx context.Context, step models.D
 	return output, nil
 }
 
+func (s *DynamicService) workflowGetRecord(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	targetSchema := workflowTargetSchema(step, payload.SchemaName)
+	targetContainer, err := s.workflowTargetContainer(ctx, payload, targetSchema)
+	if err != nil {
+		return nil, err
+	}
+	if _, hasFilter := step.Config["filter"]; !hasFilter {
+		if _, hasFilters := step.Config["filters"]; !hasFilters {
+			id := resolveWorkflowTemplates(step.Config["id"], payload)
+			if id == nil {
+				return nil, fmt.Errorf("get_record step requires id, filter, or filters config")
+			}
+			result, err := s.GetDynamicItem(ctx, GetDynamicItemInput{
+				TenantID:  payload.TenantID,
+				ProjectID: payload.ProjectID,
+				Schema:    targetSchema,
+				ID:        fmt.Sprint(id),
+				UserRole:  workflowUserRole(payload),
+				Container: targetContainer,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{
+				"found":     true,
+				"data":      result.Item,
+				"fromCache": result.FromCache,
+			}, nil
+		}
+	}
+
+	filter, ok, err := workflowFilterConfig(step.Config, payload, targetContainer)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("get_record step requires id, filter, or filters config")
+	}
+	normalizeWorkflowIDs(filter)
+
+	item, err := s.repository.FindOne(ctx, payload.TenantID, payload.ProjectID, targetSchema, filter)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return map[string]interface{}{"found": false, "data": nil}, nil
+		}
+		return nil, err
+	}
+	resultItem := map[string]interface{}(item)
+	utils.StripHashed(targetContainer.Fields, []map[string]interface{}{resultItem})
+	populated, err := utils.PopulateIfNeeded(ctx, payload.TenantID, payload.ProjectID, targetContainer, []map[string]interface{}{resultItem})
+	if err != nil {
+		return nil, err
+	}
+	if len(populated) > 0 {
+		resultItem = populated[0]
+	}
+	filtered := utils.FilterDocuments([]map[string]interface{}{resultItem}, targetContainer.Fields, workflowUserRole(payload))
+	if len(filtered) > 0 {
+		resultItem = filtered[0]
+	}
+	return map[string]interface{}{"found": true, "data": resultItem}, nil
+}
+
+func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	targetSchema := workflowTargetSchema(step, payload.SchemaName)
+	targetContainer, err := s.workflowTargetContainer(ctx, payload, targetSchema)
+	if err != nil {
+		return nil, err
+	}
+	filter, ok, err := workflowFilterConfig(step.Config, payload, targetContainer)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		filter = bson.M{}
+	}
+	normalizeWorkflowIDs(filter)
+
+	limit := workflowIntConfig(step.Config, "limit", 50)
+	if limit <= 0 || limit > maxWorkflowQueryLimit {
+		return nil, fmt.Errorf("find_records limit must be between 1 and %d", maxWorkflowQueryLimit)
+	}
+
+	searchKey := workflowStringConfig(step.Config, "search", "")
+	if searchKey == "" {
+		searchKey = workflowStringConfig(step.Config, "searchKey", "")
+	}
+	if searchKey != "" {
+		orClauses, err := utils.BuildSearchWithReferences(ctx, targetContainer, searchKey)
+		if err != nil {
+			return nil, err
+		}
+		if len(orClauses) > 0 {
+			if len(filter) > 0 {
+				filter = bson.M{"$and": []bson.M{filter, bson.M{"$or": orClauses}}}
+			} else {
+				filter = bson.M{"$or": orClauses}
+			}
+		}
+	}
+
+	userRole := workflowUserRole(payload)
+	userMap := map[string]interface{}{"id": payload.UserID, "_id": payload.UserID, "role": userRole}
+	rowAccessFilter, err := utils.GetRowAccessFilter(targetContainer, userRole, userMap)
+	if err != nil {
+		return nil, err
+	}
+	if rowAccessFilter != nil {
+		if len(filter) > 0 {
+			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
+		} else {
+			filter = rowAccessFilter
+		}
+	}
+
+	findOptions := options.Find().SetLimit(int64(limit)).SetMaxTime(10 * time.Second)
+	if sortConfig, ok := resolveWorkflowTemplates(step.Config["sort"], payload).(map[string]interface{}); ok && len(sortConfig) > 0 {
+		findOptions.SetSort(bson.M(sortConfig))
+	}
+	if projectionConfig, ok := resolveWorkflowTemplates(step.Config["projection"], payload).(map[string]interface{}); ok && len(projectionConfig) > 0 {
+		findOptions.SetProjection(bson.M(projectionConfig))
+	}
+
+	items, err := s.repository.Query(ctx, payload.TenantID, payload.ProjectID, targetSchema, filter, findOptions, &utils.Pager{Enabled: false})
+	if err != nil {
+		return nil, err
+	}
+
+	utils.StripHashed(targetContainer.Fields, items)
+	items, err = utils.PopulateIfNeeded(ctx, payload.TenantID, payload.ProjectID, targetContainer, items)
+	if err != nil {
+		return nil, err
+	}
+	items = utils.FilterDocuments(items, targetContainer.Fields, userRole)
+
+	return map[string]interface{}{
+		"items": items,
+		"count": len(items),
+	}, nil
+}
+
+func (s *DynamicService) workflowSetVariable(step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	ensureWorkflowPayloadMaps(&payload)
+	valuesConfig, ok := step.Config["values"]
+	if !ok {
+		valuesConfig = step.Config
+	}
+	values, ok := resolveWorkflowTemplates(valuesConfig, payload).(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("set_variable step requires values config")
+	}
+	for key, value := range values {
+		payload.Variables[key] = value
+	}
+	return cloneWorkflowMap(payload.Variables), nil
+}
+
+func (s *DynamicService) workflowIf(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	branches := step.Branches
+	if len(branches) == 0 {
+		branches = []models.WorkflowBranch{
+			{Name: "if", Conditions: step.Conditions, Steps: step.Steps},
+		}
+		if len(step.ElseSteps) > 0 {
+			branches = append(branches, models.WorkflowBranch{Name: "else", Steps: step.ElseSteps})
+		}
+	}
+
+	for _, branch := range branches {
+		if len(branch.Conditions) > 0 && !workflowConditionsMatch(branch.Conditions, payload) {
+			continue
+		}
+		if err := s.runWorkflowStepList(ctx, payload, payload.WorkflowName, payload.WorkflowMode, workflowNestedExecutionMode(payload), payload.StopOnError, branch.Steps); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"branch": branch.Name}, nil
+	}
+
+	return map[string]interface{}{"branch": nil}, nil
+}
+
+func (s *DynamicService) workflowForEach(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	itemsValue := resolveWorkflowTemplates(step.Config["items"], payload)
+	items, ok := workflowSlice(itemsValue)
+	if !ok {
+		return nil, fmt.Errorf("for_each step requires items config resolving to an array")
+	}
+
+	maxItems := workflowIntConfig(step.Config, "maxItems", maxWorkflowLoopItems)
+	if maxItems <= 0 || maxItems > maxWorkflowLoopItems {
+		return nil, fmt.Errorf("for_each maxItems must be between 1 and %d", maxWorkflowLoopItems)
+	}
+	if len(items) > maxItems {
+		return nil, fmt.Errorf("for_each item limit exceeded: got %d max %d", len(items), maxItems)
+	}
+
+	itemName := workflowStringConfig(step.Config, "itemName", "item")
+	outputs := make([]interface{}, 0, len(items))
+	for index, item := range items {
+		loopPayload := payload
+		loopPayload.Loop = cloneWorkflowMap(payload.Loop)
+		loopPayload.Loop[itemName] = item
+		loopPayload.Loop["item"] = item
+		loopPayload.Loop["index"] = index
+		if err := s.runWorkflowStepList(ctx, loopPayload, payload.WorkflowName, payload.WorkflowMode, workflowNestedExecutionMode(payload), payload.StopOnError, step.Steps); err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, map[string]interface{}{"index": index})
+	}
+
+	return map[string]interface{}{
+		"count": len(items),
+		"items": outputs,
+	}, nil
+}
+
+func (s *DynamicService) workflowExecuteWorkflow(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	if payload.WorkflowDepth >= maxWorkflowDepth {
+		return nil, fmt.Errorf("workflow depth limit exceeded: max %d", maxWorkflowDepth)
+	}
+
+	targetSchema := workflowTargetSchema(step, payload.SchemaName)
+	workflowName := workflowStringConfig(step.Config, "workflowName", "")
+	if workflowName == "" {
+		workflowName = workflowStringConfig(step.Config, "name", "")
+	}
+	if workflowName == "" {
+		return nil, fmt.Errorf("execute_workflow step requires workflowName config")
+	}
+
+	record := payload.Record
+	if recordConfig, ok := step.Config["record"]; ok {
+		resolvedRecord, ok := resolveWorkflowTemplates(recordConfig, payload).(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("execute_workflow record config must resolve to an object")
+		}
+		record = resolvedRecord
+	}
+	oldRecord := payload.OldRecord
+	if oldRecordConfig, ok := step.Config["oldRecord"]; ok {
+		resolvedOldRecord, ok := resolveWorkflowTemplates(oldRecordConfig, payload).(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("execute_workflow oldRecord config must resolve to an object")
+		}
+		oldRecord = resolvedOldRecord
+	}
+
+	targetContainer, err := s.workflowTargetContainer(ctx, payload, targetSchema)
+	if err != nil {
+		return nil, err
+	}
+	workflow, found := findWorkflow(targetContainer, workflowName)
+	if !found {
+		return nil, fmt.Errorf("workflow not found: %s", workflowName)
+	}
+	if !workflow.IsActive {
+		return nil, fmt.Errorf("workflow is disabled: %s", workflowName)
+	}
+
+	childPayload := payload
+	childPayload.SchemaName = targetSchema
+	childPayload.WorkflowName = workflow.Name
+	childPayload.Record = cloneWorkflowMap(record)
+	childPayload.OldRecord = cloneWorkflowMap(oldRecord)
+	childPayload.Container = targetContainer
+	childPayload.WorkflowDepth = payload.WorkflowDepth + 1
+	if err := s.runWorkflowDefinition(ctx, childPayload, workflow); err != nil {
+		return nil, err
+	}
+	return childPayload.StepOutputs, nil
+}
+
+func (s *DynamicService) workflowExecuteDynamicAPI(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	targetSchema := workflowTargetSchema(step, payload.SchemaName)
+	apiName := workflowStringConfig(step.Config, "apiName", "")
+	if apiName == "" {
+		apiName = workflowStringConfig(step.Config, "name", "")
+	}
+	if apiName == "" {
+		return nil, fmt.Errorf("execute_dynamic_api step requires apiName config")
+	}
+	body := map[string]interface{}{}
+	if bodyConfig, ok := step.Config["body"]; ok {
+		resolvedBody, ok := resolveWorkflowTemplates(bodyConfig, payload).(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("execute_dynamic_api body config must resolve to an object")
+		}
+		body = resolvedBody
+	}
+	targetContainer, err := s.workflowTargetContainer(ctx, payload, targetSchema)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.ExecuteDynamicAPI(ctx, ExecuteDynamicAPIInput{
+		TenantID:  payload.TenantID,
+		ProjectID: payload.ProjectID,
+		Schema:    targetSchema,
+		APIName:   apiName,
+		Body:      body,
+		Container: targetContainer,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"message": result.Message,
+		"data":    result.Data,
+		"source":  result.Source,
+	}, nil
+}
+
 func (s *DynamicService) workflowAuditLog(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
 	action := workflowStringConfig(step.Config, "action", "workflow:"+step.Name)
 	auditLog := buildDynamicAuditLog(payload.TenantID, payload.ProjectID, payload.SchemaName, action, payload.AuditUser, payload.OldRecord, payload.Record)
@@ -420,13 +754,13 @@ func (s *DynamicService) enqueueWorkflowStep(ctx context.Context, payload workfl
 		}
 		*payload.OutboxEvents++
 	}
-	event := buildWorkflowStepOutboxEvent(payload.TenantID, payload.ProjectID, payload.SchemaName, payload.UserID, workflowName, step, payload.Record, payload.OldRecord, payload.StepOutputs)
+	event := buildWorkflowStepOutboxEvent(payload.TenantID, payload.ProjectID, payload.SchemaName, payload.UserID, workflowName, step, payload.Record, payload.OldRecord, payload.StepOutputs, payload.Variables, payload.Loop)
 	event.Payload.WorkflowDepth = payload.WorkflowDepth + 1
 	_, err := s.repository.InsertOutboxEvent(ctx, event)
 	return err
 }
 
-func buildWorkflowStepOutboxEvent(tenantID, projectID, schemaName, userID, workflowName string, step models.DynamicWorkflowStep, record, oldRecord, stepOutputs map[string]interface{}) models.DynamicOutboxEvent {
+func buildWorkflowStepOutboxEvent(tenantID, projectID, schemaName, userID, workflowName string, step models.DynamicWorkflowStep, record, oldRecord, stepOutputs, variables, loop map[string]interface{}) models.DynamicOutboxEvent {
 	now := time.Now()
 	maxAttempts := dynamicOutboxMaxAttempts
 	if step.MaxAttempts > 0 {
@@ -468,7 +802,12 @@ func buildWorkflowStepOutboxEvent(tenantID, projectID, schemaName, userID, workf
 			Record:         record,
 			OldRecord:      oldRecord,
 			StepOutputs:    cloneWorkflowMap(stepOutputs),
+			Variables:      cloneWorkflowMap(variables),
+			Loop:           cloneWorkflowMap(loop),
 			Config:         step.Config,
+			Steps:          step.Steps,
+			ElseSteps:      step.ElseSteps,
+			Branches:       step.Branches,
 			IdempotencyKey: idempotencyKey,
 		},
 	}
@@ -496,6 +835,9 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		IsActive:     true,
 		TargetSchema: event.Payload.TargetSchema,
 		Config:       event.Payload.Config,
+		Steps:        event.Payload.Steps,
+		ElseSteps:    event.Payload.ElseSteps,
+		Branches:     event.Payload.Branches,
 		TimeoutSec:   event.Payload.StepTimeoutSec,
 	}
 	_, err := service.processWorkflowStepWithTimeout(ctx, step, workflowExecutionPayload{
@@ -506,6 +848,8 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		Record:         event.Payload.Record,
 		OldRecord:      event.Payload.OldRecord,
 		StepOutputs:    event.Payload.StepOutputs,
+		Variables:      event.Payload.Variables,
+		Loop:           event.Payload.Loop,
 		UserID:         event.Payload.UserID,
 		OutboxEventID:  event.ID,
 		IdempotencyKey: event.Payload.IdempotencyKey,
@@ -666,7 +1010,9 @@ func (s *DynamicService) workflowTargetContainer(ctx context.Context, payload wo
 }
 
 func workflowStepHasNonTransactionalSideEffect(step models.DynamicWorkflowStep) bool {
-	return step.Type == models.WorkflowStepTypeCallAPI || step.Type == models.WorkflowStepTypeInvalidateCache
+	return step.Type == models.WorkflowStepTypeCallAPI ||
+		step.Type == models.WorkflowStepTypeExecuteDynamicAPI ||
+		step.Type == models.WorkflowStepTypeInvalidateCache
 }
 
 func validateWorkflowCallAPIURL(ctx context.Context, rawURL string) error {
@@ -736,6 +1082,153 @@ func workflowStringConfig(config map[string]interface{}, key, fallback string) s
 	return fallback
 }
 
+func workflowIntConfig(config map[string]interface{}, key string, fallback int) int {
+	value, ok := config[key]
+	if !ok {
+		return fallback
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int32:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func workflowNestedExecutionMode(payload workflowExecutionPayload) string {
+	if payload.ExecutionMode != "" {
+		return payload.ExecutionMode
+	}
+	return models.WorkflowModeTransactional
+}
+
+func workflowFilterConfig(config map[string]interface{}, payload workflowExecutionPayload, container *models.ContainerModel) (bson.M, bool, error) {
+	if filtersConfig, ok := config["filters"]; ok {
+		filters, ok := resolveWorkflowTemplates(filtersConfig, payload).(map[string]interface{})
+		if !ok {
+			return nil, true, fmt.Errorf("workflow filters config must resolve to an object")
+		}
+		filter, err := buildWorkflowFilterFromValues(container, filters)
+		return filter, true, err
+	}
+
+	filterConfig, ok := config["filter"]
+	if !ok {
+		return nil, false, nil
+	}
+	filter, ok := resolveWorkflowTemplates(filterConfig, payload).(map[string]interface{})
+	if !ok {
+		return nil, true, fmt.Errorf("workflow filter config must resolve to an object")
+	}
+	return bson.M(filter), true, nil
+}
+
+func buildWorkflowFilterFromValues(container *models.ContainerModel, filters map[string]interface{}) (bson.M, error) {
+	filter := bson.M{}
+	if container == nil || len(filters) == 0 {
+		return filter, nil
+	}
+
+	fieldsByName := make(map[string]models.Field, len(container.Fields))
+	for _, field := range container.Fields {
+		if !field.IsHashed {
+			fieldsByName[field.Name] = field
+		}
+	}
+
+	for key, rawValue := range filters {
+		field, ok := fieldsByName[key]
+		if !ok {
+			continue
+		}
+
+		values := workflowFilterValues(rawValue)
+		fieldFilter := bson.M{}
+		simpleValues := make([]interface{}, 0, len(values))
+
+		for _, value := range values {
+			converted, err := utils.ConvertQueryValueToFieldType(field.Name, field.Type, fmt.Sprint(value))
+			if err != nil {
+				return nil, err
+			}
+			if condition, ok := converted.(bson.M); ok {
+				for operator, conditionValue := range condition {
+					fieldFilter[operator] = conditionValue
+				}
+				continue
+			}
+			simpleValues = append(simpleValues, converted)
+		}
+
+		if len(simpleValues) > 1 {
+			filter[field.Name] = bson.M{"$in": simpleValues}
+			continue
+		}
+		if len(simpleValues) == 1 {
+			filter[field.Name] = simpleValues[0]
+			continue
+		}
+		if len(fieldFilter) > 0 {
+			filter[field.Name] = fieldFilter
+		}
+	}
+
+	return filter, nil
+}
+
+func workflowFilterValues(value interface{}) []interface{} {
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed
+	case []string:
+		values := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			values = append(values, item)
+		}
+		return values
+	default:
+		return []interface{}{value}
+	}
+}
+
+func workflowUserRole(payload workflowExecutionPayload) string {
+	if payload.AuditUser == nil || len(payload.AuditUser.Roles) == 0 {
+		return ""
+	}
+	return payload.AuditUser.Roles[0]
+}
+
+func workflowSlice(value interface{}) ([]interface{}, bool) {
+	switch typed := value.(type) {
+	case []interface{}:
+		return typed, true
+	case []map[string]interface{}:
+		items := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, item)
+		}
+		return items, true
+	case []bson.M:
+		items := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, map[string]interface{}(item))
+		}
+		return items, true
+	default:
+		return nil, false
+	}
+}
+
 func workflowHasUpdateOperator(update map[string]interface{}) bool {
 	for key := range update {
 		if strings.HasPrefix(key, "$") {
@@ -745,32 +1238,33 @@ func workflowHasUpdateOperator(update map[string]interface{}) bool {
 	return false
 }
 
-func workflowConditionsMatch(conditions []models.WorkflowCondition, record, oldRecord map[string]interface{}, userID string) bool {
+func workflowConditionsMatch(conditions []models.WorkflowCondition, payload workflowExecutionPayload) bool {
 	for _, condition := range conditions {
-		if !workflowConditionMatches(condition, record, oldRecord, userID) {
+		if !workflowConditionMatches(condition, payload) {
 			return false
 		}
 	}
 	return true
 }
 
-func workflowConditionMatches(condition models.WorkflowCondition, record, oldRecord map[string]interface{}, userID string) bool {
-	current, exists := workflowValueForField(record, condition.Field, userID)
-	previous, previousExists := workflowValueForField(oldRecord, condition.Field, userID)
+func workflowConditionMatches(condition models.WorkflowCondition, payload workflowExecutionPayload) bool {
+	current, exists := workflowValueForField(condition.Field, payload)
+	previous, previousExists := workflowValueForField("oldRecord."+strings.TrimPrefix(condition.Field, "record."), payload)
+	expected := resolveWorkflowTemplates(condition.Value, payload)
 
 	switch condition.Operator {
 	case models.WorkflowConditionEqual, "":
-		return exists && workflowValuesEqual(current, condition.Value)
+		return exists && workflowValuesEqual(current, expected)
 	case models.WorkflowConditionNotEqual:
-		return !workflowValuesEqual(current, condition.Value)
+		return !workflowValuesEqual(current, expected)
 	case models.WorkflowConditionGreaterThan:
-		return workflowCompareNumbers(current, condition.Value) > 0
+		return workflowCompareNumbers(current, expected) > 0
 	case models.WorkflowConditionLessThan:
-		return workflowCompareNumbers(current, condition.Value) < 0
+		return workflowCompareNumbers(current, expected) < 0
 	case models.WorkflowConditionIn:
-		return workflowValueIn(current, condition.Value)
+		return workflowValueIn(current, expected)
 	case models.WorkflowConditionExists:
-		wantExists, ok := condition.Value.(bool)
+		wantExists, ok := expected.(bool)
 		if !ok {
 			wantExists = true
 		}
@@ -778,23 +1272,36 @@ func workflowConditionMatches(condition models.WorkflowCondition, record, oldRec
 	case models.WorkflowConditionChanged:
 		return exists && previousExists && !workflowValuesEqual(current, previous)
 	case models.WorkflowConditionChangedTo:
-		return exists && previousExists && !workflowValuesEqual(current, previous) && workflowValuesEqual(current, condition.Value)
+		return exists && previousExists && !workflowValuesEqual(current, previous) && workflowValuesEqual(current, expected)
 	case models.WorkflowConditionChangedFrom:
-		return exists && previousExists && !workflowValuesEqual(current, previous) && workflowValuesEqual(previous, condition.Value)
+		return exists && previousExists && !workflowValuesEqual(current, previous) && workflowValuesEqual(previous, expected)
 	default:
 		return false
 	}
 }
 
-func workflowValueForField(record map[string]interface{}, field, userID string) (interface{}, bool) {
+func workflowValueForField(field string, payload workflowExecutionPayload) (interface{}, bool) {
 	switch field {
 	case "user.id", "user._id", "userId":
-		return userID, userID != ""
+		return payload.UserID, payload.UserID != ""
 	}
-	if record == nil || field == "" {
+	if field == "" {
 		return nil, false
 	}
-	return workflowPathValue(record, field)
+	switch {
+	case strings.HasPrefix(field, "record."):
+		return workflowPathValue(payload.Record, strings.TrimPrefix(field, "record."))
+	case strings.HasPrefix(field, "oldRecord."):
+		return workflowPathValue(payload.OldRecord, strings.TrimPrefix(field, "oldRecord."))
+	case strings.HasPrefix(field, "steps."):
+		return workflowPathValue(payload.StepOutputs, strings.TrimPrefix(field, "steps."))
+	case strings.HasPrefix(field, "vars."):
+		return workflowPathValue(payload.Variables, strings.TrimPrefix(field, "vars."))
+	case strings.HasPrefix(field, "loop."):
+		return workflowPathValue(payload.Loop, strings.TrimPrefix(field, "loop."))
+	default:
+		return workflowPathValue(payload.Record, field)
+	}
 }
 
 func workflowPathValue(value interface{}, path string) (interface{}, bool) {
@@ -813,6 +1320,18 @@ func workflowPathValue(value interface{}, path string) (interface{}, bool) {
 				return nil, false
 			}
 			current = next
+		case []interface{}:
+			index, err := strconv.Atoi(part)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		case []map[string]interface{}:
+			index, err := strconv.Atoi(part)
+			if err != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
 		default:
 			return nil, false
 		}
@@ -947,6 +1466,10 @@ func workflowTemplateValue(token string, payload workflowExecutionPayload) (inte
 		return workflowPathValue(payload.OldRecord, strings.TrimPrefix(token, "oldRecord."))
 	case strings.HasPrefix(token, "steps."):
 		return workflowPathValue(payload.StepOutputs, strings.TrimPrefix(token, "steps."))
+	case strings.HasPrefix(token, "vars."):
+		return workflowPathValue(payload.Variables, strings.TrimPrefix(token, "vars."))
+	case strings.HasPrefix(token, "loop."):
+		return workflowPathValue(payload.Loop, strings.TrimPrefix(token, "loop."))
 	case token == "user.id" || token == "user._id" || token == "userId":
 		return payload.UserID, payload.UserID != ""
 	case token == "schemaName":
@@ -977,6 +1500,18 @@ func coerceWorkflowScalar(value string) interface{} {
 func normalizeWorkflowIDs(value interface{}) {
 	switch typed := value.(type) {
 	case map[string]interface{}:
+		for key, item := range typed {
+			if key == "_id" {
+				if idString, ok := item.(string); ok {
+					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+						typed[key] = objectID
+						continue
+					}
+				}
+			}
+			normalizeWorkflowIDs(item)
+		}
+	case bson.M:
 		for key, item := range typed {
 			if key == "_id" {
 				if idString, ok := item.(string); ok {
