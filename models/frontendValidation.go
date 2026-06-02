@@ -56,12 +56,14 @@ func ValidateFrontendLinkConfig(f *Frontend) error {
 
 // ValidateFieldFrontendConfig validates the frontend configuration for a single field
 func ValidateFieldFrontendConfig(field *Field) error {
-	if field == nil || field.Frontend == nil {
+	if field == nil {
 		return nil
 	}
 
-	if err := ValidateFrontendLinkConfig(field.Frontend); err != nil {
-		return fmt.Errorf("field '%s': %w", field.Name, err)
+	if field.Frontend != nil {
+		if err := ValidateFrontendLinkConfig(field.Frontend); err != nil {
+			return fmt.Errorf("field '%s': %w", field.Name, err)
+		}
 	}
 
 	// Recursively validate children fields

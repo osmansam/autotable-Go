@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -23,7 +22,7 @@ func EnsureIndexes(ctx context.Context, container *models.ContainerModel, tenant
 	log.Printf("Ensuring indexes for collection %s", collectionName)
 
 	// Get project-specific collection
-	collection := GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName)
+	collection := dynamicCollectionProvider(tenantID, projectID, container.SchemaName)
 	if collection == nil {
 		return fmt.Errorf("failed to get collection for schema: %s", container.SchemaName)
 	}
@@ -135,7 +134,7 @@ func createCustomIndexes(ctx context.Context, collection *mongo.Collection, cont
 // DropIndexes drops all indexes for a schema (useful when deleting a container)
 // collectionName should be the full project-specific collection name
 func DropIndexes(ctx context.Context, collectionName string) error {
-	collection := configs.GetCollection(collectionName)
+	collection := globalCollectionProvider(collectionName)
 	if collection == nil {
 		return fmt.Errorf("failed to get collection: %s", collectionName)
 	}
@@ -152,7 +151,7 @@ func DropIndexes(ctx context.Context, collectionName string) error {
 
 // ListIndexes returns all indexes for a given schema
 func ListIndexes(ctx context.Context, schemaName string) ([]bson.M, error) {
-	collection := configs.GetCollection(schemaName)
+	collection := globalCollectionProvider(schemaName)
 	if collection == nil {
 		return nil, fmt.Errorf("failed to get collection for schema: %s", schemaName)
 	}

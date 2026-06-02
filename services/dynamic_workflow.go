@@ -534,6 +534,7 @@ func (s *DynamicService) workflowIf(ctx context.Context, step models.DynamicWork
 }
 
 func (s *DynamicService) workflowForEach(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	ensureWorkflowPayloadMaps(&payload)
 	itemsValue := resolveWorkflowTemplates(step.Config["items"], payload)
 	items, ok := workflowSlice(itemsValue)
 	if !ok {

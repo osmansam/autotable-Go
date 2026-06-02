@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -18,7 +17,7 @@ func GetAllContainerModelsWithContext(ctx context.Context) ([]models.ContainerMo
 	var containers []models.ContainerModel
 
 	// Setting up the MongoDB collection
-	containerCollection := configs.GetCollection("containers")
+	containerCollection := globalCollectionProvider("containers")
 
 	// Context to manage timeout
 	if ctx == nil {

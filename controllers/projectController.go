@@ -57,7 +57,7 @@ func ValidateSlug(slug string) bool {
 func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error {
 	// Get the containers collection for this project
 	containersCollectionName := GetCollectionNameForProject(tenantID, projectID, "containers")
-	containersCollection := projectsCollection.Database().Collection(containersCollectionName)
+	containersCollection := projectsCollection().Database().Collection(containersCollectionName)
 
 	// 1. Create the 'role' schema first
 	log.Println("Creating default 'role' schema for project")
@@ -241,8 +241,8 @@ func CreateProject(c *fiber.Ctx) error {
 
 	// Get tenant to retrieve slug
 	var tenant models.Tenant
-	tenantsCollection := configs.GetCollection("tenants")
-	err = tenantsCollection.FindOne(ctx, bson.M{"_id": tenantOID}).Decode(&tenant)
+	tenantCollection := configs.GetCollection("tenants")
+	err = tenantCollection.FindOne(ctx, bson.M{"_id": tenantOID}).Decode(&tenant)
 	if err != nil {
 		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
 			Status:  http.StatusNotFound,
@@ -253,7 +253,7 @@ func CreateProject(c *fiber.Ctx) error {
 
 	// Check if slug is unique within tenant
 	var existingProject models.Project
-	err = projectsCollection.FindOne(ctx, bson.M{
+	err = projectsCollection().FindOne(ctx, bson.M{
 		"tenantId": tenantOID,
 		"slug":     input.Slug,
 	}).Decode(&existingProject)
@@ -285,7 +285,7 @@ func CreateProject(c *fiber.Ctx) error {
 		UpdatedAt:  time.Now(),
 	}
 
-	_, err = projectsCollection.InsertOne(ctx, newProject)
+	_, err = projectsCollection().InsertOne(ctx, newProject)
 	if err != nil {
 		log.Printf("Failed to create project: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -308,10 +308,10 @@ func CreateProject(c *fiber.Ctx) error {
 		UpdatedAt: time.Now(),
 	}
 
-	_, err = projectMembershipsCollection.InsertOne(ctx, projectMembership)
+	_, err = projectMembershipsCollection().InsertOne(ctx, projectMembership)
 	if err != nil {
 		// Rollback: delete the project
-		if _, rollbackErr := projectsCollection.DeleteOne(ctx, bson.M{"_id": newProject.ID}); rollbackErr != nil {
+		if _, rollbackErr := projectsCollection().DeleteOne(ctx, bson.M{"_id": newProject.ID}); rollbackErr != nil {
 			log.Printf("Failed to rollback project creation after membership error: %v", rollbackErr)
 		}
 		log.Printf("Failed to create project membership: %v", err)
@@ -331,7 +331,7 @@ func CreateProject(c *fiber.Ctx) error {
 	)
 
 	// Create the containers metadata collection with a unique index on schemaName
-	containersCol := projectsCollection.Database().Collection(containersCollectionName)
+	containersCol := projectsCollection().Database().Collection(containersCollectionName)
 
 	// Create unique index on schemaName within this project
 	indexModel := mongo.IndexModel{
@@ -381,7 +381,7 @@ func GetAllProjects(c *fiber.Ctx) error {
 	}
 
 	// Find all projects for this tenant
-	cursor, err := projectsCollection.Find(ctx, bson.M{
+	cursor, err := projectsCollection().Find(ctx, bson.M{
 		"tenantId": tenantOID,
 	})
 	if err != nil {
@@ -437,7 +437,7 @@ func GetProject(c *fiber.Ctx) error {
 
 	// Find project and verify it belongs to the tenant
 	var project models.Project
-	err = projectsCollection.FindOne(ctx, bson.M{
+	err = projectsCollection().FindOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	}).Decode(&project)
@@ -459,7 +459,7 @@ func GetProject(c *fiber.Ctx) error {
 	}
 
 	// Get project members count
-	memberCount, err := projectMembershipsCollection.CountDocuments(ctx, bson.M{
+	memberCount, err := projectMembershipsCollection().CountDocuments(ctx, bson.M{
 		"projectId": projectOID,
 		"status":    models.MembershipStatusActive,
 	})
@@ -536,7 +536,7 @@ func UpdateProject(c *fiber.Ctx) error {
 
 	// Check if project exists and belongs to tenant
 	var existingProject models.Project
-	err = projectsCollection.FindOne(ctx, bson.M{
+	err = projectsCollection().FindOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	}).Decode(&existingProject)
@@ -568,7 +568,7 @@ func UpdateProject(c *fiber.Ctx) error {
 	if input.Slug != nil {
 		// Check if new slug is unique
 		var slugCheck models.Project
-		err = projectsCollection.FindOne(ctx, bson.M{
+		err = projectsCollection().FindOne(ctx, bson.M{
 			"tenantId": tenantOID,
 			"slug":     *input.Slug,
 			"_id":      bson.M{"$ne": projectOID},
@@ -600,7 +600,7 @@ func UpdateProject(c *fiber.Ctx) error {
 	}
 
 	// Update project
-	result, err := projectsCollection.UpdateOne(
+	result, err := projectsCollection().UpdateOne(
 		ctx,
 		bson.M{
 			"_id":      projectOID,
@@ -627,7 +627,7 @@ func UpdateProject(c *fiber.Ctx) error {
 
 	// Fetch updated project
 	var updatedProject models.Project
-	if err = projectsCollection.FindOne(ctx, bson.M{
+	if err = projectsCollection().FindOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	}).Decode(&updatedProject); err != nil {
@@ -673,7 +673,7 @@ func DeleteProject(c *fiber.Ctx) error {
 
 	// Check if project exists
 	var project models.Project
-	err = projectsCollection.FindOne(ctx, bson.M{
+	err = projectsCollection().FindOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	}).Decode(&project)
@@ -694,7 +694,7 @@ func DeleteProject(c *fiber.Ctx) error {
 	}
 
 	// Delete project memberships
-	if _, err = projectMembershipsCollection.DeleteMany(ctx, bson.M{
+	if _, err = projectMembershipsCollection().DeleteMany(ctx, bson.M{
 		"projectId": projectOID,
 		"tenantId":  tenantOID,
 	}); err != nil {
@@ -706,7 +706,7 @@ func DeleteProject(c *fiber.Ctx) error {
 	}
 
 	// Delete project
-	_, err = projectsCollection.DeleteOne(ctx, bson.M{
+	_, err = projectsCollection().DeleteOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	})

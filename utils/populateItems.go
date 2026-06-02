@@ -162,7 +162,7 @@ func PopulateItems(ctx context.Context, tenantID, projectID string, container *m
 }
 
 func GetPopulatedDocument(ctx context.Context, tenantID, projectID, collectionName string, id interface{}, fields []string) (map[string]interface{}, error) {
-    coll := GetDynamicCollectionForProject(tenantID, projectID, collectionName)
+    coll := dynamicCollectionProvider(tenantID, projectID, collectionName)
 
     projection := bson.M{}
     for _, field := range fields {
@@ -201,7 +201,7 @@ func GetPopulatedDocuments(ctx context.Context, tenantID, projectID, collectionN
         return []map[string]interface{}{}, nil
     }
 
-    coll := GetDynamicCollectionForProject(tenantID, projectID, collectionName)
+    coll := dynamicCollectionProvider(tenantID, projectID, collectionName)
 
     projection := bson.M{}
     for _, field := range fields {

@@ -15,22 +15,35 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
 
-type DynamicRepository struct{}
+type DynamicRepository struct {
+	collection         func(tenantID, projectID, schemaName string) *mongo.Collection
+	globalCollection   func(collectionName string) *mongo.Collection
+	getContainerModel  func(context.Context, string, string, string) (*models.ContainerModel, error)
+	getContainerModels func(context.Context) ([]models.ContainerModel, error)
+	nextSequence       func(context.Context, string) (int64, error)
+	withTransaction    func(context.Context, func(mongo.SessionContext) error) error
+}
 
 func NewDynamicRepository() *DynamicRepository {
-	return &DynamicRepository{}
+	return &DynamicRepository{
+		collection:         utils.GetDynamicCollectionForProject,
+		globalCollection:   configs.GetCollection,
+		getContainerModel:  utils.GetContainerModelWithContext,
+		getContainerModels: utils.GetAllContainerModelsWithContext,
+		nextSequence:       utils.GetNextSequence,
+	}
 }
 
 func (r *DynamicRepository) GetContainerModel(ctx context.Context, tenantID, projectID, schemaName string) (*models.ContainerModel, error) {
-	return utils.GetContainerModelWithContext(ctx, tenantID, projectID, schemaName)
+	return r.getContainerModel(ctx, tenantID, projectID, schemaName)
 }
 
 func (r *DynamicRepository) GetAllContainerModels(ctx context.Context) ([]models.ContainerModel, error) {
-	return utils.GetAllContainerModelsWithContext(ctx)
+	return r.getContainerModels(ctx)
 }
 
 func (r *DynamicRepository) GetCollection(tenantID, projectID, schemaName string) *mongo.Collection {
-	return utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	return r.collection(tenantID, projectID, schemaName)
 }
 
 func (r *DynamicRepository) CountByField(ctx context.Context, tenantID, projectID, schemaName, fieldName string, fieldValue interface{}) (int64, error) {
@@ -76,11 +89,11 @@ func (r *DynamicRepository) FindOne(ctx context.Context, tenantID, projectID, sc
 func (r *DynamicRepository) FindAll(ctx context.Context, tenantID, projectID, schemaName string, limit int64) ([]map[string]interface{}, error) {
 	pager := utils.Pager{Enabled: false}
 	opts := options.Find().SetLimit(limit)
-	return utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, bson.M{}, opts, &pager)
+	return utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, bson.M{}, opts, &pager)
 }
 
 func (r *DynamicRepository) Query(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M, opts *options.FindOptions, pager *utils.Pager) ([]map[string]interface{}, error) {
-	return utils.QueryAndDecode(ctx, tenantID, projectID, schemaName, filter, opts, pager)
+	return utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, filter, opts, pager)
 }
 
 func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string) ([]map[string]interface{}, error) {
@@ -128,10 +141,13 @@ func (r *DynamicRepository) UpdateByID(ctx context.Context, tenantID, projectID,
 }
 
 func (r *DynamicRepository) NextSequence(ctx context.Context, schemaName string) (int64, error) {
-	return utils.GetNextSequence(ctx, schemaName)
+	return r.nextSequence(ctx, schemaName)
 }
 
 func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
+	if r.withTransaction != nil {
+		return r.withTransaction(ctx, fn)
+	}
 	configs.InitDB()
 	session, err := configs.DB.StartSession()
 	if err != nil {
@@ -151,7 +167,7 @@ func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.S
 
 func (r *DynamicRepository) InsertOutboxEvent(ctx context.Context, event models.DynamicOutboxEvent) (*mongo.InsertOneResult, error) {
 	if event.Payload.IdempotencyKey != "" {
-		_, err := configs.GetCollection("dynamic_outbox").UpdateOne(
+		_, err := r.globalCollection("dynamic_outbox").UpdateOne(
 			ctx,
 			bson.M{"payload.idempotencyKey": event.Payload.IdempotencyKey},
 			bson.M{"$setOnInsert": event},
@@ -165,11 +181,11 @@ func (r *DynamicRepository) InsertOutboxEvent(ctx context.Context, event models.
 		}
 		return &mongo.InsertOneResult{InsertedID: event.ID}, nil
 	}
-	return configs.GetCollection("dynamic_outbox").InsertOne(ctx, event)
+	return r.globalCollection("dynamic_outbox").InsertOne(ctx, event)
 }
 
 func (r *DynamicRepository) EnsureOutboxIndexes(ctx context.Context) error {
-	_, err := configs.GetCollection("dynamic_outbox").Indexes().CreateMany(ctx, []mongo.IndexModel{
+	_, err := r.globalCollection("dynamic_outbox").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "status", Value: 1},
@@ -203,7 +219,7 @@ func (r *DynamicRepository) EnsureOutboxIndexes(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = configs.GetCollection("dynamic_workflow_step_executions").Indexes().CreateOne(ctx, mongo.IndexModel{
+	_, err = r.globalCollection("dynamic_workflow_step_executions").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys:    bson.D{{Key: "idempotencyKey", Value: 1}},
 		Options: options.Index().SetName("idx_workflow_step_executions_idempotency_key").SetUnique(true).SetBackground(true),
 	})
@@ -214,7 +230,7 @@ func (r *DynamicRepository) WorkflowStepExecutionDone(ctx context.Context, idemp
 	if idempotencyKey == "" {
 		return false, nil
 	}
-	err := configs.GetCollection("dynamic_workflow_step_executions").
+	err := r.globalCollection("dynamic_workflow_step_executions").
 		FindOne(ctx, bson.M{"idempotencyKey": idempotencyKey}).Err()
 	if err == nil {
 		return true, nil
@@ -230,7 +246,7 @@ func (r *DynamicRepository) MarkWorkflowStepExecutionDone(ctx context.Context, i
 		return nil
 	}
 	now := time.Now()
-	_, err := configs.GetCollection("dynamic_workflow_step_executions").UpdateOne(
+	_, err := r.globalCollection("dynamic_workflow_step_executions").UpdateOne(
 		ctx,
 		bson.M{"idempotencyKey": idempotencyKey},
 		bson.M{"$setOnInsert": bson.M{
@@ -244,7 +260,7 @@ func (r *DynamicRepository) MarkWorkflowStepExecutionDone(ctx context.Context, i
 }
 
 func (r *DynamicRepository) ClaimPendingOutboxEvent(ctx context.Context, now time.Time) (*models.DynamicOutboxEvent, error) {
-	collection := configs.GetCollection("dynamic_outbox")
+	collection := r.globalCollection("dynamic_outbox")
 	filter := bson.M{
 		"status": bson.M{"$in": []string{
 			models.DynamicOutboxStatusPending,
@@ -275,7 +291,7 @@ func (r *DynamicRepository) ClaimPendingOutboxEvent(ctx context.Context, now tim
 
 func (r *DynamicRepository) MarkOutboxEventDone(ctx context.Context, eventID primitive.ObjectID) error {
 	now := time.Now()
-	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, eventID, bson.M{
+	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, eventID, bson.M{
 		"$set": bson.M{
 			"status":      models.DynamicOutboxStatusDone,
 			"updatedAt":   primitive.NewDateTimeFromTime(now),
@@ -303,6 +319,6 @@ func (r *DynamicRepository) MarkOutboxEventFailed(ctx context.Context, event mod
 		setFields["expireAt"] = primitive.NewDateTimeFromTime(now.Add(configs.GetOutboxFailedRetention()))
 		delete(update, "$unset")
 	}
-	_, err := configs.GetCollection("dynamic_outbox").UpdateByID(ctx, event.ID, update)
+	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, event.ID, update)
 	return err
 }

@@ -2,15 +2,13 @@ package utils
 
 import (
 	"context"
-	"os"
 
-	"github.com/osmansam/autotableGo/configs"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func GetNextSequence(ctx context.Context, schemaName string) (int64, error) {
-    countersColl := configs.DB.Database(os.Getenv("COLLECTION_NAME")).Collection("counters")
+    countersColl := countersCollectionProvider()
     
     filter := bson.M{"_id": schemaName}
     update := bson.M{"$inc": bson.M{"seq": 1}}
