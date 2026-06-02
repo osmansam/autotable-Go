@@ -16,15 +16,22 @@ const (
 )
 
 const (
-	WorkflowStepTypeCreateRecord    = "create_record"
-	WorkflowStepTypeUpdateRecord    = "update_record"
-	WorkflowStepTypeDeleteRecord    = "delete_record"
-	WorkflowStepTypeAuditLog        = "audit_log"
-	WorkflowStepTypeInvalidateCache = "invalidate_cache"
-	WorkflowStepTypeCallAPI         = "call_api"
-	WorkflowStepTypeRunPipeline     = "run_pipeline"
-	WorkflowStepTypeDynamicFunction = "dynamic_function"
-	WorkflowStepTypeEmitOutboxEvent = "emit_outbox_event"
+	WorkflowStepTypeCreateRecord      = "create_record"
+	WorkflowStepTypeUpdateRecord      = "update_record"
+	WorkflowStepTypeDeleteRecord      = "delete_record"
+	WorkflowStepTypeAuditLog          = "audit_log"
+	WorkflowStepTypeInvalidateCache   = "invalidate_cache"
+	WorkflowStepTypeCallAPI           = "call_api"
+	WorkflowStepTypeRunPipeline       = "run_pipeline"
+	WorkflowStepTypeDynamicFunction   = "dynamic_function"
+	WorkflowStepTypeEmitOutboxEvent   = "emit_outbox_event"
+	WorkflowStepTypeGetRecord         = "get_record"
+	WorkflowStepTypeFindRecords       = "find_records"
+	WorkflowStepTypeIf                = "if"
+	WorkflowStepTypeForEach           = "for_each"
+	WorkflowStepTypeSetVariable       = "set_variable"
+	WorkflowStepTypeExecuteWorkflow   = "execute_workflow"
+	WorkflowStepTypeExecuteDynamicAPI = "execute_dynamic_api"
 )
 
 const (
@@ -76,4 +83,13 @@ type DynamicWorkflowStep struct {
 	TimeoutSec      int                    `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
 	IdempotencyKey  string                 `bson:"idempotencyKey,omitempty" json:"idempotencyKey,omitempty"`
 	ContinueOnError bool                   `bson:"continueOnError,omitempty" json:"continueOnError,omitempty"`
+	Steps           []DynamicWorkflowStep  `bson:"steps,omitempty" json:"steps,omitempty"`
+	ElseSteps       []DynamicWorkflowStep  `bson:"elseSteps,omitempty" json:"elseSteps,omitempty"`
+	Branches        []WorkflowBranch       `bson:"branches,omitempty" json:"branches,omitempty"`
+}
+
+type WorkflowBranch struct {
+	Name       string                `bson:"name,omitempty" json:"name,omitempty"`
+	Conditions []WorkflowCondition   `bson:"conditions,omitempty" json:"conditions,omitempty"`
+	Steps      []DynamicWorkflowStep `bson:"steps,omitempty" json:"steps,omitempty"`
 }

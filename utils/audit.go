@@ -55,7 +55,7 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 	}
 
 	// Use project-specific audit_logs collection
-	collection := GetProjectCollection(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
+	collection := projectCollectionProvider(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
 	if err := ensureAuditLogIndexesForCollection(ctx, collection); err != nil {
 		log.Printf("Failed to ensure audit log indexes: %v", err)
 		return err
@@ -84,7 +84,7 @@ func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
 }
 
 func EnsureAuditLogIndexes(ctx context.Context, tenantID, projectID string) error {
-	return ensureAuditLogIndexesForCollection(ctx, GetProjectCollection(tenantID, projectID, "audit_logs"))
+	return ensureAuditLogIndexesForCollection(ctx, projectCollectionProvider(tenantID, projectID, "audit_logs"))
 }
 
 func ensureAuditLogIndexesForCollection(ctx context.Context, collection *mongo.Collection) error {
@@ -503,7 +503,7 @@ func GetAuditLogs(ctx context.Context, c *fiber.Ctx) ([]bson.M, *Pager, error) {
 	}
 
 	// Get project-specific audit_logs collection
-	collection := GetProjectCollection(tenantID, projectID, "audit_logs")
+	collection := projectCollectionProvider(tenantID, projectID, "audit_logs")
 
 	// Build find options
 	opts := options.Find().SetSort(sort)

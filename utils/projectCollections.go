@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 
-	"github.com/osmansam/autotableGo/configs"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -11,7 +10,7 @@ import (
 // Collection naming pattern: tenant_{tenantId}_project_{projectId}_{collectionName}
 func GetProjectCollection(tenantID, projectID, collectionName string) *mongo.Collection {
 	fullCollectionName := fmt.Sprintf("tenant_%s_project_%s_%s", tenantID, projectID, collectionName)
-	return configs.GetCollection(fullCollectionName)
+	return globalCollectionProvider(fullCollectionName)
 }
 
 // GetContainerCollectionForProject returns the containers metadata collection for a project
@@ -19,7 +18,7 @@ func GetProjectCollection(tenantID, projectID, collectionName string) *mongo.Col
 func GetContainerCollectionForProject(tenantID, projectID string) *mongo.Collection {
 	if tenantID == "" || projectID == "" {
 		// Legacy mode: use global containers collection
-		return configs.GetCollection("containers")
+		return globalCollectionProvider("containers")
 	}
 	return GetProjectCollection(tenantID, projectID, "containers")
 }
@@ -30,7 +29,7 @@ func GetContainerCollectionForProject(tenantID, projectID string) *mongo.Collect
 func GetDynamicCollectionForProject(tenantID, projectID, schemaName string) *mongo.Collection {
 	if tenantID == "" || projectID == "" {
 		// Legacy mode: use global collection
-		return configs.GetCollection(schemaName)
+		return globalCollectionProvider(schemaName)
 	}
 	return GetProjectCollection(tenantID, projectID, schemaName)
 }
@@ -40,7 +39,7 @@ func GetDynamicCollectionForProject(tenantID, projectID, schemaName string) *mon
 func GetPageCollectionForProject(tenantID, projectID string) *mongo.Collection {
 	if tenantID == "" || projectID == "" {
 		// Legacy mode: use global pages collection
-		return configs.GetCollection("pages")
+		return globalCollectionProvider("pages")
 	}
 	return GetProjectCollection(tenantID, projectID, "pages")
 }

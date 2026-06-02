@@ -33,8 +33,10 @@ type SwaggerComponents struct {
 	Schemas map[string]interface{} `json:"schemas"`
 }
 
+var getAllContainerModelsForSwagger = utils.GetAllContainerModels
+
 func GenerateDynamicSwagger(c *fiber.Ctx) error {
-	allContainers, err := utils.GetAllContainerModels()
+	allContainers, err := getAllContainerModelsForSwagger()
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to retrieve container models")
 	}
@@ -887,7 +889,7 @@ func GetSwaggerUI(c *fiber.Ctx) error {
 }
 
 func ListAllSchemas(c *fiber.Ctx) error {
-	allContainers, err := utils.GetAllContainerModels()
+	allContainers, err := getAllContainerModelsForSwagger()
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to retrieve container models")
 	}

@@ -7,11 +7,13 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 )
 
+var auditLogsConfigProvider = utils.GetAuditLogsConfig
+
 func AuditRoutes(baseUrl string, app *fiber.App) {
 	auditGroup := app.Group(baseUrl)
 
 	// Fetch audit logs authorization config from database (returns default if not found)
-	auditConfig, _ := utils.GetAuditLogsConfig()
+	auditConfig, _ := auditLogsConfigProvider()
 
 	isAuthorized := auditConfig.IsAuthorized
 	authorizeRole := auditConfig.AuthorizeRole

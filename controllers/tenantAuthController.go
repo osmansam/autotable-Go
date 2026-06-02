@@ -17,19 +17,33 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var usersCollection *mongo.Collection = configs.GetCollection("users")
-var tenantsCollection *mongo.Collection = configs.GetCollection("tenants")
-var tenantMembershipsCollection *mongo.Collection = configs.GetCollection("tenant_memberships")
-var projectMembershipsCollection *mongo.Collection = configs.GetCollection("project_memberships")
-var projectsCollection *mongo.Collection = configs.GetCollection("projects")
+func usersCollection() *mongo.Collection {
+	return configs.GetCollection("users")
+}
+
+func tenantsCollection() *mongo.Collection {
+	return configs.GetCollection("tenants")
+}
+
+func tenantMembershipsCollection() *mongo.Collection {
+	return configs.GetCollection("tenant_memberships")
+}
+
+func projectMembershipsCollection() *mongo.Collection {
+	return configs.GetCollection("project_memberships")
+}
+
+func projectsCollection() *mongo.Collection {
+	return configs.GetCollection("projects")
+}
 
 // TenantRegisterInput represents the registration payload
 type TenantRegisterInput struct {
-	Email       string `json:"email" validate:"required,email"`
-	Password    string `json:"password" validate:"required,min=8"`
-	Name        string `json:"name" validate:"required"`
-	TenantName  string `json:"tenantName" validate:"required"`
-	TenantSlug  string `json:"tenantSlug" validate:"required"`
+	Email      string `json:"email" validate:"required,email"`
+	Password   string `json:"password" validate:"required,min=8"`
+	Name       string `json:"name" validate:"required"`
+	TenantName string `json:"tenantName" validate:"required"`
+	TenantSlug string `json:"tenantSlug" validate:"required"`
 }
 
 // TenantLoginInput represents the login payload
@@ -74,7 +88,7 @@ func TenantRegister(c *fiber.Ctx) error {
 
 	// Check if user already exists
 	var existingUser models.User
-	err := usersCollection.FindOne(ctx, bson.M{"email": input.Email}).Decode(&existingUser)
+	err := usersCollection().FindOne(ctx, bson.M{"email": input.Email}).Decode(&existingUser)
 	if err == nil {
 		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
 			Status:  http.StatusConflict,
@@ -85,7 +99,7 @@ func TenantRegister(c *fiber.Ctx) error {
 
 	// Check if tenant slug is already taken
 	var existingTenant models.Tenant
-	err = tenantsCollection.FindOne(ctx, bson.M{"slug": input.TenantSlug}).Decode(&existingTenant)
+	err = tenantsCollection().FindOne(ctx, bson.M{"slug": input.TenantSlug}).Decode(&existingTenant)
 	if err == nil {
 		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
 			Status:  http.StatusConflict,
@@ -125,7 +139,7 @@ func TenantRegister(c *fiber.Ctx) error {
 		"updatedAt": newUser.UpdatedAt,
 	}
 
-	_, err = usersCollection.InsertOne(ctx, userDoc)
+	_, err = usersCollection().InsertOne(ctx, userDoc)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
@@ -145,10 +159,10 @@ func TenantRegister(c *fiber.Ctx) error {
 		UpdatedAt:   time.Now(),
 	}
 
-	_, err = tenantsCollection.InsertOne(ctx, newTenant)
+	_, err = tenantsCollection().InsertOne(ctx, newTenant)
 	if err != nil {
 		// Rollback: delete the user
-		usersCollection.DeleteOne(ctx, bson.M{"_id": newUser.ID})
+		usersCollection().DeleteOne(ctx, bson.M{"_id": newUser.ID})
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to create tenant",
@@ -168,11 +182,11 @@ func TenantRegister(c *fiber.Ctx) error {
 		UpdatedAt: time.Now(),
 	}
 
-	_, err = tenantMembershipsCollection.InsertOne(ctx, tenantMembership)
+	_, err = tenantMembershipsCollection().InsertOne(ctx, tenantMembership)
 	if err != nil {
 		// Rollback: delete tenant and user
-		tenantsCollection.DeleteOne(ctx, bson.M{"_id": newTenant.ID})
-		usersCollection.DeleteOne(ctx, bson.M{"_id": newUser.ID})
+		tenantsCollection().DeleteOne(ctx, bson.M{"_id": newTenant.ID})
+		usersCollection().DeleteOne(ctx, bson.M{"_id": newUser.ID})
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to create tenant membership",
@@ -225,7 +239,7 @@ func TenantLogin(c *fiber.Ctx) error {
 
 	// Find user by email
 	var userDoc bson.M
-	err := usersCollection.FindOne(ctx, bson.M{"email": input.Email}).Decode(&userDoc)
+	err := usersCollection().FindOne(ctx, bson.M{"email": input.Email}).Decode(&userDoc)
 	if err != nil {
 		return c.Status(http.StatusUnauthorized).JSON(responses.GeneralResponse{
 			Status:  http.StatusUnauthorized,
@@ -259,7 +273,7 @@ func TenantLogin(c *fiber.Ctx) error {
 	email := userDoc["email"].(string)
 
 	// Find user's tenant memberships
-	cursor, err := tenantMembershipsCollection.Find(ctx, bson.M{
+	cursor, err := tenantMembershipsCollection().Find(ctx, bson.M{
 		"userId": userID,
 		"status": models.MembershipStatusActive,
 	})
@@ -323,7 +337,7 @@ func TenantLogin(c *fiber.Ctx) error {
 
 	// Get tenant details
 	var tenant models.Tenant
-	err = tenantsCollection.FindOne(ctx, bson.M{"_id": selectedMembership.TenantID}).Decode(&tenant)
+	err = tenantsCollection().FindOne(ctx, bson.M{"_id": selectedMembership.TenantID}).Decode(&tenant)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
@@ -364,7 +378,7 @@ func TenantLogin(c *fiber.Ctx) error {
 	}
 
 	var userTenants []models.Tenant
-	tenantCursor, err := tenantsCollection.Find(ctx, bson.M{"_id": bson.M{"$in": tenantIDs}})
+	tenantCursor, err := tenantsCollection().Find(ctx, bson.M{"_id": bson.M{"$in": tenantIDs}})
 	if err == nil {
 		tenantCursor.All(ctx, &userTenants)
 		tenantCursor.Close(ctx)
@@ -381,9 +395,9 @@ func TenantLogin(c *fiber.Ctx) error {
 				"email": email,
 				"name":  userDoc["name"],
 			},
-			"tenant":       tenant,
-			"roles":        selectedMembership.Roles,
-			"allTenants":   userTenants,
+			"tenant":     tenant,
+			"roles":      selectedMembership.Roles,
+			"allTenants": userTenants,
 		},
 	})
 }
@@ -420,7 +434,7 @@ func SwitchToProject(c *fiber.Ctx) error {
 
 	// Verify project belongs to tenant
 	var project models.Project
-	err = projectsCollection.FindOne(ctx, bson.M{
+	err = projectsCollection().FindOne(ctx, bson.M{
 		"_id":      projectOID,
 		"tenantId": tenantOID,
 	}).Decode(&project)
@@ -442,7 +456,7 @@ func SwitchToProject(c *fiber.Ctx) error {
 
 	// Check user's project membership
 	var projectMembership models.ProjectMembership
-	err = projectMembershipsCollection.FindOne(ctx, bson.M{
+	err = projectMembershipsCollection().FindOne(ctx, bson.M{
 		"userId":    userOID,
 		"projectId": projectOID,
 		"status":    models.MembershipStatusActive,
@@ -582,7 +596,7 @@ func GetCurrentUser(c *fiber.Ctx) error {
 	}
 
 	var user models.User
-	err = usersCollection.FindOne(ctx, bson.M{"_id": userOID}).Decode(&user)
+	err = usersCollection().FindOne(ctx, bson.M{"_id": userOID}).Decode(&user)
 	if err != nil {
 		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
 			Status:  http.StatusNotFound,

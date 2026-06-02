@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/osmansam/autotableGo/configs"
@@ -136,9 +137,18 @@ func QueryAndDecode(
 	opts *options.FindOptions,
 	pager *Pager,
 ) ([]map[string]interface{}, error) {
-	// Get project-specific collection
-	coll := GetDynamicCollectionForProject(tenantID, projectID, collName)
+	return QueryAndDecodeCollection(ctx, GetDynamicCollectionForProject(tenantID, projectID, collName), collName, filter, opts, pager)
+}
 
+// QueryAndDecodeCollection executes QueryAndDecode against a supplied collection.
+func QueryAndDecodeCollection(
+	ctx context.Context,
+	coll *mongo.Collection,
+	collName string,
+	filter bson.M,
+	opts *options.FindOptions,
+	pager *Pager,
+) ([]map[string]interface{}, error) {
 	// Execute query ONCE
 	cur, err := coll.Find(ctx, filter, opts)
 	if err != nil {
@@ -235,7 +245,7 @@ func boolToInt(b bool) int {
 // Returns default config (authentication only, no role authorization) if not found in database
 func GetAuditLogsConfig() (*models.AuditLogsConfig, error) {
 	ctx := context.Background()
-	collection := configs.GetCollection("settings")
+	collection := globalCollectionProvider("settings")
 
 	// Find the audit_logs settings document
 	var settings models.Settings

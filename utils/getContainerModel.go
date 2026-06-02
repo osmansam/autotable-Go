@@ -22,7 +22,7 @@ func GetContainerModelWithContext(ctx context.Context, tenantID, projectID, sche
 	defer cancel()
 
 	// Get project-specific container collection
-	containerCollection := GetContainerCollectionForProject(tenantID, projectID)
+	containerCollection := containerCollectionProvider(tenantID, projectID)
 
 	var containerModel models.ContainerModel
 	err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&containerModel)

@@ -36,6 +36,12 @@ func Register(c *fiber.Ctx) error {
 			Message: "Failed to get project context: " + err.Error(),
 		})
 	}
+	if tenantID == "" || projectID == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Missing tenant or project context",
+		})
+	}
 
 	// Assume schemaName is provided as a query parameter
 	schemaName := c.Query("schemaName")
@@ -171,6 +177,12 @@ func Login(c *fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
+	if tenantID == "" || projectID == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Missing tenant or project context",
 		})
 	}
 
@@ -353,6 +365,12 @@ func GoogleLogin(c *fiber.Ctx) error {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
+	if tenantID == "" || projectID == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Missing tenant or project context",
 		})
 	}
 
@@ -772,6 +790,12 @@ func Logout(c *fiber.Ctx) error {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
+	if tenantID == "" || projectID == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Missing tenant or project context",
 		})
 	}
 

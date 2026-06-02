@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -18,7 +19,14 @@ import (
 
 // getProjectContext extracts tenant and project IDs from the request context
 func getPageProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
-	return utils.GetTenantAndProjectContext(c)
+	tenantID, projectID, err = utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return "", "", err
+	}
+	if tenantID == "" || projectID == "" {
+		return "", "", fmt.Errorf("missing tenant or project context")
+	}
+	return tenantID, projectID, nil
 }
 
 // CreatePage creates a new page in project-specific collection

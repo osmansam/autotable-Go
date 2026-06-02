@@ -675,9 +675,11 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
     case int64:
         dateVal = time.Unix(v, 0)
 
-    case int, float64:
-        unixTimestamp := int64(v.(int))
-        dateVal = time.Unix(unixTimestamp, 0)
+    case int:
+        dateVal = time.Unix(int64(v), 0)
+
+    case float64:
+        dateVal = time.Unix(int64(v), 0)
 
     default:
         return fmt.Errorf("Field %s should be a valid date (RFC3339 string, YYYY-MM-DD, or Unix timestamp)", fieldName)
