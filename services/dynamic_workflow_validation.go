@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/osmansam/autotableGo/models"
+	"github.com/robfig/cron/v3"
 )
 
 const maxWorkflowTimeoutSec = 300
@@ -66,6 +68,9 @@ func ValidateWorkflow(workflow models.DynamicWorkflow) error {
 	}
 	if !workflowTriggerValid(workflow.Trigger) {
 		return fmt.Errorf("workflow %s has invalid trigger: %s", workflow.Name, workflow.Trigger)
+	}
+	if err := validateWorkflowSchedule(workflow); err != nil {
+		return fmt.Errorf("workflow %s: %w", workflow.Name, err)
 	}
 	if !workflowModeValid(workflow.Mode) {
 		return fmt.Errorf("workflow %s has invalid mode: %s", workflow.Name, workflow.Mode)
@@ -279,12 +284,38 @@ func workflowHasNamedStep(steps []models.DynamicWorkflowStep, name string) bool 
 	return false
 }
 
+func validateWorkflowSchedule(workflow models.DynamicWorkflow) error {
+	if workflow.Trigger != models.WorkflowTriggerCron {
+		if strings.TrimSpace(workflow.Schedule) != "" {
+			return fmt.Errorf("schedule is only supported for cron workflows")
+		}
+		if strings.TrimSpace(workflow.Timezone) != "" {
+			return fmt.Errorf("timezone is only supported for cron workflows")
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(workflow.Schedule) == "" {
+		return fmt.Errorf("cron schedule is required")
+	}
+	if _, err := cron.ParseStandard(workflow.Schedule); err != nil {
+		return fmt.Errorf("invalid cron schedule: %w", err)
+	}
+	if strings.TrimSpace(workflow.Timezone) != "" {
+		if _, err := time.LoadLocation(workflow.Timezone); err != nil {
+			return fmt.Errorf("invalid timezone: %w", err)
+		}
+	}
+	return nil
+}
+
 func workflowTriggerValid(trigger string) bool {
 	switch trigger {
 	case "", models.WorkflowTriggerManual,
 		models.WorkflowTriggerBeforeCreate, models.WorkflowTriggerAfterCreate,
 		models.WorkflowTriggerBeforeUpdate, models.WorkflowTriggerAfterUpdate,
-		models.WorkflowTriggerBeforeDelete, models.WorkflowTriggerAfterDelete:
+		models.WorkflowTriggerBeforeDelete, models.WorkflowTriggerAfterDelete,
+		models.WorkflowTriggerCron:
 		return true
 	default:
 		return false

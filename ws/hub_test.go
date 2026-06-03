@@ -120,5 +120,25 @@ func TestRunBroadcasterWithoutClients(t *testing.T) {
 
 	Broadcast <- Event{Type: "invalidate", TenantID: "tenant", ProjectID: "project"}
 	close(Broadcast)
-	RunBroadcaster()
+	RunBroadcaster(context.Background())
+}
+
+func TestRunBroadcasterStopsOnContextCancel(t *testing.T) {
+	oldBroadcast := Broadcast
+	Broadcast = make(chan Event)
+	t.Cleanup(func() { Broadcast = oldBroadcast })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		RunBroadcaster(ctx)
+		close(done)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for broadcaster to stop")
+	}
 }

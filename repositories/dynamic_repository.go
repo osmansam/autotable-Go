@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/osmansam/autotableGo/configs"
@@ -14,6 +15,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
+
+var projectContainersCollectionPattern = regexp.MustCompile(`^tenant_(.+)_project_(.+)_containers$`)
+
+type ScheduledWorkflowContainer struct {
+	TenantID  string
+	ProjectID string
+	Container models.ContainerModel
+}
 
 type DynamicRepository struct {
 	collection         func(tenantID, projectID, schemaName string) *mongo.Collection
@@ -40,6 +49,66 @@ func (r *DynamicRepository) GetContainerModel(ctx context.Context, tenantID, pro
 
 func (r *DynamicRepository) GetAllContainerModels(ctx context.Context) ([]models.ContainerModel, error) {
 	return r.getContainerModels(ctx)
+}
+
+func (r *DynamicRepository) GetScheduledWorkflowContainers(ctx context.Context) ([]ScheduledWorkflowContainer, error) {
+	var result []ScheduledWorkflowContainer
+
+	legacyContainers, err := r.GetAllContainerModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, container := range legacyContainers {
+		if containerHasCronWorkflow(container) {
+			result = append(result, ScheduledWorkflowContainer{Container: container})
+		}
+	}
+
+	names, err := r.globalCollection("containers").Database().ListCollectionNames(ctx, bson.M{"name": bson.M{"$regex": "^tenant_.+_project_.+_containers$"}})
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range names {
+		matches := projectContainersCollectionPattern.FindStringSubmatch(name)
+		if len(matches) != 3 {
+			continue
+		}
+		tenantID, projectID := matches[1], matches[2]
+		cursor, err := r.globalCollection(name).Find(ctx, bson.M{"workflows.trigger": models.WorkflowTriggerCron})
+		if err != nil {
+			return nil, err
+		}
+		for cursor.Next(ctx) {
+			var container models.ContainerModel
+			if err := cursor.Decode(&container); err != nil {
+				cursor.Close(ctx)
+				return nil, err
+			}
+			if containerHasCronWorkflow(container) {
+				result = append(result, ScheduledWorkflowContainer{
+					TenantID:  tenantID,
+					ProjectID: projectID,
+					Container: container,
+				})
+			}
+		}
+		if err := cursor.Err(); err != nil {
+			cursor.Close(ctx)
+			return nil, err
+		}
+		cursor.Close(ctx)
+	}
+
+	return result, nil
+}
+
+func containerHasCronWorkflow(container models.ContainerModel) bool {
+	for _, workflow := range container.Workflows {
+		if workflow.IsActive && workflow.Trigger == models.WorkflowTriggerCron {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *DynamicRepository) GetCollection(tenantID, projectID, schemaName string) *mongo.Collection {

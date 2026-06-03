@@ -938,6 +938,34 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflowCronSchedule(t *testing.T) {
+	valid := models.DynamicWorkflow{
+		Name:     "daily",
+		Trigger:  models.WorkflowTriggerCron,
+		Schedule: "0 2 * * *",
+		Timezone: "UTC",
+		Mode:     models.WorkflowModeOutbox,
+	}
+	if err := ValidateWorkflow(valid); err != nil {
+		t.Fatalf("ValidateWorkflow(valid cron) error = %v", err)
+	}
+
+	tests := []models.DynamicWorkflow{
+		{Name: "missing schedule", Trigger: models.WorkflowTriggerCron},
+		{Name: "bad schedule", Trigger: models.WorkflowTriggerCron, Schedule: "bad"},
+		{Name: "bad timezone", Trigger: models.WorkflowTriggerCron, Schedule: "0 2 * * *", Timezone: "No/SuchZone"},
+		{Name: "non cron with schedule", Trigger: models.WorkflowTriggerManual, Schedule: "0 2 * * *"},
+		{Name: "non cron with timezone", Trigger: models.WorkflowTriggerManual, Timezone: "UTC"},
+	}
+	for _, workflow := range tests {
+		t.Run(workflow.Name, func(t *testing.T) {
+			if err := ValidateWorkflow(workflow); err == nil {
+				t.Fatal("ValidateWorkflow() error = nil")
+			}
+		})
+	}
+}
+
 func TestWorkflowCallAPIRestrictions(t *testing.T) {
 	if method, err := workflowAllowedHTTPMethod(" patch "); err != nil || method != http.MethodPatch {
 		t.Fatalf("workflowAllowedHTTPMethod() = %q, %v", method, err)
