@@ -7,6 +7,7 @@ const (
 	WorkflowTriggerAfterUpdate  = "after_update"
 	WorkflowTriggerBeforeDelete = "before_delete"
 	WorkflowTriggerAfterDelete  = "after_delete"
+	WorkflowTriggerManual       = "manual"
 )
 
 const (
@@ -18,11 +19,14 @@ const (
 const (
 	WorkflowStepTypeCreateRecord      = "create_record"
 	WorkflowStepTypeUpdateRecord      = "update_record"
+	WorkflowStepTypeUnsetRecord       = "unset_record"
 	WorkflowStepTypeDeleteRecord      = "delete_record"
 	WorkflowStepTypeAuditLog          = "audit_log"
 	WorkflowStepTypeInvalidateCache   = "invalidate_cache"
 	WorkflowStepTypeCallAPI           = "call_api"
 	WorkflowStepTypeRunPipeline       = "run_pipeline"
+	WorkflowStepTypeAggregate         = "aggregate"
+	WorkflowStepTypeDistinct          = "distinct"
 	WorkflowStepTypeDynamicFunction   = "dynamic_function"
 	WorkflowStepTypeEmitOutboxEvent   = "emit_outbox_event"
 	WorkflowStepTypeGetRecord         = "get_record"
@@ -32,40 +36,69 @@ const (
 	WorkflowStepTypeSetVariable       = "set_variable"
 	WorkflowStepTypeExecuteWorkflow   = "execute_workflow"
 	WorkflowStepTypeExecuteDynamicAPI = "execute_dynamic_api"
+	WorkflowStepTypeFail              = "fail"
+	WorkflowStepTypeSetRecord         = "set_record"
+	WorkflowStepTypeTransform         = "transform"
+	WorkflowStepTypeAppendArray       = "append_array"
+	WorkflowStepTypeRemoveArray       = "remove_array"
+	WorkflowStepTypeAddToSet          = "add_to_set"
+	WorkflowStepTypePush              = "push"
+	WorkflowStepTypePull              = "pull"
+	WorkflowStepTypePullAll           = "pull_all"
+	WorkflowStepTypeSetArray          = "set_array"
+	WorkflowStepTypeCountRecords      = "count_records"
+	WorkflowStepTypeEquation          = "equation"
+	WorkflowStepTypeReturn            = "return"
 )
 
 const (
-	WorkflowConditionEqual       = "="
-	WorkflowConditionNotEqual    = "!="
-	WorkflowConditionGreaterThan = ">"
-	WorkflowConditionLessThan    = "<"
-	WorkflowConditionIn          = "in"
-	WorkflowConditionExists      = "exists"
-	WorkflowConditionChanged     = "changed"
-	WorkflowConditionChangedTo   = "changed_to"
-	WorkflowConditionChangedFrom = "changed_from"
+	WorkflowConditionEqual        = "="
+	WorkflowConditionNotEqual     = "!="
+	WorkflowConditionGreaterThan  = ">"
+	WorkflowConditionGreaterEqual = ">="
+	WorkflowConditionLessThan     = "<"
+	WorkflowConditionLessEqual    = "<="
+	WorkflowConditionIn           = "in"
+	WorkflowConditionNotIn        = "not_in"
+	WorkflowConditionContains     = "contains"
+	WorkflowConditionNotContains  = "not_contains"
+	WorkflowConditionStartsWith   = "starts_with"
+	WorkflowConditionEndsWith     = "ends_with"
+	WorkflowConditionIsEmpty      = "is_empty"
+	WorkflowConditionIsNotEmpty   = "is_not_empty"
+	WorkflowConditionBetween      = "between"
+	WorkflowConditionExists       = "exists"
+	WorkflowConditionChanged      = "changed"
+	WorkflowConditionChangedTo    = "changed_to"
+	WorkflowConditionChangedFrom  = "changed_from"
+	WorkflowConditionAnd          = "and"
+	WorkflowConditionOr           = "or"
 )
 
 type DynamicWorkflow struct {
-	ID              string                `bson:"id,omitempty" json:"id,omitempty"`
-	Name            string                `bson:"name" json:"name"`
-	Trigger         string                `bson:"trigger" json:"trigger"`
-	Mode            string                `bson:"mode" json:"mode"`
-	IsActive        bool                  `bson:"isActive" json:"isActive"`
-	IsAuthenticated bool                  `bson:"isAuthenticated" json:"isAuthenticated"`
-	IsAuthorized    bool                  `bson:"isAuthorized" json:"isAuthorized"`
-	AuthorizeRole   []string              `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
-	Description     string                `bson:"description,omitempty" json:"description,omitempty"`
-	Conditions      []WorkflowCondition   `bson:"conditions,omitempty" json:"conditions,omitempty"`
-	Steps           []DynamicWorkflowStep `bson:"steps" json:"steps"`
-	StopOnError     bool                  `bson:"stopOnError" json:"stopOnError"`
-	TimeoutSec      int                   `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
+	ID               string                `bson:"id,omitempty" json:"id,omitempty"`
+	Name             string                `bson:"name" json:"name"`
+	Version          int                   `bson:"version,omitempty" json:"version,omitempty"`
+	Trigger          string                `bson:"trigger" json:"trigger"`
+	Mode             string                `bson:"mode" json:"mode"`
+	IsActive         bool                  `bson:"isActive" json:"isActive"`
+	IsAuthenticated  bool                  `bson:"isAuthenticated" json:"isAuthenticated"`
+	IsAuthorized     bool                  `bson:"isAuthorized" json:"isAuthorized"`
+	AuthorizeRole    []string              `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
+	Description      string                `bson:"description,omitempty" json:"description,omitempty"`
+	Conditions       []WorkflowCondition   `bson:"conditions,omitempty" json:"conditions,omitempty"`
+	Steps            []DynamicWorkflowStep `bson:"steps" json:"steps"`
+	StopOnError      bool                  `bson:"stopOnError" json:"stopOnError"`
+	TimeoutSec       int                   `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
+	ReturnStep       string                `bson:"returnStep,omitempty" json:"returnStep,omitempty"`
+	RunInTransaction bool                  `bson:"runInTransaction,omitempty" json:"runInTransaction,omitempty"`
 }
 
 type WorkflowCondition struct {
-	Field    string      `bson:"field" json:"field"`
-	Operator string      `bson:"operator" json:"operator"`
-	Value    interface{} `bson:"value" json:"value"`
+	Field      string              `bson:"field,omitempty" json:"field,omitempty"`
+	Operator   string              `bson:"operator" json:"operator"`
+	Value      interface{}         `bson:"value,omitempty" json:"value,omitempty"`
+	Conditions []WorkflowCondition `bson:"conditions,omitempty" json:"conditions,omitempty"`
 }
 
 type DynamicWorkflowStep struct {

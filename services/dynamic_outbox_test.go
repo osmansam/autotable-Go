@@ -322,7 +322,20 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 			tt.step.Branches = []models.WorkflowBranch{{Name: "branch"}}
 
 			beforeBuild := time.Now()
-			got := buildWorkflowStepOutboxEvent("tenant", "project", "orders", "user", "workflow", tt.step, record, oldRecord, outputs, variables, loop)
+			payload := workflowExecutionPayload{
+				TenantID:        "tenant",
+				ProjectID:       "project",
+				SchemaName:      "orders",
+				UserID:          "user",
+				WorkflowTrigger: models.WorkflowTriggerAfterCreate,
+				WorkflowVersion: 2,
+				Record:          record,
+				OldRecord:       oldRecord,
+				StepOutputs:     outputs,
+				Variables:       variables,
+				Loop:            loop,
+			}
+			got := buildWorkflowStepOutboxEvent(payload, "workflow", tt.step)
 			afterBuild := time.Now()
 
 			if got.ID == primitive.NilObjectID {
@@ -334,7 +347,7 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 			if got.MaxAttempts != tt.wantRetries {
 				t.Fatalf("MaxAttempts = %d, want %d", got.MaxAttempts, tt.wantRetries)
 			}
-			wantKey := "tenant:project:orders:workflow:step-id:" + recordID.Hex()
+			wantKey := "tenant:project:orders:workflow:step-id:" + recordID.Hex() + ":after_create:2"
 			if got.Payload.IdempotencyKey != wantKey {
 				t.Fatalf("IdempotencyKey = %q, want %q", got.Payload.IdempotencyKey, wantKey)
 			}
@@ -369,9 +382,12 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 			Type:           models.WorkflowStepTypeCallAPI,
 			IdempotencyKey: " fixed-key ",
 		}
-		got := buildWorkflowStepOutboxEvent("tenant", "project", "orders", "user", "workflow", step, nil, nil, nil, nil, nil)
-		if got.Payload.IdempotencyKey != "fixed-key" {
-			t.Fatalf("IdempotencyKey = %q, want fixed-key", got.Payload.IdempotencyKey)
+		got := buildWorkflowStepOutboxEvent(workflowExecutionPayload{
+			TenantID: "tenant", ProjectID: "project", SchemaName: "orders", UserID: "user",
+		}, "workflow", step)
+		wantKey := "tenant:project:orders:workflow:step-id::0:fixed-key"
+		if got.Payload.IdempotencyKey != wantKey {
+			t.Fatalf("IdempotencyKey = %q, want %q", got.Payload.IdempotencyKey, wantKey)
 		}
 		if got.Payload.StepOutputs != nil || got.Payload.Variables != nil || got.Payload.Loop != nil {
 			t.Fatal("nil workflow context maps must remain nil")
@@ -380,7 +396,9 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 
 	t.Run("missing record id leaves generated idempotency key empty", func(t *testing.T) {
 		step := models.DynamicWorkflowStep{ID: "step-id", Type: models.WorkflowStepTypeCallAPI}
-		got := buildWorkflowStepOutboxEvent("tenant", "project", "orders", "user", "workflow", step, map[string]interface{}{}, nil, nil, nil, nil)
+		got := buildWorkflowStepOutboxEvent(workflowExecutionPayload{
+			TenantID: "tenant", ProjectID: "project", SchemaName: "orders", UserID: "user", Record: map[string]interface{}{},
+		}, "workflow", step)
 		if got.Payload.IdempotencyKey != "" {
 			t.Fatalf("IdempotencyKey = %q, want empty string", got.Payload.IdempotencyKey)
 		}

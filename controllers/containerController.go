@@ -13,6 +13,7 @@ import (
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
 	"go.mongodb.org/mongo-driver/bson"
@@ -648,6 +649,13 @@ func UpdateWorkflows(c *fiber.Ctx) error {
 	if err := c.BodyParser(&update); err != nil {
 		log.Printf("Failed to parse request body: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+	if err := services.ValidateWorkflows(update.Workflows); err != nil {
+		log.Printf("Invalid workflows: %v", err)
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
+			"status":  http.StatusBadRequest,
+			"message": "Invalid workflows: " + err.Error(),
+		})
 	}
 
 	log.Println("Updating Workflows in the container")

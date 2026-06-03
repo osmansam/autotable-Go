@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -142,6 +143,10 @@ func DropIndexes(ctx context.Context, collectionName string) error {
 	// Drop all indexes except _id (which cannot be dropped)
 	_, err := collection.Indexes().DropAll(ctx)
 	if err != nil {
+		if isNamespaceNotFoundError(err) {
+			log.Printf("Collection %s does not exist; no indexes to drop", collectionName)
+			return nil
+		}
 		return fmt.Errorf("failed to drop indexes for collection %s: %w", collectionName, err)
 	}
 
@@ -215,4 +220,18 @@ func containsAny(s string, substrs []string) bool {
 		}
 	}
 	return false
+}
+
+func isNamespaceNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var commandErr mongo.CommandError
+	if errors.As(err, &commandErr) {
+		return commandErr.Code == 26 || commandErr.Name == "NamespaceNotFound"
+	}
+	return containsAny(err.Error(), []string{
+		"NamespaceNotFound",
+		"ns not found",
+	})
 }

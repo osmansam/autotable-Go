@@ -253,6 +253,14 @@ func TestMongoBackedUtilityHelpers(t *testing.T) {
 		if got, err := ListIndexes(context.Background(), "orders"); err != nil || len(got) != 1 {
 			t.Fatalf("ListIndexes() = %#v, %v", got, err)
 		}
+		mt.AddMockResponses(mtest.CreateCommandErrorResponse(mtest.CommandError{
+			Code:    26,
+			Message: "ns not found test.orders",
+			Name:    "NamespaceNotFound",
+		}))
+		if err := DropIndexes(context.Background(), "orders"); err != nil {
+			t.Fatalf("DropIndexes(namespace missing) error = %v", err)
+		}
 		if err := EnsureIndexes(context.Background(), nil, "tenant", "project"); err == nil {
 			t.Fatal("EnsureIndexes(nil) error = nil")
 		}

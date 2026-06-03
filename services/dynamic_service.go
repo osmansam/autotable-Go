@@ -50,6 +50,30 @@ func (e *ServiceError) Unwrap() error {
 	return e.Err
 }
 
+func workflowExecutionServiceError(err error, fallbackMessage string) *ServiceError {
+	var serviceErr *ServiceError
+	if errors.As(err, &serviceErr) {
+		return serviceErr
+	}
+	var businessErr *workflowBusinessError
+	if errors.As(err, &businessErr) {
+		status := businessErr.Status
+		if status < http.StatusBadRequest || status > 599 {
+			status = http.StatusBadRequest
+		}
+		return &ServiceError{
+			Status:  status,
+			Message: businessErr.Message,
+			Err:     err,
+		}
+	}
+	return &ServiceError{
+		Status:  http.StatusInternalServerError,
+		Message: fallbackMessage,
+		Err:     err,
+	}
+}
+
 type CreateDynamicItemInput struct {
 	TenantID  string
 	ProjectID string
@@ -250,19 +274,22 @@ type ExportDynamicItemsResult struct {
 }
 
 type DynamicService struct {
-	repository *repositories.DynamicRepository
-	parser     *requests.DynamicRequestParser
-	cache      *cache.DynamicCache
-	events     *events.DynamicEvents
+	repository     *repositories.DynamicRepository
+	parser         *requests.DynamicRequestParser
+	cache          *cache.DynamicCache
+	events         *events.DynamicEvents
+	runTransaction func(context.Context, func(mongo.SessionContext) error) error
 }
 
 func NewDynamicService() *DynamicService {
 	uploadService := files.NewUploadService()
+	repository := repositories.NewDynamicRepository()
 	return &DynamicService{
-		repository: repositories.NewDynamicRepository(),
-		parser:     requests.NewDynamicRequestParser(uploadService),
-		cache:      cache.NewDynamicCache(),
-		events:     events.NewDynamicEvents(),
+		repository:     repository,
+		parser:         requests.NewDynamicRequestParser(uploadService),
+		cache:          cache.NewDynamicCache(),
+		events:         events.NewDynamicEvents(),
+		runTransaction: repository.WithTransaction,
 	}
 }
 
@@ -316,32 +343,6 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 	}
 
-	if err := validators.PrepareCreateItem(input.TenantID, input.ProjectID, container, itemMap); err != nil {
-		log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
-		status := http.StatusInternalServerError
-		message := "Validation failed."
-		var equationErr *validators.EquationFieldError
-		if errors.As(err, &equationErr) {
-			status = http.StatusBadRequest
-			message = fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName)
-		}
-		return nil, &ServiceError{
-			Status:  status,
-			Message: message,
-			Data:    err.Error(),
-			Err:     err,
-		}
-	}
-
-	if err := s.applyAutoIncrementFields(ctx, input.Schema, container, itemMap); err != nil {
-		log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to generate autoIncrement id",
-			Err:     err,
-		}
-	}
-
 	var result *mongo.InsertOneResult
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
 		workflowPayload := workflowExecutionPayload{
@@ -356,6 +357,30 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeCreate); err != nil {
 			return err
+		}
+		if err := validators.PrepareCreateItem(input.TenantID, input.ProjectID, container, itemMap); err != nil {
+			log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
+			status := http.StatusInternalServerError
+			message := "Validation failed."
+			var equationErr *validators.EquationFieldError
+			if errors.As(err, &equationErr) {
+				status = http.StatusBadRequest
+				message = fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName)
+			}
+			return &ServiceError{
+				Status:  status,
+				Message: message,
+				Data:    err.Error(),
+				Err:     err,
+			}
+		}
+		if err := s.applyAutoIncrementFields(txCtx, input.Schema, container, itemMap); err != nil {
+			log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
+			return &ServiceError{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to generate autoIncrement id",
+				Err:     err,
+			}
 		}
 
 		var insertErr error
@@ -383,11 +408,7 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 			return nil, duplicateKeyServiceError(container, err)
 		}
 		log.Printf("Failed to save item for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to save item.",
-			Err:     err,
-		}
+		return nil, workflowExecutionServiceError(err, "Failed to save item.")
 	}
 
 	utils.StripHashed(container.Fields, []map[string]interface{}{itemMap})
@@ -413,38 +434,31 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		return nil, parseBulkCreateError(err)
 	}
 
-	if err := validators.PrepareCreateItems(input.TenantID, input.ProjectID, container, items); err != nil {
-		log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
-		status := http.StatusInternalServerError
-		message := "Validation failed."
-		var equationErr *validators.EquationItemFieldError
-		if errors.As(err, &equationErr) {
-			status = http.StatusBadRequest
-			message = fmt.Sprintf("Error evaluating equation for field %s in item %d", equationErr.FieldName, equationErr.Index)
-		} else if strings.HasPrefix(err.Error(), "validation failed for item at index ") {
-			message = strings.TrimPrefix(strings.Split(err.Error(), ":")[0], "validation failed for item at index ")
-			message = fmt.Sprintf("Validation failed for item at index %s.", message)
-		}
-		return nil, &ServiceError{
-			Status:  status,
-			Message: message,
-			Data:    err.Error(),
-			Err:     err,
-		}
-	}
-
-	if err := s.applyAutoIncrementFieldsForItems(ctx, input.Schema, container, items); err != nil {
-		log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to generate autoIncrement id",
-			Err:     err,
-		}
-	}
-
 	var result *mongo.InsertManyResult
 	var bulkCreatedDocs []interface{}
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
+		for _, item := range items {
+			workflowPayload := workflowExecutionPayload{
+				TenantID:    input.TenantID,
+				ProjectID:   input.ProjectID,
+				SchemaName:  input.Schema,
+				Record:      item,
+				StepOutputs: map[string]interface{}{},
+				UserID:      input.UserID,
+				AuditUser:   input.User,
+				Container:   container,
+			}
+			if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeCreate); err != nil {
+				return err
+			}
+		}
+		if err := validators.PrepareCreateItems(input.TenantID, input.ProjectID, container, items); err != nil {
+			return err
+		}
+		if err := s.applyAutoIncrementFieldsForItems(txCtx, input.Schema, container, items); err != nil {
+			return err
+		}
+
 		var insertErr error
 		result, insertErr = s.repository.InsertMany(txCtx, input.TenantID, input.ProjectID, input.Schema, items)
 		if insertErr != nil {
@@ -458,6 +472,24 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 				bulkCreatedDocs = append(bulkCreatedDocs, items[i])
 			}
 		}
+		for _, item := range items {
+			workflowPayload := workflowExecutionPayload{
+				TenantID:    input.TenantID,
+				ProjectID:   input.ProjectID,
+				SchemaName:  input.Schema,
+				Record:      item,
+				StepOutputs: map[string]interface{}{},
+				UserID:      input.UserID,
+				AuditUser:   input.User,
+				Container:   container,
+			}
+			if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterCreate); err != nil {
+				return err
+			}
+			if err := s.enqueueOutboxWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterCreate); err != nil {
+				return err
+			}
+		}
 
 		if len(bulkCreatedDocs) == 0 {
 			return nil
@@ -468,12 +500,17 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
 		}
-		log.Printf("Failed to insert multiple items for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to insert multiple items.",
-			Err:     err,
+		var equationErr *validators.EquationItemFieldError
+		if errors.As(err, &equationErr) {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: fmt.Sprintf("Error evaluating equation for field %s in item %d", equationErr.FieldName, equationErr.Index),
+				Data:    err.Error(),
+				Err:     err,
+			}
 		}
+		log.Printf("Failed to insert multiple items for schema: %s, error: %v", input.Schema, err)
+		return nil, workflowExecutionServiceError(err, "Failed to insert multiple items.")
 	}
 	return result, nil
 }
@@ -600,11 +637,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 			return nil, duplicateKeyServiceError(container, err)
 		}
 		log.Printf("Failed to update item for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to update item",
-			Err:     err,
-		}
+		return nil, workflowExecutionServiceError(err, "Failed to update item")
 	}
 
 	if updateResult == nil || updateResult.MatchedCount == 0 {
@@ -679,11 +712,7 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 		return nil
 	}); err != nil {
 		log.Printf("Failed to update multiple items for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to update multiple items",
-			Err:     err,
-		}
+		return nil, workflowExecutionServiceError(err, "Failed to update multiple items")
 	}
 
 	return fiber.Map{
@@ -791,11 +820,7 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationDelete, input.UserID, container, auditLog)
 	}); err != nil {
 		log.Printf("Failed to delete the item from the specified collection for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete the item from the specified collection.",
-			Err:     err,
-		}
+		return nil, workflowExecutionServiceError(err, "Failed to delete the item from the specified collection.")
 	}
 
 	responseItem := make(map[string]interface{})
@@ -873,11 +898,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 		return nil
 	}); err != nil {
 		log.Printf("Failed to delete multiple items for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to delete multiple items",
-			Err:     err,
-		}
+		return nil, workflowExecutionServiceError(err, "Failed to delete multiple items")
 	}
 
 	return fiber.Map{
@@ -1759,11 +1780,21 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		payload.StepOutputs = map[string]interface{}{}
 	}
 
-	if err := s.runWorkflowDefinition(ctx, payload, workflow); err != nil {
-		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute workflow", Err: err}
+	runWorkflow := func(workflowCtx context.Context) error {
+		return s.runWorkflowDefinition(workflowCtx, &payload, workflow)
+	}
+	if workflowRequiresTransaction(workflow) {
+		err = s.runTransaction(ctx, func(txCtx mongo.SessionContext) error {
+			return runWorkflow(txCtx)
+		})
+	} else {
+		err = runWorkflow(ctx)
+	}
+	if err != nil {
+		return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Failed to execute workflow")
 	}
 
-	return DynamicExecutionResult{Message: "Workflow executed successfully", Data: payload.StepOutputs, Source: "workflow"}, nil
+	return DynamicExecutionResult{Message: "Workflow executed successfully", Data: workflowExecutionReturnValue(workflow, &payload), Source: "workflow"}, nil
 }
 
 func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDynamicItemsInput) (ExportDynamicItemsResult, error) {
@@ -1948,6 +1979,9 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
 		return bulkDeleteItemResult{}, nil, err
 	}
+	if err := s.enqueueOutboxWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
+		return bulkDeleteItemResult{}, nil, err
+	}
 
 	return bulkDeleteItemResult{Success: map[string]interface{}{
 		"id":     idStr,
@@ -2065,6 +2099,9 @@ func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input Updat
 	}
 
 	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
+		return bulkUpdateItemResult{}, nil, nil, err
+	}
+	if err := s.enqueueOutboxWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
 		return bulkUpdateItemResult{}, nil, nil, err
 	}
 

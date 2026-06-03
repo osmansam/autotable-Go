@@ -108,6 +108,7 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 			mtest.CreateCursorResponse(0, namespace, mtest.FirstBatch, bson.D{{Key: "n", Value: int32(1)}}),
 			mtest.CreateCursorResponse(0, namespace, mtest.FirstBatch, bson.D{{Key: "n", Value: int32(2)}}),
 			mtest.CreateCursorResponse(0, namespace, mtest.FirstBatch, bson.D{{Key: "n", Value: int32(3)}}),
+			mtest.CreateCursorResponse(0, namespace, mtest.FirstBatch, bson.D{{Key: "n", Value: int32(4)}}),
 		)
 		if got, err := repository.CountByField(context.Background(), "tenant", "project", "orders", "state", "open"); err != nil || got != 1 {
 			t.Fatalf("CountByField() = %d, %v", got, err)
@@ -118,6 +119,9 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		if got, err := repository.CountByFieldExcludingID(context.Background(), "tenant", "project", "orders", "state", "open", primitive.NewObjectID()); err != nil || got != 3 {
 			t.Fatalf("CountByFieldExcludingID() = %d, %v", got, err)
 		}
+		if got, err := repository.Count(context.Background(), "tenant", "project", "orders", bson.M{"state": "open"}); err != nil || got != 4 {
+			t.Fatalf("Count() = %d, %v", got, err)
+		}
 	})
 
 	mt.Run("execute pipeline", func(mt *mtest.T) {
@@ -126,6 +130,15 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		got, err := repository.ExecutePipeline(context.Background(), "tenant", "project", "orders", models.PipelineStage{PipelineJSON: `[{"$match":{"state":"open"}}]`})
 		if err != nil || len(got) != 1 || got[0]["state"] != "open" {
 			t.Fatalf("ExecutePipeline() = %#v, %v", got, err)
+		}
+	})
+
+	mt.Run("distinct", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		mt.AddMockResponses(mtest.CreateSuccessResponse(bson.E{Key: "values", Value: bson.A{"open", "closed"}}))
+		got, err := repository.Distinct(context.Background(), "tenant", "project", "orders", "state", bson.M{"active": true})
+		if err != nil || len(got) != 2 || got[0] != "open" || got[1] != "closed" {
+			t.Fatalf("Distinct() = %#v, %v", got, err)
 		}
 	})
 }

@@ -50,6 +50,14 @@ func (r *DynamicRepository) CountByField(ctx context.Context, tenantID, projectI
 	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, bson.M{fieldName: fieldValue})
 }
 
+func (r *DynamicRepository) Count(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (int64, error) {
+	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, filter)
+}
+
+func (r *DynamicRepository) Distinct(ctx context.Context, tenantID, projectID, schemaName, fieldName string, filter bson.M) ([]interface{}, error) {
+	return r.GetCollection(tenantID, projectID, schemaName).Distinct(ctx, fieldName, filter)
+}
+
 func (r *DynamicRepository) CountByFieldIn(ctx context.Context, tenantID, projectID, schemaName, fieldName string, values []interface{}) (int64, error) {
 	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, bson.M{fieldName: bson.M{"$in": values}})
 }

@@ -24,6 +24,8 @@ type DynamicOutboxPayload struct {
 	InvalidateSchemas []string               `bson:"invalidateSchemas,omitempty" json:"invalidateSchemas,omitempty"`
 	UserID            string                 `bson:"userId,omitempty" json:"userId,omitempty"`
 	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+	WorkflowTrigger   string                 `bson:"workflowTrigger,omitempty" json:"workflowTrigger,omitempty"`
+	WorkflowVersion   int                    `bson:"workflowVersion,omitempty" json:"workflowVersion,omitempty"`
 	StepID            string                 `bson:"stepId,omitempty" json:"stepId,omitempty"`
 	StepName          string                 `bson:"stepName,omitempty" json:"stepName,omitempty"`
 	StepType          string                 `bson:"stepType,omitempty" json:"stepType,omitempty"`
