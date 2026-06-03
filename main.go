@@ -158,7 +158,6 @@ func configurePprof(app *fiber.App, portNumber string) {
 		log.Println("pprof disabled in production")
 		return
 	}
-
 	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
 	app.Use(pprof.New())
 }
