@@ -64,36 +64,48 @@ type staleClient struct {
 }
 
 // RunBroadcaster keeps sending events to connected clients in the same tenant/project.
-func RunBroadcaster() {
-	for ev := range Broadcast {
-		payload, _ := json.Marshal(ev)
-		var staleClients []staleClient
+func RunBroadcaster(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-Broadcast:
+			if !ok {
+				return
+			}
+			broadcastEvent(ev)
+		}
+	}
+}
 
-		clientsMu.RLock()
-		matchCount := 0
-		queuedCount := 0
-		for conn, info := range clients {
-			// Only send to clients in the same tenant and project
-			if info.TenantID == ev.TenantID && info.ProjectID == ev.ProjectID {
-				matchCount++
-				select {
-				case info.Send <- payload:
-					queuedCount++
-				default:
-					staleClients = append(staleClients, staleClient{conn: conn, info: info})
-				}
+func broadcastEvent(ev Event) {
+	payload, _ := json.Marshal(ev)
+	var staleClients []staleClient
+
+	clientsMu.RLock()
+	matchCount := 0
+	queuedCount := 0
+	for conn, info := range clients {
+		// Only send to clients in the same tenant and project
+		if info.TenantID == ev.TenantID && info.ProjectID == ev.ProjectID {
+			matchCount++
+			select {
+			case info.Send <- payload:
+				queuedCount++
+			default:
+				staleClients = append(staleClients, staleClient{conn: conn, info: info})
 			}
 		}
-		clientsMu.RUnlock()
+	}
+	clientsMu.RUnlock()
 
-		for _, stale := range staleClients {
-			unregisterClient(stale.conn, stale.info, "send buffer full")
-		}
+	for _, stale := range staleClients {
+		unregisterClient(stale.conn, stale.info, "send buffer full")
+	}
 
-		if matchCount > 0 {
-			log.Printf("WebSocket: Broadcast queued to %d/%d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
-				queuedCount, matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
-		}
+	if matchCount > 0 {
+		log.Printf("WebSocket: Broadcast queued to %d/%d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
+			queuedCount, matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
 	}
 }
 
@@ -124,23 +136,33 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 }
 
 // RunRedisSubscriber relays websocket events published by other app instances to local clients.
-func RunRedisSubscriber() {
+func RunRedisSubscriber(ctx context.Context) {
 	backoff := pubSubBackoff
 
 	for {
+		if ctx.Err() != nil {
+			return
+		}
 		if configs.RedisClient == nil {
-			time.Sleep(backoff)
+			if !sleepWithContext(ctx, backoff) {
+				return
+			}
 			backoff = nextBackoff(backoff)
 			continue
 		}
 
-		ctx := context.Background()
 		pubsub := configs.RedisClient.Subscribe(ctx, redisWSChan)
 		if _, err := pubsub.Receive(ctx); err != nil {
+			if ctx.Err() != nil {
+				_ = pubsub.Close()
+				return
+			}
 			configs.RedisCircuitRecordResult(err)
 			_ = pubsub.Close()
 			log.Printf("WebSocket: Redis pub/sub subscribe failed: %v", err)
-			time.Sleep(backoff)
+			if !sleepWithContext(ctx, backoff) {
+				return
+			}
 			backoff = nextBackoff(backoff)
 			continue
 		}
@@ -152,10 +174,16 @@ func RunRedisSubscriber() {
 		for {
 			msg, err := pubsub.ReceiveMessage(ctx)
 			if err != nil {
+				if ctx.Err() != nil {
+					_ = pubsub.Close()
+					return
+				}
 				configs.RedisCircuitRecordResult(err)
 				_ = pubsub.Close()
 				log.Printf("WebSocket: Redis pub/sub receive failed: %v", err)
-				time.Sleep(backoff)
+				if !sleepWithContext(ctx, backoff) {
+					return
+				}
 				backoff = nextBackoff(backoff)
 				break
 			}
@@ -171,6 +199,17 @@ func RunRedisSubscriber() {
 
 			enqueueBroadcast(envelope.toEvent(), "redis pub/sub")
 		}
+	}
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 

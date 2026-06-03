@@ -5,8 +5,10 @@ import (
 	"expvar"
 	"log"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -31,6 +33,9 @@ func main() {
 
 	appConfig := configs.GetAppConfig()
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
+
 	app := fiber.New(fiber.Config{
 		BodyLimit: configs.GetMaxRequestBodySizeLimit(),
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
@@ -73,9 +78,10 @@ func main() {
 	})
 	// WS endpoint
 	app.Get("/ws", websocket.New(ws.HandleWS))
-	go ws.RunBroadcaster()
-	go ws.RunRedisSubscriber()
-	go services.StartDynamicOutboxProcessor(context.Background())
+	go ws.RunBroadcaster(appCtx)
+	go ws.RunRedisSubscriber(appCtx)
+	go services.StartDynamicOutboxProcessor(appCtx)
+	go services.StartDynamicCronScheduler(appCtx)
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -103,9 +109,23 @@ func main() {
 	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
 	routes.SetupExcelRoutes(app, "api/v1")                          // Excel upload routes
 	routes.SwaggerRoutes(app)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-quit
+		log.Println("Shutdown signal received")
+		cancelApp()
+		if err := app.Shutdown(); err != nil {
+			log.Printf("Server shutdown failed: %v", err)
+		}
+	}()
+
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("Metrics available at http://localhost" + portNumber + "/debug/vars")
-	app.Listen(portNumber)
+	if err := app.Listen(portNumber); err != nil {
+		log.Printf("Server stopped: %v", err)
+	}
 }
 
 func corsFromConfig(cfg *configs.Config) fiber.Handler {

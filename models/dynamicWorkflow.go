@@ -8,6 +8,7 @@ const (
 	WorkflowTriggerBeforeDelete = "before_delete"
 	WorkflowTriggerAfterDelete  = "after_delete"
 	WorkflowTriggerManual       = "manual"
+	WorkflowTriggerCron         = "cron"
 )
 
 const (
@@ -80,6 +81,8 @@ type DynamicWorkflow struct {
 	Name             string                `bson:"name" json:"name"`
 	Version          int                   `bson:"version,omitempty" json:"version,omitempty"`
 	Trigger          string                `bson:"trigger" json:"trigger"`
+	Schedule         string                `bson:"schedule,omitempty" json:"schedule,omitempty"`
+	Timezone         string                `bson:"timezone,omitempty" json:"timezone,omitempty"`
 	Mode             string                `bson:"mode" json:"mode"`
 	IsActive         bool                  `bson:"isActive" json:"isActive"`
 	IsAuthenticated  bool                  `bson:"isAuthenticated" json:"isAuthenticated"`
