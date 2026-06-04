@@ -18,7 +18,7 @@ import (
 )
 
 type Event struct {
-	Type      string `json:"type"`              // "invalidate", "pageChanged", "containerChanged"
+	Type      string `json:"type"`              // "invalidate", "pageChanged", "containerChanged", "notificationChanged"
 	Schema    string `json:"schema"`            // schema name
 	EventID   string `json:"eventId,omitempty"` // stable idempotency key for outbox-backed events
 	UserId    string `json:"userId,omitempty"`  // user who triggered the event
@@ -469,6 +469,18 @@ func EmitContainerChanged(userId string, tenantID string, projectID string) {
 	publishEvent(Event{
 		Type:      "containerChanged",
 		Schema:    "containers",
+		UserId:    userId,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Timestamp: time.Now().Unix(),
+	})
+}
+
+// EmitNotificationChanged signals clients to refetch notification state.
+func EmitNotificationChanged(userId string, tenantID string, projectID string) {
+	publishEvent(Event{
+		Type:      "notificationChanged",
+		Schema:    "notifications",
 		UserId:    userId,
 		TenantID:  tenantID,
 		ProjectID: projectID,

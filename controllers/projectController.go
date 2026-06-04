@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
@@ -351,6 +352,9 @@ func CreateProject(c *fiber.Ctx) error {
 		log.Printf("Warning: Failed to create default schemas: %v", err)
 		// Don't fail the project creation, just log the warning
 		// The schemas can be created manually later if needed
+	}
+	if err := repositories.NewDynamicRepository().EnsureNotificationIndexes(ctx, tenantID, newProject.ID.Hex()); err != nil {
+		log.Printf("Warning: Failed to create notification indexes: %v", err)
 	}
 
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{

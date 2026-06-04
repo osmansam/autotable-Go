@@ -82,6 +82,7 @@ func main() {
 	go ws.RunRedisSubscriber(appCtx)
 	go services.StartDynamicOutboxProcessor(appCtx)
 	go services.StartDynamicCronScheduler(appCtx)
+	go services.EnsureDynamicNotificationIndexes(appCtx)
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -103,6 +104,7 @@ func main() {
 	// Project-scoped routes with tenant and project slugs in URL
 	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
 	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
+	routes.NotificationRoutes("api/v1/:tenantSlug/:projectSlug/notifications", app)
 	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)

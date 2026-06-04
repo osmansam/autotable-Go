@@ -14,38 +14,39 @@ import (
 const maxWorkflowTimeoutSec = 300
 
 var workflowStepTypes = map[string]bool{
-	models.WorkflowStepTypeCreateRecord:      true,
-	models.WorkflowStepTypeUpdateRecord:      true,
-	models.WorkflowStepTypeUnsetRecord:       true,
-	models.WorkflowStepTypeDeleteRecord:      true,
-	models.WorkflowStepTypeAuditLog:          true,
-	models.WorkflowStepTypeInvalidateCache:   true,
-	models.WorkflowStepTypeCallAPI:           true,
-	models.WorkflowStepTypeRunPipeline:       true,
-	models.WorkflowStepTypeAggregate:         true,
-	models.WorkflowStepTypeDistinct:          true,
-	models.WorkflowStepTypeDynamicFunction:   true,
-	models.WorkflowStepTypeEmitOutboxEvent:   true,
-	models.WorkflowStepTypeGetRecord:         true,
-	models.WorkflowStepTypeFindRecords:       true,
-	models.WorkflowStepTypeIf:                true,
-	models.WorkflowStepTypeForEach:           true,
-	models.WorkflowStepTypeSetVariable:       true,
-	models.WorkflowStepTypeExecuteWorkflow:   true,
-	models.WorkflowStepTypeExecuteDynamicAPI: true,
-	models.WorkflowStepTypeFail:              true,
-	models.WorkflowStepTypeSetRecord:         true,
-	models.WorkflowStepTypeTransform:         true,
-	models.WorkflowStepTypeAppendArray:       true,
-	models.WorkflowStepTypeRemoveArray:       true,
-	models.WorkflowStepTypeAddToSet:          true,
-	models.WorkflowStepTypePush:              true,
-	models.WorkflowStepTypePull:              true,
-	models.WorkflowStepTypePullAll:           true,
-	models.WorkflowStepTypeSetArray:          true,
-	models.WorkflowStepTypeCountRecords:      true,
-	models.WorkflowStepTypeEquation:          true,
-	models.WorkflowStepTypeReturn:            true,
+	models.WorkflowStepTypeCreateRecord:       true,
+	models.WorkflowStepTypeUpdateRecord:       true,
+	models.WorkflowStepTypeUnsetRecord:        true,
+	models.WorkflowStepTypeDeleteRecord:       true,
+	models.WorkflowStepTypeAuditLog:           true,
+	models.WorkflowStepTypeInvalidateCache:    true,
+	models.WorkflowStepTypeCallAPI:            true,
+	models.WorkflowStepTypeRunPipeline:        true,
+	models.WorkflowStepTypeAggregate:          true,
+	models.WorkflowStepTypeDistinct:           true,
+	models.WorkflowStepTypeDynamicFunction:    true,
+	models.WorkflowStepTypeEmitOutboxEvent:    true,
+	models.WorkflowStepTypeCreateNotification: true,
+	models.WorkflowStepTypeGetRecord:          true,
+	models.WorkflowStepTypeFindRecords:        true,
+	models.WorkflowStepTypeIf:                 true,
+	models.WorkflowStepTypeForEach:            true,
+	models.WorkflowStepTypeSetVariable:        true,
+	models.WorkflowStepTypeExecuteWorkflow:    true,
+	models.WorkflowStepTypeExecuteDynamicAPI:  true,
+	models.WorkflowStepTypeFail:               true,
+	models.WorkflowStepTypeSetRecord:          true,
+	models.WorkflowStepTypeTransform:          true,
+	models.WorkflowStepTypeAppendArray:        true,
+	models.WorkflowStepTypeRemoveArray:        true,
+	models.WorkflowStepTypeAddToSet:           true,
+	models.WorkflowStepTypePush:               true,
+	models.WorkflowStepTypePull:               true,
+	models.WorkflowStepTypePullAll:            true,
+	models.WorkflowStepTypeSetArray:           true,
+	models.WorkflowStepTypeCountRecords:       true,
+	models.WorkflowStepTypeEquation:           true,
+	models.WorkflowStepTypeReturn:             true,
 }
 
 func ValidateWorkflows(workflows []models.DynamicWorkflow) error {
@@ -150,6 +151,11 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 				return fmt.Errorf("workflow %s step %s distinct field is required", workflow.Name, step.Name)
 			}
 		}
+		if step.Type == models.WorkflowStepTypeCreateNotification {
+			if err := validateCreateNotificationStep(step); err != nil {
+				return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
+			}
+		}
 		if workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox && workflowStepHasUnsafeOutboxReference(step) {
 			return fmt.Errorf("workflow %s step %s outbox execution cannot depend on steps.* or vars.* values", workflow.Name, step.Name)
 		}
@@ -181,6 +187,47 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 		}
 	}
 	return nil
+}
+
+func validateCreateNotificationStep(step models.DynamicWorkflowStep) error {
+	if len(step.Config) == 0 {
+		return fmt.Errorf("create_notification config is required")
+	}
+	if err := validateNotificationTextConfig(step.Config, "title"); err != nil {
+		return err
+	}
+	if err := validateNotificationTextConfig(step.Config, "message"); err != nil {
+		return err
+	}
+	if rawType, ok := step.Config["type"]; ok {
+		typeValue, ok := rawType.(string)
+		if !ok {
+			return fmt.Errorf("create_notification type must be a string")
+		}
+		if !workflowContainsTemplate(typeValue) && !models.IsValidNotificationType(typeValue) {
+			return fmt.Errorf("create_notification type must be one of: info, warning, error, success")
+		}
+	}
+	return nil
+}
+
+func validateNotificationTextConfig(config map[string]interface{}, key string) error {
+	value, ok := config[key]
+	if !ok {
+		return fmt.Errorf("create_notification %s is required", key)
+	}
+	stringValue, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("create_notification %s must be a string", key)
+	}
+	if strings.TrimSpace(stringValue) == "" {
+		return fmt.Errorf("create_notification %s is required", key)
+	}
+	return nil
+}
+
+func workflowContainsTemplate(value string) bool {
+	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
 }
 
 func workflowHasActiveStepAfter(steps []models.DynamicWorkflowStep, index int, executionMode, workflowMode string) bool {

@@ -17,6 +17,7 @@ import (
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/validators"
+	"github.com/osmansam/autotableGo/ws"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -256,6 +257,8 @@ func (s *DynamicService) processWorkflowStep(ctx context.Context, step models.Dy
 		return nil, fmt.Errorf("workflow dynamic_function steps require a request context and are not supported by the write workflow processor yet")
 	case models.WorkflowStepTypeEmitOutboxEvent:
 		return s.workflowEmitOutboxEvent(ctx, step, *payload)
+	case models.WorkflowStepTypeCreateNotification:
+		return s.workflowCreateNotification(ctx, step, *payload)
 	case models.WorkflowStepTypeGetRecord:
 		return s.workflowGetRecord(ctx, step, *payload)
 	case models.WorkflowStepTypeFindRecords:
@@ -1099,6 +1102,68 @@ func (s *DynamicService) workflowInvalidateCache(ctx context.Context, step model
 	return map[string]interface{}{"schemas": uniqueSchemaNames(schemas)}, nil
 }
 
+func (s *DynamicService) workflowCreateNotification(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	config := resolveWorkflowTemplates(step.Config, payload)
+	document, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("create_notification config must resolve to an object")
+	}
+
+	title := strings.TrimSpace(workflowStringValue(document["title"]))
+	message := strings.TrimSpace(workflowStringValue(document["message"]))
+	if title == "" {
+		return nil, fmt.Errorf("create_notification title is required")
+	}
+	if message == "" {
+		return nil, fmt.Errorf("create_notification message is required")
+	}
+
+	notificationType := strings.TrimSpace(workflowStringValue(document["type"]))
+	if notificationType == "" {
+		notificationType = models.NotificationTypeInfo
+	}
+	notificationType = models.NormalizeNotificationType(notificationType)
+	if !models.IsValidNotificationType(notificationType) {
+		return nil, fmt.Errorf("create_notification type must be one of: info, warning, error, success")
+	}
+	expireAt, _ := workflowTime(document["expireAt"])
+
+	notification := models.DynamicNotification{
+		ID:            primitive.NewObjectID(),
+		TenantID:      payload.TenantID,
+		ProjectID:     payload.ProjectID,
+		Title:         title,
+		Message:       message,
+		Type:          notificationType,
+		Event:         strings.TrimSpace(workflowStringValue(document["event"])),
+		SchemaName:    strings.TrimSpace(workflowStringValue(document["schemaName"])),
+		RecordID:      strings.TrimSpace(workflowStringValue(document["recordId"])),
+		SelectedUsers: workflowStringSliceValue(document["selectedUsers"]),
+		SelectedRoles: workflowStringSliceValue(document["selectedRoles"]),
+		SeenBy:        []string{},
+		DeletedBy:     []string{},
+		CreatedBy:     payload.UserID,
+		CreatedAt:     time.Now(),
+		IsActive:      true,
+	}
+	if !expireAt.IsZero() {
+		notification.ExpireAt = &expireAt
+	}
+	if notification.SchemaName == "" {
+		notification.SchemaName = payload.SchemaName
+	}
+
+	if err := s.repository.EnsureNotificationIndexes(ctx, payload.TenantID, payload.ProjectID); err != nil {
+		return nil, err
+	}
+	if _, err := s.repository.InsertNotification(ctx, notification); err != nil {
+		return nil, err
+	}
+
+	ws.EmitNotificationChanged(payload.UserID, payload.TenantID, payload.ProjectID)
+	return notification, nil
+}
+
 func (s *DynamicService) workflowCallAPI(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
 	if step.TimeoutSec < minWorkflowCallAPITimeoutSec {
 		return nil, fmt.Errorf("call_api step requires timeoutSec >= %d", minWorkflowCallAPITimeoutSec)
@@ -1520,7 +1585,52 @@ func (s *DynamicService) workflowTargetContainer(ctx context.Context, payload wo
 func workflowStepHasNonTransactionalSideEffect(step models.DynamicWorkflowStep) bool {
 	return step.Type == models.WorkflowStepTypeCallAPI ||
 		step.Type == models.WorkflowStepTypeExecuteDynamicAPI ||
-		step.Type == models.WorkflowStepTypeInvalidateCache
+		step.Type == models.WorkflowStepTypeInvalidateCache ||
+		step.Type == models.WorkflowStepTypeCreateNotification
+}
+
+func workflowStringValue(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		if value == nil {
+			return ""
+		}
+		return fmt.Sprint(value)
+	}
+}
+
+func workflowStringSliceValue(value interface{}) []string {
+	switch typed := value.(type) {
+	case []string:
+		return compactWorkflowStrings(typed)
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if str := strings.TrimSpace(workflowStringValue(item)); str != "" {
+				result = append(result, str)
+			}
+		}
+		return result
+	default:
+		if str := strings.TrimSpace(workflowStringValue(value)); str != "" {
+			return []string{str}
+		}
+		return nil
+	}
+}
+
+func compactWorkflowStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func validateWorkflowCallAPIURL(ctx context.Context, rawURL string) error {
@@ -2179,15 +2289,6 @@ func workflowCompareValues(left, right interface{}) int {
 		}
 	}
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
-}
-
-func workflowCompareNumbers(left, right interface{}) int {
-	leftNumber, leftOK := workflowNumber(left)
-	rightNumber, rightOK := workflowNumber(right)
-	if !leftOK || !rightOK {
-		return 0
-	}
-	return workflowCompareFloats(leftNumber, rightNumber)
 }
 
 func workflowCompareFloats(left, right float64) int {
