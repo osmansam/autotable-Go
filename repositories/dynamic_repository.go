@@ -115,6 +115,120 @@ func (r *DynamicRepository) GetCollection(tenantID, projectID, schemaName string
 	return r.collection(tenantID, projectID, schemaName)
 }
 
+func (r *DynamicRepository) GetProjectCollection(tenantID, projectID, collectionName string) *mongo.Collection {
+	if tenantID == "" || projectID == "" {
+		return r.globalCollection(collectionName)
+	}
+	return utils.GetProjectCollection(tenantID, projectID, collectionName)
+}
+
+func (r *DynamicRepository) InsertNotification(ctx context.Context, notification models.DynamicNotification) (*mongo.InsertOneResult, error) {
+	return r.GetProjectCollection(notification.TenantID, notification.ProjectID, "notifications").InsertOne(ctx, notification)
+}
+
+func (r *DynamicRepository) QueryNotifications(ctx context.Context, tenantID, projectID string, filter bson.M, opts *options.FindOptions, pager *utils.Pager) ([]map[string]interface{}, error) {
+	collection := r.GetProjectCollection(tenantID, projectID, "notifications")
+	return utils.QueryAndDecodeCollection(ctx, collection, "notifications", filter, opts, pager)
+}
+
+func (r *DynamicRepository) MarkNotificationRead(ctx context.Context, tenantID, projectID string, notificationID primitive.ObjectID, userID string) (*mongo.UpdateResult, error) {
+	return r.GetProjectCollection(tenantID, projectID, "notifications").UpdateOne(ctx, bson.M{
+		"_id":       notificationID,
+		"tenantId":  tenantID,
+		"projectId": projectID,
+		"isActive":  true,
+	}, bson.M{"$addToSet": bson.M{"seenBy": userID}})
+}
+
+func (r *DynamicRepository) MarkNotificationsRead(ctx context.Context, tenantID, projectID, userID string, filter bson.M) (*mongo.UpdateResult, error) {
+	filter["tenantId"] = tenantID
+	filter["projectId"] = projectID
+	filter["isActive"] = true
+	return r.GetProjectCollection(tenantID, projectID, "notifications").UpdateMany(ctx, filter, bson.M{"$addToSet": bson.M{"seenBy": userID}})
+}
+
+func (r *DynamicRepository) DeleteNotificationForUser(ctx context.Context, tenantID, projectID string, notificationID primitive.ObjectID, userID string) (*mongo.UpdateResult, error) {
+	return r.GetProjectCollection(tenantID, projectID, "notifications").UpdateOne(ctx, bson.M{
+		"_id":       notificationID,
+		"tenantId":  tenantID,
+		"projectId": projectID,
+		"isActive":  true,
+	}, bson.M{"$addToSet": bson.M{"deletedBy": userID}})
+}
+
+func (r *DynamicRepository) EnsureNotificationIndexes(ctx context.Context, tenantID, projectID string) error {
+	_, err := r.GetProjectCollection(tenantID, projectID, "notifications").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "isActive", Value: 1},
+				{Key: "createdAt", Value: -1},
+			},
+			Options: options.Index().SetName("idx_notifications_scope_created").SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "selectedUsers", Value: 1},
+			},
+			Options: options.Index().SetName("idx_notifications_selected_users").SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "selectedRoles", Value: 1},
+			},
+			Options: options.Index().SetName("idx_notifications_selected_roles").SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "seenBy", Value: 1},
+			},
+			Options: options.Index().SetName("idx_notifications_seen_by").SetBackground(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "tenantId", Value: 1},
+				{Key: "projectId", Value: 1},
+				{Key: "deletedBy", Value: 1},
+			},
+			Options: options.Index().SetName("idx_notifications_deleted_by").SetBackground(true),
+		},
+		{
+			Keys:    bson.D{{Key: "expireAt", Value: 1}},
+			Options: options.Index().SetName("idx_notifications_expire_at_ttl").SetExpireAfterSeconds(0).SetSparse(true).SetBackground(true),
+		},
+	})
+	return err
+}
+
+func (r *DynamicRepository) EnsureNotificationIndexesForAllProjects(ctx context.Context) error {
+	cursor, err := r.globalCollection("projects").Find(ctx, bson.M{"isActive": true})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var project struct {
+			ID       primitive.ObjectID `bson:"_id"`
+			TenantID primitive.ObjectID `bson:"tenantId"`
+		}
+		if err := cursor.Decode(&project); err != nil {
+			return err
+		}
+		if err := r.EnsureNotificationIndexes(ctx, project.TenantID.Hex(), project.ID.Hex()); err != nil {
+			return err
+		}
+	}
+	return cursor.Err()
+}
+
 func (r *DynamicRepository) CountByField(ctx context.Context, tenantID, projectID, schemaName, fieldName string, fieldValue interface{}) (int64, error) {
 	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, bson.M{fieldName: fieldValue})
 }
