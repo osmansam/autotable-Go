@@ -64,6 +64,50 @@ func TestWorkflowModeHelpers(t *testing.T) {
 	}
 }
 
+func TestWorkflowTriggerAndModeMatrices(t *testing.T) {
+	for _, trigger := range []string{
+		"",
+		models.WorkflowTriggerBeforeCreate,
+		models.WorkflowTriggerAfterCreate,
+		models.WorkflowTriggerBeforeUpdate,
+		models.WorkflowTriggerAfterUpdate,
+		models.WorkflowTriggerBeforeDelete,
+		models.WorkflowTriggerAfterDelete,
+		models.WorkflowTriggerManual,
+		models.WorkflowTriggerCron,
+	} {
+		t.Run("trigger "+trigger, func(t *testing.T) {
+			if !workflowTriggerValid(trigger) {
+				t.Fatalf("workflowTriggerValid(%q) = false", trigger)
+			}
+			workflow := models.DynamicWorkflow{Name: "valid", Trigger: trigger}
+			if trigger == models.WorkflowTriggerCron {
+				workflow.Schedule = "*/5 * * * *"
+			}
+			if err := ValidateWorkflow(workflow); err != nil {
+				t.Fatalf("ValidateWorkflow(%q) error = %v", trigger, err)
+			}
+			if trigger == "" && workflowTrigger(workflow) != models.WorkflowTriggerManual {
+				t.Fatalf("workflowTrigger(empty) = %q", workflowTrigger(workflow))
+			}
+		})
+	}
+	if workflowTriggerValid("webhook") {
+		t.Fatal("workflowTriggerValid(webhook) = true")
+	}
+
+	for _, mode := range []string{"", models.WorkflowModeTransactional, models.WorkflowModeOutbox, models.WorkflowModeHybrid} {
+		t.Run("mode "+mode, func(t *testing.T) {
+			if !workflowModeValid(mode) {
+				t.Fatalf("workflowModeValid(%q) = false", mode)
+			}
+		})
+	}
+	if workflowModeValid("async") {
+		t.Fatal("workflowModeValid(async) = true")
+	}
+}
+
 func TestWorkflowRequiresTransaction(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -130,6 +174,55 @@ func TestWorkflowArrayUpdateOperator(t *testing.T) {
 	}
 }
 
+func TestWorkflowArrayUpdateRuntimeValidationMatrix(t *testing.T) {
+	service := &DynamicService{}
+	payload := workflowExecutionPayload{SchemaName: "orders"}
+	for _, stepType := range []string{
+		models.WorkflowStepTypeAppendArray,
+		models.WorkflowStepTypeRemoveArray,
+		models.WorkflowStepTypeAddToSet,
+		models.WorkflowStepTypePush,
+		models.WorkflowStepTypePull,
+		models.WorkflowStepTypePullAll,
+		models.WorkflowStepTypeSetArray,
+	} {
+		t.Run(stepType+" missing filter", func(t *testing.T) {
+			if _, err := service.workflowUpdateArray(context.Background(), models.DynamicWorkflowStep{
+				Type:   stepType,
+				Config: map[string]interface{}{"field": "items", "value": []interface{}{"a"}},
+			}, payload); err == nil {
+				t.Fatal("workflowUpdateArray(missing filter) error = nil")
+			}
+		})
+		t.Run(stepType+" invalid field", func(t *testing.T) {
+			if _, err := service.workflowUpdateArray(context.Background(), models.DynamicWorkflowStep{
+				Type:   stepType,
+				Config: map[string]interface{}{"filter": map[string]interface{}{"_id": "id"}, "field": "$items", "value": []interface{}{"a"}},
+			}, payload); err == nil {
+				t.Fatal("workflowUpdateArray(invalid field) error = nil")
+			}
+		})
+		t.Run(stepType+" missing value", func(t *testing.T) {
+			if _, err := service.workflowUpdateArray(context.Background(), models.DynamicWorkflowStep{
+				Type:   stepType,
+				Config: map[string]interface{}{"filter": map[string]interface{}{"_id": "id"}, "field": "items"},
+			}, payload); err == nil {
+				t.Fatal("workflowUpdateArray(missing value) error = nil")
+			}
+		})
+	}
+	for _, stepType := range []string{models.WorkflowStepTypePullAll, models.WorkflowStepTypeSetArray} {
+		t.Run(stepType+" requires array value", func(t *testing.T) {
+			if _, err := service.workflowUpdateArray(context.Background(), models.DynamicWorkflowStep{
+				Type:   stepType,
+				Config: map[string]interface{}{"filter": map[string]interface{}{"_id": "id"}, "field": "items", "value": "not-array"},
+			}, payload); err == nil {
+				t.Fatal("workflowUpdateArray(non-array value) error = nil")
+			}
+		})
+	}
+}
+
 func TestWorkflowUpdateOperatorHelpers(t *testing.T) {
 	valid := map[string]interface{}{
 		"$set":      map[string]interface{}{"state": "open"},
@@ -173,6 +266,74 @@ func TestWorkflowUpdateOperatorHelpers(t *testing.T) {
 	}
 	if _, err := workflowUnsetValues(map[string]interface{}{"field": "$bad"}); err == nil {
 		t.Fatal("workflowUnsetValues(invalid field) error = nil")
+	}
+}
+
+func TestWorkflowStepModeValidationMatrix(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		step    models.DynamicWorkflowStep
+		wantErr string
+	}{
+		{
+			name: "transactional default set variable",
+			mode: models.WorkflowModeTransactional,
+			step: models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable},
+		},
+		{
+			name: "outbox default set variable",
+			mode: models.WorkflowModeOutbox,
+			step: models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable},
+		},
+		{
+			name: "hybrid transactional explicit",
+			mode: models.WorkflowModeHybrid,
+			step: models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable, ExecutionMode: models.WorkflowModeTransactional},
+		},
+		{
+			name: "hybrid outbox explicit",
+			mode: models.WorkflowModeHybrid,
+			step: models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable, ExecutionMode: models.WorkflowModeOutbox},
+		},
+		{
+			name:    "invalid execution mode",
+			mode:    models.WorkflowModeTransactional,
+			step:    models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable, ExecutionMode: "later"},
+			wantErr: "invalid executionMode",
+		},
+		{
+			name:    "transactional rejects outbox step",
+			mode:    models.WorkflowModeTransactional,
+			step:    models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable, ExecutionMode: models.WorkflowModeOutbox},
+			wantErr: "cannot use outbox executionMode",
+		},
+		{
+			name:    "outbox rejects transactional step",
+			mode:    models.WorkflowModeOutbox,
+			step:    models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable, ExecutionMode: models.WorkflowModeTransactional},
+			wantErr: "cannot use transactional executionMode",
+		},
+		{
+			name:    "hybrid requires explicit mode",
+			mode:    models.WorkflowModeHybrid,
+			step:    models.DynamicWorkflowStep{Name: "set", Type: models.WorkflowStepTypeSetVariable},
+			wantErr: "requires executionMode",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateWorkflow(models.DynamicWorkflow{Name: tt.name, Mode: tt.mode, Steps: []models.DynamicWorkflowStep{tt.step}})
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateWorkflow() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ValidateWorkflow() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -349,6 +510,32 @@ func TestWorkflowConditions(t *testing.T) {
 	}
 	if workflowConditionsMatch([]models.WorkflowCondition{{Operator: "or", Conditions: []models.WorkflowCondition{{Field: "status", Operator: "=", Value: "closed"}, {Field: "amount", Operator: "<", Value: 10}}}}, payload) {
 		t.Fatal("workflowConditionsMatch(or false) = true")
+	}
+}
+
+func TestValidateWorkflowConditionGroupsAndChangedTriggers(t *testing.T) {
+	for _, trigger := range []string{models.WorkflowTriggerBeforeUpdate, models.WorkflowTriggerAfterUpdate} {
+		t.Run(trigger, func(t *testing.T) {
+			if err := validateWorkflowConditions(trigger, []models.WorkflowCondition{
+				{Operator: models.WorkflowConditionAnd, Conditions: []models.WorkflowCondition{{Field: "status", Value: "open"}}},
+				{Operator: models.WorkflowConditionOr, Conditions: []models.WorkflowCondition{{Field: "status", Value: "closed"}, {Field: "status", Value: "open"}}},
+				{Field: "status", Operator: models.WorkflowConditionChanged},
+				{Field: "status", Operator: models.WorkflowConditionChangedTo, Value: "closed"},
+				{Field: "status", Operator: models.WorkflowConditionChangedFrom, Value: "open"},
+			}); err != nil {
+				t.Fatalf("validateWorkflowConditions(%s) error = %v", trigger, err)
+			}
+		})
+	}
+	for _, operator := range []string{models.WorkflowConditionAnd, models.WorkflowConditionOr} {
+		if err := validateWorkflowConditions(models.WorkflowTriggerManual, []models.WorkflowCondition{{Operator: operator}}); err == nil {
+			t.Fatalf("validateWorkflowConditions(empty %s) error = nil", operator)
+		}
+	}
+	for _, operator := range []string{models.WorkflowConditionChanged, models.WorkflowConditionChangedTo, models.WorkflowConditionChangedFrom} {
+		if err := validateWorkflowConditions(models.WorkflowTriggerAfterCreate, []models.WorkflowCondition{{Field: "status", Operator: operator}}); err == nil {
+			t.Fatalf("validateWorkflowConditions(%s create trigger) error = nil", operator)
+		}
 	}
 }
 
@@ -718,6 +905,73 @@ func TestWorkflowIfAndForEach(t *testing.T) {
 	}
 }
 
+func TestWorkflowBranchAndLoopCombinations(t *testing.T) {
+	service := &DynamicService{}
+	payload := workflowExecutionPayload{
+		WorkflowName:  "combinations",
+		WorkflowMode:  models.WorkflowModeTransactional,
+		ExecutionMode: models.WorkflowModeTransactional,
+		Record:        map[string]interface{}{"state": "review", "parts": []interface{}{"alpha", "beta", "gamma"}},
+		Variables:     map[string]interface{}{},
+	}
+	setVariable := func(key, value string) models.DynamicWorkflowStep {
+		return models.DynamicWorkflowStep{
+			Name:     key,
+			Type:     models.WorkflowStepTypeSetVariable,
+			IsActive: true,
+			Config:   map[string]interface{}{"values": map[string]interface{}{key: value}},
+		}
+	}
+
+	output, err := service.workflowIf(context.Background(), models.DynamicWorkflowStep{
+		Branches: []models.WorkflowBranch{
+			{
+				Name:       "open",
+				Conditions: []models.WorkflowCondition{{Field: "state", Value: "open"}},
+				Steps:      []models.DynamicWorkflowStep{setVariable("branch", "open")},
+			},
+			{
+				Name: "fallback",
+				Steps: []models.DynamicWorkflowStep{
+					setVariable("branch", "fallback"),
+					{
+						Name:     "nested-if",
+						Type:     models.WorkflowStepTypeIf,
+						IsActive: true,
+						Branches: []models.WorkflowBranch{{
+							Name:       "review",
+							Conditions: []models.WorkflowCondition{{Field: "vars.branch", Value: "fallback"}, {Field: "state", Value: "review"}},
+							Steps:      []models.DynamicWorkflowStep{setVariable("nestedBranch", "review")},
+						}},
+					},
+				},
+			},
+		},
+	}, &payload)
+	if err != nil || !reflect.DeepEqual(output, map[string]interface{}{"branch": "fallback"}) {
+		t.Fatalf("workflowIf(branches) = %#v, %v", output, err)
+	}
+	if payload.Variables["branch"] != "fallback" || payload.Variables["nestedBranch"] != "review" {
+		t.Fatalf("workflowIf(branches) variables = %#v", payload.Variables)
+	}
+
+	output, err = service.workflowForEach(context.Background(), models.DynamicWorkflowStep{
+		Config: map[string]interface{}{"items": "{{record.parts}}", "itemName": "part"},
+		Steps: []models.DynamicWorkflowStep{
+			{
+				Name:       "return-second",
+				Type:       models.WorkflowStepTypeReturn,
+				IsActive:   true,
+				Conditions: []models.WorkflowCondition{{Field: "loop.index", Value: 1}},
+				Config:     map[string]interface{}{"value": "{{loop.part}}"},
+			},
+		},
+	}, &payload)
+	if err != nil || output != "beta" || !payload.HasReturn || payload.ReturnValue != "beta" {
+		t.Fatalf("workflowForEach(return) = %#v, %v; payload return = %#v/%v", output, err, payload.ReturnValue, payload.HasReturn)
+	}
+}
+
 func TestWorkflowStepProcessingErrors(t *testing.T) {
 	service := &DynamicService{}
 	payload := workflowExecutionPayload{Variables: map[string]interface{}{}}
@@ -740,6 +994,97 @@ func TestWorkflowStepProcessingErrors(t *testing.T) {
 		{Name: "ignored", Type: "unknown", IsActive: true, ContinueOnError: true},
 	}); err != nil {
 		t.Fatalf("runWorkflowStepList(continue) error = %v", err)
+	}
+}
+
+func TestWorkflowPureStepDispatchMatrix(t *testing.T) {
+	service := &DynamicService{}
+	tests := []struct {
+		name       string
+		step       models.DynamicWorkflowStep
+		payload    workflowExecutionPayload
+		wantOutput interface{}
+		assert     func(*testing.T, workflowExecutionPayload, interface{})
+	}{
+		{
+			name:    "set variable",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeSetVariable, Config: map[string]interface{}{"values": map[string]interface{}{"total": "{{record.amount}}"}}},
+			payload: workflowExecutionPayload{Record: map[string]interface{}{"amount": 9}},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+				if payload.Variables["total"] != 9 {
+					t.Fatalf("variables = %#v, output = %#v", payload.Variables, output)
+				}
+			},
+		},
+		{
+			name:    "set record",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeSetRecord, Config: map[string]interface{}{"values": map[string]interface{}{"status": "ready"}}},
+			payload: workflowExecutionPayload{Record: map[string]interface{}{}},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+				if payload.Record["status"] != "ready" {
+					t.Fatalf("record = %#v, output = %#v", payload.Record, output)
+				}
+			},
+		},
+		{
+			name:    "transform variables",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeTransform, Config: map[string]interface{}{"values": map[string]interface{}{"status": "{{record.status}}"}}},
+			payload: workflowExecutionPayload{Record: map[string]interface{}{"status": "open"}},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+				if payload.Variables["status"] != "open" {
+					t.Fatalf("variables = %#v, output = %#v", payload.Variables, output)
+				}
+			},
+		},
+		{
+			name:    "equation variables",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeEquation, Config: map[string]interface{}{"values": map[string]interface{}{"total": "quantity * price"}}},
+			payload: workflowExecutionPayload{Record: map[string]interface{}{"quantity": 3, "price": 4}},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+				if payload.Variables["total"] != float64(12) {
+					t.Fatalf("variables = %#v, output = %#v", payload.Variables, output)
+				}
+			},
+		},
+		{
+			name:    "return",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeReturn, Config: map[string]interface{}{"value": "{{record.status}}"}},
+			payload: workflowExecutionPayload{Record: map[string]interface{}{"status": "done"}},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+				if output != "done" || payload.ReturnValue != "done" || !payload.HasReturn {
+					t.Fatalf("return output = %#v, payload = %#v", output, payload)
+				}
+			},
+		},
+		{
+			name:    "fail",
+			step:    models.DynamicWorkflowStep{Type: models.WorkflowStepTypeFail, Config: map[string]interface{}{"message": "blocked", "status": 409}},
+			payload: workflowExecutionPayload{},
+			assert: func(t *testing.T, payload workflowExecutionPayload, output interface{}) {
+				t.Helper()
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := tt.payload
+			output, err := service.processWorkflowStep(context.Background(), tt.step, &payload)
+			if tt.step.Type == models.WorkflowStepTypeFail {
+				if err == nil || workflowExecutionServiceError(err, "fallback").Status != http.StatusConflict {
+					t.Fatalf("fail step error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("processWorkflowStep() error = %v", err)
+			}
+			tt.assert(t, payload, output)
+		})
 	}
 }
 
@@ -938,6 +1283,146 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 	}
 }
 
+func TestValidateWorkflowAllDeclaredStepTypes(t *testing.T) {
+	for _, stepType := range []string{
+		models.WorkflowStepTypeCreateRecord,
+		models.WorkflowStepTypeUpdateRecord,
+		models.WorkflowStepTypeUnsetRecord,
+		models.WorkflowStepTypeDeleteRecord,
+		models.WorkflowStepTypeAuditLog,
+		models.WorkflowStepTypeInvalidateCache,
+		models.WorkflowStepTypeCallAPI,
+		models.WorkflowStepTypeRunPipeline,
+		models.WorkflowStepTypeAggregate,
+		models.WorkflowStepTypeDistinct,
+		models.WorkflowStepTypeDynamicFunction,
+		models.WorkflowStepTypeEmitOutboxEvent,
+		models.WorkflowStepTypeCreateNotification,
+		models.WorkflowStepTypeGetRecord,
+		models.WorkflowStepTypeFindRecords,
+		models.WorkflowStepTypeIf,
+		models.WorkflowStepTypeForEach,
+		models.WorkflowStepTypeSetVariable,
+		models.WorkflowStepTypeExecuteWorkflow,
+		models.WorkflowStepTypeExecuteDynamicAPI,
+		models.WorkflowStepTypeFail,
+		models.WorkflowStepTypeSetRecord,
+		models.WorkflowStepTypeTransform,
+		models.WorkflowStepTypeAppendArray,
+		models.WorkflowStepTypeRemoveArray,
+		models.WorkflowStepTypeAddToSet,
+		models.WorkflowStepTypePush,
+		models.WorkflowStepTypePull,
+		models.WorkflowStepTypePullAll,
+		models.WorkflowStepTypeSetArray,
+		models.WorkflowStepTypeCountRecords,
+		models.WorkflowStepTypeEquation,
+		models.WorkflowStepTypeReturn,
+	} {
+		t.Run(stepType, func(t *testing.T) {
+			if err := ValidateWorkflow(validWorkflowForStepType(stepType)); err != nil {
+				t.Fatalf("ValidateWorkflow(%s) error = %v", stepType, err)
+			}
+		})
+	}
+}
+
+func TestWorkflowNotificationValidationAndRuntimeGuards(t *testing.T) {
+	valid := models.DynamicWorkflowStep{
+		Name: "notify",
+		Type: models.WorkflowStepTypeCreateNotification,
+		Config: map[string]interface{}{
+			"title":   "Inventory warning",
+			"message": "SKU {{record.sku}} is low",
+			"type":    "warning",
+		},
+	}
+	if err := validateCreateNotificationStep(valid); err != nil {
+		t.Fatalf("validateCreateNotificationStep(valid) error = %v", err)
+	}
+
+	tests := []models.DynamicWorkflowStep{
+		{Name: "missing", Type: models.WorkflowStepTypeCreateNotification},
+		{Name: "missing-title", Type: models.WorkflowStepTypeCreateNotification, Config: map[string]interface{}{"message": "body"}},
+		{Name: "blank-message", Type: models.WorkflowStepTypeCreateNotification, Config: map[string]interface{}{"title": "title", "message": "  "}},
+		{Name: "bad-type", Type: models.WorkflowStepTypeCreateNotification, Config: map[string]interface{}{"title": "title", "message": "body", "type": "urgent"}},
+		{Name: "non-string-type", Type: models.WorkflowStepTypeCreateNotification, Config: map[string]interface{}{"title": "title", "message": "body", "type": 1}},
+	}
+	for _, step := range tests {
+		t.Run(step.Name, func(t *testing.T) {
+			if err := validateCreateNotificationStep(step); err == nil {
+				t.Fatal("validateCreateNotificationStep() error = nil")
+			}
+		})
+	}
+
+	service := &DynamicService{}
+	payload := workflowExecutionPayload{TenantID: "tenant", ProjectID: "project", SchemaName: "orders", UserID: "user"}
+	if _, err := service.workflowCreateNotification(context.Background(), models.DynamicWorkflowStep{
+		Config: map[string]interface{}{"title": " ", "message": "body"},
+	}, payload); err == nil {
+		t.Fatal("workflowCreateNotification(blank title) error = nil")
+	}
+	if _, err := service.workflowCreateNotification(context.Background(), models.DynamicWorkflowStep{
+		Config: map[string]interface{}{"title": "title", "message": "body", "type": "urgent"},
+	}, payload); err == nil {
+		t.Fatal("workflowCreateNotification(bad type) error = nil")
+	}
+	if _, err := service.workflowCreateNotification(context.Background(), models.DynamicWorkflowStep{}, payload); err == nil {
+		t.Fatal("workflowCreateNotification(non-object config) error = nil")
+	}
+}
+
+func validWorkflowForStepType(stepType string) models.DynamicWorkflow {
+	workflow := models.DynamicWorkflow{
+		Name: "valid-" + stepType,
+		Mode: models.WorkflowModeTransactional,
+		Steps: []models.DynamicWorkflowStep{{
+			Name:     "step",
+			Type:     stepType,
+			IsActive: true,
+			Config:   map[string]interface{}{},
+		}},
+	}
+	step := &workflow.Steps[0]
+	switch stepType {
+	case models.WorkflowStepTypeCallAPI:
+		workflow.Mode = models.WorkflowModeOutbox
+		step.TimeoutSec = 1
+		step.Config = map[string]interface{}{"url": "https://example.com", "method": http.MethodPost}
+	case models.WorkflowStepTypeInvalidateCache, models.WorkflowStepTypeExecuteDynamicAPI:
+		workflow.Mode = models.WorkflowModeOutbox
+	case models.WorkflowStepTypeCreateNotification:
+		workflow.Mode = models.WorkflowModeOutbox
+		step.Config = map[string]interface{}{"title": "Created", "message": "Record {{record._id}} was created", "type": "{{record.notificationType}}"}
+	case models.WorkflowStepTypeUnsetRecord:
+		step.Config = map[string]interface{}{"field": "archivedAt"}
+	case models.WorkflowStepTypeAggregate, models.WorkflowStepTypeRunPipeline:
+		step.Config = map[string]interface{}{"pipeline": []interface{}{map[string]interface{}{"$match": map[string]interface{}{"state": "open"}}}}
+	case models.WorkflowStepTypeDistinct:
+		step.Config = map[string]interface{}{"field": "state"}
+	case models.WorkflowStepTypeForEach:
+		step.Config = map[string]interface{}{"items": []interface{}{"one"}}
+		step.Steps = []models.DynamicWorkflowStep{{Name: "loop-set", Type: models.WorkflowStepTypeSetVariable, IsActive: true, Config: map[string]interface{}{"values": map[string]interface{}{"seen": "{{loop.item}}"}}}}
+	case models.WorkflowStepTypeIf:
+		step.Conditions = []models.WorkflowCondition{{Field: "state", Value: "open"}}
+		step.Steps = []models.DynamicWorkflowStep{{Name: "if-set", Type: models.WorkflowStepTypeSetVariable, IsActive: true, Config: map[string]interface{}{"values": map[string]interface{}{"branch": "if"}}}}
+		step.ElseSteps = []models.DynamicWorkflowStep{{Name: "else-set", Type: models.WorkflowStepTypeSetVariable, IsActive: true, Config: map[string]interface{}{"values": map[string]interface{}{"branch": "else"}}}}
+	case models.WorkflowStepTypeSetVariable, models.WorkflowStepTypeSetRecord, models.WorkflowStepTypeTransform:
+		step.Config = map[string]interface{}{"values": map[string]interface{}{"status": "ready"}}
+	case models.WorkflowStepTypeEquation:
+		step.Config = map[string]interface{}{"values": map[string]interface{}{"total": "quantity * unitPrice"}}
+	case models.WorkflowStepTypeReturn:
+		step.Config = map[string]interface{}{"value": map[string]interface{}{"ok": true}}
+	case models.WorkflowStepTypeFail:
+		step.Config = map[string]interface{}{"message": "failed", "status": 422}
+	case models.WorkflowStepTypeAppendArray, models.WorkflowStepTypeRemoveArray, models.WorkflowStepTypeAddToSet,
+		models.WorkflowStepTypePush, models.WorkflowStepTypePull, models.WorkflowStepTypePullAll, models.WorkflowStepTypeSetArray:
+		step.Config = map[string]interface{}{"filter": map[string]interface{}{"_id": "{{record._id}}"}, "field": "items", "value": []interface{}{"a"}}
+	}
+	return workflow
+}
+
 func TestValidateWorkflowCronSchedule(t *testing.T) {
 	valid := models.DynamicWorkflow{
 		Name:     "daily",
@@ -963,6 +1448,74 @@ func TestValidateWorkflowCronSchedule(t *testing.T) {
 				t.Fatal("ValidateWorkflow() error = nil")
 			}
 		})
+	}
+}
+
+func TestRunCronWorkflowPayloadAndReturn(t *testing.T) {
+	service := &DynamicService{}
+	triggeredAt := time.Date(2026, 6, 4, 12, 30, 0, 0, time.FixedZone("CDT", -5*60*60))
+	container := &models.ContainerModel{SchemaName: "jobs"}
+	workflow := models.DynamicWorkflow{
+		Name:     "hourly-rollup",
+		Trigger:  models.WorkflowTriggerCron,
+		Schedule: "0 * * * *",
+		Timezone: "UTC",
+		Mode:     models.WorkflowModeTransactional,
+		Steps: []models.DynamicWorkflowStep{
+			{
+				Name:     "capture",
+				Type:     models.WorkflowStepTypeSetVariable,
+				Order:    1,
+				IsActive: true,
+				Config: map[string]interface{}{"values": map[string]interface{}{
+					"schema":      "{{schemaName}}",
+					"triggeredAt": "{{record.triggeredAt}}",
+				}},
+			},
+			{
+				Name:     "response",
+				Type:     models.WorkflowStepTypeReturn,
+				Order:    2,
+				IsActive: true,
+				Config:   map[string]interface{}{"value": map[string]interface{}{"schema": "{{vars.schema}}", "triggeredAt": "{{vars.triggeredAt}}"}},
+			},
+		},
+	}
+
+	if err := service.RunCronWorkflow(context.Background(), "tenant", "project", "jobs", container, workflow, triggeredAt); err != nil {
+		t.Fatalf("RunCronWorkflow() error = %v", err)
+	}
+	if err := service.RunCronWorkflow(context.Background(), "tenant", "project", "jobs", nil, workflow, triggeredAt); err == nil {
+		t.Fatal("RunCronWorkflow(nil container) error = nil")
+	}
+}
+
+func TestScheduledWorkflowKeyAndFingerprint(t *testing.T) {
+	workflows := []scheduledWorkflow{
+		{
+			TenantID:  "tenant",
+			ProjectID: "project",
+			Schema:    "orders",
+			Workflow:  models.DynamicWorkflow{Name: "nightly", Trigger: models.WorkflowTriggerCron, Schedule: "0 2 * * *"},
+		},
+		{
+			TenantID:  "tenant",
+			ProjectID: "project",
+			Schema:    "invoices",
+			Workflow:  models.DynamicWorkflow{Name: "hourly", Trigger: models.WorkflowTriggerCron, Schedule: "0 * * * *"},
+		},
+	}
+	if got := scheduledWorkflowKey(workflows[0]); got != "tenant:project:orders:nightly" {
+		t.Fatalf("scheduledWorkflowKey() = %q", got)
+	}
+	first := scheduledWorkflowFingerprint(workflows)
+	second := scheduledWorkflowFingerprint(workflows)
+	if first == "" || first != second || !strings.Contains(first, "tenant:project:orders:nightly") || !strings.Contains(first, `"schedule":"0 2 * * *"`) {
+		t.Fatalf("scheduledWorkflowFingerprint() = %q, second = %q", first, second)
+	}
+	workflows[0].Workflow.Schedule = "15 2 * * *"
+	if changed := scheduledWorkflowFingerprint(workflows); changed == first {
+		t.Fatalf("scheduledWorkflowFingerprint() did not change after schedule update: %q", changed)
 	}
 }
 
