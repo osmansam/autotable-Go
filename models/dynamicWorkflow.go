@@ -78,24 +78,25 @@ const (
 )
 
 type DynamicWorkflow struct {
-	ID               string                `bson:"id,omitempty" json:"id,omitempty"`
-	Name             string                `bson:"name" json:"name"`
-	Version          int                   `bson:"version,omitempty" json:"version,omitempty"`
-	Trigger          string                `bson:"trigger" json:"trigger"`
-	Schedule         string                `bson:"schedule,omitempty" json:"schedule,omitempty"`
-	Timezone         string                `bson:"timezone,omitempty" json:"timezone,omitempty"`
-	Mode             string                `bson:"mode" json:"mode"`
-	IsActive         bool                  `bson:"isActive" json:"isActive"`
-	IsAuthenticated  bool                  `bson:"isAuthenticated" json:"isAuthenticated"`
-	IsAuthorized     bool                  `bson:"isAuthorized" json:"isAuthorized"`
-	AuthorizeRole    []string              `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
-	Description      string                `bson:"description,omitempty" json:"description,omitempty"`
-	Conditions       []WorkflowCondition   `bson:"conditions,omitempty" json:"conditions,omitempty"`
-	Steps            []DynamicWorkflowStep `bson:"steps" json:"steps"`
-	StopOnError      bool                  `bson:"stopOnError" json:"stopOnError"`
-	TimeoutSec       int                   `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
-	ReturnStep       string                `bson:"returnStep,omitempty" json:"returnStep,omitempty"`
-	RunInTransaction bool                  `bson:"runInTransaction,omitempty" json:"runInTransaction,omitempty"`
+	ID               string                 `bson:"id,omitempty" json:"id,omitempty"`
+	Name             string                 `bson:"name" json:"name"`
+	Version          int                    `bson:"version,omitempty" json:"version,omitempty"`
+	Trigger          string                 `bson:"trigger" json:"trigger"`
+	Schedule         string                 `bson:"schedule,omitempty" json:"schedule,omitempty"`
+	Timezone         string                 `bson:"timezone,omitempty" json:"timezone,omitempty"`
+	Mode             string                 `bson:"mode" json:"mode"`
+	IsActive         bool                   `bson:"isActive" json:"isActive"`
+	IsAuthenticated  bool                   `bson:"isAuthenticated" json:"isAuthenticated"`
+	IsAuthorized     bool                   `bson:"isAuthorized" json:"isAuthorized"`
+	AuthorizeRole    []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`
+	Description      string                 `bson:"description,omitempty" json:"description,omitempty"`
+	Payload          map[string]interface{} `bson:"payload,omitempty" json:"payload,omitempty"`
+	Conditions       []WorkflowCondition    `bson:"conditions,omitempty" json:"conditions,omitempty"`
+	Steps            []DynamicWorkflowStep  `bson:"steps" json:"steps"`
+	StopOnError      bool                   `bson:"stopOnError" json:"stopOnError"`
+	TimeoutSec       int                    `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
+	ReturnStep       string                 `bson:"returnStep,omitempty" json:"returnStep,omitempty"`
+	RunInTransaction bool                   `bson:"runInTransaction,omitempty" json:"runInTransaction,omitempty"`
 }
 
 type WorkflowCondition struct {

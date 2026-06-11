@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: autotable
+    orgId: 1
+    folder: Autotable
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

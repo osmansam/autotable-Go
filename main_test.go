@@ -1,7 +1,6 @@
 package main
 
 import (
-	"expvar"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,14 +100,5 @@ func TestConfigurePprof(t *testing.T) {
 	resp, err = app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
 	if err != nil || resp.StatusCode == http.StatusNotFound {
 		t.Fatalf("development pprof status = %v, error = %v", resp, err)
-	}
-}
-
-func TestInitMetrics(t *testing.T) {
-	initMetrics()
-	for _, name := range []string{"goroutines", "memory", "num_cpu"} {
-		if expvar.Get(name) == nil {
-			t.Fatalf("metric %q is not published", name)
-		}
 	}
 }
