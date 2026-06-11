@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/validators"
@@ -70,10 +72,22 @@ func (s *DynamicService) enqueueOutboxWorkflows(ctx mongo.SessionContext, payloa
 }
 
 func (s *DynamicService) runWorkflowDefinition(ctx context.Context, payload *workflowExecutionPayload, workflow models.DynamicWorkflow) error {
+	start := time.Now()
+	status := "success"
+	defer func() {
+		duration := time.Since(start)
+		observability.RecordWorkflowExecution(payload.TenantID, payload.ProjectID, workflow.Name, payload.SchemaName, status, duration)
+		attrs := append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, workflow.Name),
+			observability.OperationAttrs("workflow_execute", status, duration)...)
+		observability.InfoCtx(ctx, "workflow execution completed", attrs...)
+	}()
+
 	if err := ValidateWorkflow(workflow); err != nil {
+		status = "error"
 		return err
 	}
 	if err := validateWorkflowExecutionBounds(*payload, workflow); err != nil {
+		status = "error"
 		return err
 	}
 	payload.WorkflowTrigger = workflowTrigger(workflow)
@@ -84,6 +98,7 @@ func (s *DynamicService) runWorkflowDefinition(ctx context.Context, payload *wor
 		payload.OutboxEvents = &outboxEvents
 	}
 	if !workflowConditionsMatch(workflow.Conditions, *payload) {
+		status = "skipped"
 		return nil
 	}
 
@@ -92,6 +107,7 @@ func (s *DynamicService) runWorkflowDefinition(ctx context.Context, payload *wor
 
 	if workflowSupportsMode(workflow.Mode, models.WorkflowModeTransactional) {
 		if err := s.runWorkflowSteps(workflowCtx, payload, workflow, models.WorkflowModeTransactional); err != nil {
+			status = "error"
 			return err
 		}
 	}
@@ -100,6 +116,7 @@ func (s *DynamicService) runWorkflowDefinition(ctx context.Context, payload *wor
 		outboxPayload.ReturnValue = nil
 		outboxPayload.HasReturn = false
 		if err := s.runWorkflowSteps(workflowCtx, &outboxPayload, workflow, models.WorkflowModeOutbox); err != nil {
+			status = "error"
 			return err
 		}
 	}
@@ -141,6 +158,9 @@ func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflow
 			continue
 		}
 
+		start := time.Now()
+		status := "success"
+
 		workflowCtx, cancel := workflowContextWithTimeout(ctx, workflow.TimeoutSec)
 		steps := append([]models.DynamicWorkflowStep(nil), workflow.Steps...)
 		sort.SliceStable(steps, func(i, j int) bool {
@@ -152,9 +172,20 @@ func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflow
 		workflowPayload.WorkflowVersion = workflowVersion(workflow)
 		if err := s.runWorkflowStepList(workflowCtx, &workflowPayload, workflow.Name, workflow.Mode, executionMode, workflow.StopOnError, steps); err != nil {
 			cancel()
+			status = "error"
+			duration := time.Since(start)
+			observability.RecordWorkflowExecution(payload.TenantID, payload.ProjectID, workflow.Name, payload.SchemaName, status, duration)
+			attrs := append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, workflow.Name),
+				observability.OperationAttrs("workflow_execute", status, duration)...)
+			observability.ErrorCtx(ctx, "workflow execution failed", err, attrs...)
 			return err
 		}
 		cancel()
+		duration := time.Since(start)
+		observability.RecordWorkflowExecution(payload.TenantID, payload.ProjectID, workflow.Name, payload.SchemaName, status, duration)
+		attrs := append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, workflow.Name),
+			observability.OperationAttrs("workflow_execute", status, duration)...)
+		observability.InfoCtx(ctx, "workflow execution completed", attrs...)
 	}
 	return nil
 }
@@ -188,6 +219,8 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 
 		var err error
 		var output interface{}
+		start := time.Now()
+		status := "success"
 		if executionMode == models.WorkflowModeOutbox {
 			stepPayload := *payload
 			stepPayload.WorkflowName = workflowName
@@ -195,6 +228,9 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 			stepPayload.ExecutionMode = executionMode
 			stepPayload.StopOnError = stopOnError
 			err = s.enqueueWorkflowStep(ctx, stepPayload, workflowName, step)
+			if err == nil {
+				status = "queued"
+			}
 		} else {
 			payload.WorkflowName = workflowName
 			payload.WorkflowMode = workflowMode
@@ -204,6 +240,19 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 			if err == nil && step.Name != "" {
 				payload.StepOutputs[step.Name] = output
 			}
+		}
+		if err != nil {
+			status = "error"
+		}
+		duration := time.Since(start)
+		observability.RecordWorkflowStepExecution(payload.TenantID, payload.ProjectID, workflowName, step.Type, status, duration)
+		attrs := append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, workflowName),
+			observability.OperationAttrs("workflow_step_execute", status, duration)...)
+		attrs = append(attrs, slog.String(observability.FieldStepType, step.Type))
+		if err != nil {
+			observability.ErrorCtx(ctx, "workflow step execution failed", err, attrs...)
+		} else {
+			observability.InfoCtx(ctx, "workflow step execution completed", attrs...)
 		}
 		if err != nil && stopOnError && !step.ContinueOnError {
 			return fmt.Errorf("workflow %s step %s failed: %w", workflowName, step.Name, err)
@@ -1281,15 +1330,29 @@ func buildWorkflowStepOutboxEvent(payload workflowExecutionPayload, workflowName
 }
 
 func processWorkflowOutboxStep(ctx context.Context, repository *repositories.DynamicRepository, event *models.DynamicOutboxEvent) error {
+	start := time.Now()
+	status := "success"
+	defer func() {
+		duration := time.Since(start)
+		observability.RecordWorkflowStepExecution(event.TenantID, event.ProjectID, event.Payload.WorkflowName, event.Payload.StepType, status, duration)
+		attrs := append(observability.WorkflowAttrs(event.TenantID, event.ProjectID, event.SchemaName, event.Payload.WorkflowName),
+			observability.OperationAttrs("workflow_outbox_step_execute", status, duration)...)
+		attrs = append(attrs, slog.String(observability.FieldStepType, event.Payload.StepType))
+		observability.InfoCtx(ctx, "workflow outbox step execution completed", attrs...)
+	}()
+
 	if event.Payload.StepType == models.WorkflowStepTypeEmitOutboxEvent {
+		status = "error"
 		return fmt.Errorf("emit_outbox_event cannot be processed as an outbox workflow step")
 	}
 	if event.Payload.IdempotencyKey != "" {
 		done, err := repository.WorkflowStepExecutionDone(ctx, event.Payload.IdempotencyKey)
 		if err != nil {
+			status = "error"
 			return err
 		}
 		if done {
+			status = "skipped"
 			return nil
 		}
 	}
@@ -1326,10 +1389,14 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 	}
 	_, err := service.processWorkflowStepWithTimeout(ctx, step, &payload)
 	if err != nil {
+		status = "error"
 		return err
 	}
 	if event.Payload.IdempotencyKey != "" {
-		return repository.MarkWorkflowStepExecutionDone(ctx, event.Payload.IdempotencyKey, event.ID)
+		if err := repository.MarkWorkflowStepExecutionDone(ctx, event.Payload.IdempotencyKey, event.ID); err != nil {
+			status = "error"
+			return err
+		}
 	}
 	return nil
 }

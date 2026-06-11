@@ -33,7 +33,7 @@ var (
 			Name: "workflow_executions_total",
 			Help: "Total number of workflow executions.",
 		},
-		[]string{"workflow_name", "schema_name", "status"},
+		[]string{"status"},
 	)
 
 	workflowExecutionDurationSeconds = prometheus.NewHistogramVec(
@@ -42,7 +42,24 @@ var (
 			Help:    "Workflow execution duration in seconds.",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"workflow_name", "schema_name", "status"},
+		[]string{"status"},
+	)
+
+	workflowStepExecutionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "workflow_step_executions_total",
+			Help: "Total number of workflow step executions.",
+		},
+		[]string{"step_type", "status"},
+	)
+
+	workflowStepDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "workflow_step_duration_seconds",
+			Help:    "Workflow step execution duration in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"step_type", "status"},
 	)
 
 	pipelineExecutionsTotal = prometheus.NewCounterVec(
@@ -94,6 +111,8 @@ func init() {
 		httpRequestDurationSeconds,
 		workflowExecutionsTotal,
 		workflowExecutionDurationSeconds,
+		workflowStepExecutionsTotal,
+		workflowStepDurationSeconds,
 		pipelineExecutionsTotal,
 		pipelineExecutionDurationSeconds,
 		cacheRequestsTotal,
@@ -108,11 +127,18 @@ func RecordHTTPRequest(method, route string, statusCode int, duration time.Durat
 	httpRequestDurationSeconds.WithLabelValues(method, normalizeMetricLabel(route), status).Observe(duration.Seconds())
 }
 
-// RecordWorkflowExecution is intended for workflow runners. Keep workflow_name
-// and schema_name low-cardinality: use configured names, not IDs or user input.
-func RecordWorkflowExecution(workflowName, schemaName, status string, duration time.Duration) {
-	workflowExecutionsTotal.WithLabelValues(normalizeMetricLabel(workflowName), normalizeMetricLabel(schemaName), normalizeStatus(status)).Inc()
-	workflowExecutionDurationSeconds.WithLabelValues(normalizeMetricLabel(workflowName), normalizeMetricLabel(schemaName), normalizeStatus(status)).Observe(duration.Seconds())
+// RecordWorkflowExecution records workflow health with intentionally low-cardinality
+// labels. Tenant/project/schema/workflow names belong in logs, not Prometheus labels.
+func RecordWorkflowExecution(tenantID, projectID, workflowName, schemaName, status string, duration time.Duration) {
+	workflowExecutionsTotal.WithLabelValues(normalizeStatus(status)).Inc()
+	workflowExecutionDurationSeconds.WithLabelValues(normalizeStatus(status)).Observe(duration.Seconds())
+}
+
+// RecordWorkflowStepExecution records workflow step execution without using
+// step IDs, workflow names, tenant IDs, or user-specific values as labels.
+func RecordWorkflowStepExecution(tenantID, projectID, workflowName, stepType, status string, duration time.Duration) {
+	workflowStepExecutionsTotal.WithLabelValues(normalizeMetricLabel(stepType), normalizeStatus(status)).Inc()
+	workflowStepDurationSeconds.WithLabelValues(normalizeMetricLabel(stepType), normalizeStatus(status)).Observe(duration.Seconds())
 }
 
 // RecordPipelineExecution is intended for dynamic pipeline execution paths.

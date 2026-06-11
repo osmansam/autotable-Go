@@ -142,7 +142,6 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 	tenantID, projectID, err := getProjectContext(c)
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -182,7 +181,6 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	tenantID, projectID, err := getProjectContext(c)
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -223,7 +221,6 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -255,13 +252,11 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
-	log.Printf("Getting items for selection: schema=%s, field=%s (tenant: %s, project: %s)", schemaName, fieldName, tenantID, projectID)
 
 	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
@@ -289,7 +284,6 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 	tenantID, projectID, err := getProjectContext(c)
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -330,7 +324,6 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 	tenantID, projectID, err := getProjectContext(c)
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -373,7 +366,6 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 	userIDStr, _ := c.Locals("userID").(string)
 	log.Printf("DEBUG: userID from Locals: '%s'", userIDStr)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -414,7 +406,6 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 	tenantID, projectID, err := getProjectContext(c)
 	userIDStr, _ := c.Locals("userID").(string)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 	idempotencyKey, shouldContinue, err := beginDynamicIdempotency(ctx, c, tenantID, projectID, userIDStr)
@@ -454,7 +445,6 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -495,7 +485,6 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -540,7 +529,6 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -598,7 +586,6 @@ func GetPipeline(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -636,7 +623,6 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -689,7 +675,6 @@ func ExecuteDynamicCode(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -727,7 +712,6 @@ func TestPipeline(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -767,7 +751,6 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -810,7 +793,6 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
@@ -878,7 +860,6 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 
 	tenantID, projectID, err := getProjectContext(c)
 	if err != nil {
-		log.Printf("Project context error: %v", err)
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 

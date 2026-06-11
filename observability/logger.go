@@ -19,6 +19,9 @@ const (
 	FieldSchemaName   = "schema_name"
 	FieldWorkflowName = "workflow_name"
 	FieldPipelineName = "pipeline_name"
+	FieldOperation    = "operation"
+	FieldStepType     = "step_type"
+	FieldStatus       = "status"
 	// user_id is allowed in logs for debugging, but never use it as a Prometheus label.
 	FieldUserID     = "user_id"
 	FieldDurationMS = "duration_ms"
@@ -112,6 +115,14 @@ func PipelineAttrs(tenantID, projectID, schemaName, pipelineName string) []slog.
 	return attrs
 }
 
+func OperationAttrs(operation, status string, duration time.Duration) []slog.Attr {
+	attrs := make([]slog.Attr, 0, 3)
+	attrs = appendTrimmedStringAttr(attrs, FieldOperation, operation)
+	attrs = appendTrimmedStringAttr(attrs, FieldStatus, status)
+	attrs = append(attrs, slog.Float64(FieldDurationMS, float64(duration.Microseconds())/1000))
+	return attrs
+}
+
 // RequestAttrs extracts stable request context fields. Do not add request bodies,
 // tokens, emails, passwords, API keys, or exact cache keys here.
 func RequestAttrs(c *fiber.Ctx) []slog.Attr {
@@ -152,7 +163,7 @@ func appendTrimmedStringAttr(attrs []slog.Attr, key, value string) []slog.Attr {
 	if value == "" {
 		return attrs
 	}
-	return append(attrs, slog.String(key, value))
+	return append(attrs, slog.String(key, strings.Clone(value)))
 }
 
 func firstNonEmpty(values ...string) string {

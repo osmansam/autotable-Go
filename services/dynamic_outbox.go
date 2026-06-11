@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
 	dynamicevents "github.com/osmansam/autotableGo/events"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
@@ -25,7 +26,9 @@ func StartDynamicOutboxProcessor(ctx context.Context) {
 	repository := repositories.NewDynamicRepository()
 	events := dynamicevents.NewDynamicEvents()
 	if err := repository.EnsureOutboxIndexes(ctx); err != nil {
-		log.Printf("dynamic outbox: failed to ensure indexes: %v", err)
+		observability.ErrorCtx(ctx, "dynamic outbox index setup failed", err,
+			slog.String(observability.FieldOperation, "ensure_indexes"),
+			slog.String(observability.FieldStatus, "error"))
 	}
 	ticker := time.NewTicker(dynamicOutboxPollEvery)
 	defer ticker.Stop()
@@ -47,21 +50,37 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 			return
 		}
 		if err != nil {
-			log.Printf("dynamic outbox: failed to claim event: %v", err)
+			observability.RecordOutboxJob("claim", "error")
+			observability.ErrorCtx(ctx, "dynamic outbox claim failed", err,
+				slog.String(observability.FieldOperation, "claim"),
+				slog.String(observability.FieldStatus, "error"))
 			return
 		}
 
+		start := time.Now()
 		if err := dispatchDynamicOutboxEvent(ctx, repository, event, events); err != nil {
-			log.Printf("dynamic outbox: failed to dispatch event %s: %v", event.ID.Hex(), err)
+			observability.RecordOutboxJob(event.Operation, "failed")
+			attrs := append(observability.TenantProjectAttrs(event.TenantID, event.ProjectID),
+				slog.String(observability.FieldSchemaName, event.SchemaName),
+				slog.String(observability.FieldOperation, event.Operation),
+				slog.String(observability.FieldStatus, "failed"),
+				slog.Float64(observability.FieldDurationMS, observability.DurationMS(start)))
+			observability.ErrorCtx(ctx, "dynamic outbox dispatch failed", err, attrs...)
 			if markErr := repository.MarkOutboxEventFailed(ctx, *event, err.Error(), outboxRetryDelay(event.Attempts)); markErr != nil {
-				log.Printf("dynamic outbox: failed to mark event %s failed: %v", event.ID.Hex(), markErr)
+				observability.RecordOutboxJob("mark_failed", "error")
+				observability.ErrorCtx(ctx, "dynamic outbox mark failed failed", markErr, attrs...)
 			}
 			continue
 		}
 
 		if err := repository.MarkOutboxEventDone(ctx, event.ID); err != nil {
-			log.Printf("dynamic outbox: failed to mark event %s done: %v", event.ID.Hex(), err)
+			observability.RecordOutboxJob("mark_done", "error")
+			observability.ErrorCtx(ctx, "dynamic outbox mark done failed", err,
+				slog.String(observability.FieldOperation, "mark_done"),
+				slog.String(observability.FieldStatus, "error"))
+			continue
 		}
+		observability.RecordOutboxJob(event.Operation, "done")
 	}
 }
 

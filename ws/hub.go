@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/websocket/v2"
 	"github.com/osmansam/autotableGo/configs"
+	"github.com/osmansam/autotableGo/observability"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -104,8 +105,13 @@ func broadcastEvent(ev Event) {
 	}
 
 	if matchCount > 0 {
-		log.Printf("WebSocket: Broadcast queued to %d/%d client(s) - type: %s, schema: %s, tenantID: %s, projectID: %s",
-			queuedCount, matchCount, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
+		attrs := append(observability.TenantProjectAttrs(ev.TenantID, ev.ProjectID),
+			slog.String(observability.FieldSchemaName, ev.Schema),
+			slog.String(observability.FieldOperation, "websocket_broadcast"),
+			slog.String("event_type", ev.Type),
+			slog.Int("queued_clients", queuedCount),
+			slog.Int("matched_clients", matchCount))
+		observability.DebugCtx(context.Background(), "websocket broadcast queued", attrs...)
 	}
 }
 
@@ -131,7 +137,12 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 	close(info.Send)
 	clientsMu.Unlock()
 
-	log.Printf("WebSocket: Client disconnected - tenantID: %s, projectID: %s, reason: %s (remaining: %d)", info.TenantID, info.ProjectID, reason, remaining)
+	observability.SetWebsocketClientsConnected(remaining)
+	attrs := append(observability.TenantProjectAttrs(info.TenantID, info.ProjectID),
+		slog.String(observability.FieldOperation, "websocket_disconnect"),
+		slog.String("reason", reason),
+		slog.Int("connected_clients", remaining))
+	observability.InfoCtx(context.Background(), "websocket client disconnected", attrs...)
 	_ = conn.Close()
 }
 
@@ -159,7 +170,9 @@ func RunRedisSubscriber(ctx context.Context) {
 			}
 			configs.RedisCircuitRecordResult(err)
 			_ = pubsub.Close()
-			log.Printf("WebSocket: Redis pub/sub subscribe failed: %v", err)
+			observability.ErrorCtx(ctx, "websocket redis pubsub subscribe failed", err,
+				slog.String(observability.FieldOperation, "websocket_redis_subscribe"),
+				slog.String(observability.FieldStatus, "error"))
 			if !sleepWithContext(ctx, backoff) {
 				return
 			}
@@ -169,7 +182,9 @@ func RunRedisSubscriber(ctx context.Context) {
 
 		configs.RedisCircuitRecordSuccess()
 		backoff = pubSubBackoff
-		log.Printf("WebSocket: Redis pub/sub subscribed to channel %q", redisWSChan)
+		observability.InfoCtx(ctx, "websocket redis pubsub subscribed",
+			slog.String(observability.FieldOperation, "websocket_redis_subscribe"),
+			slog.String(observability.FieldStatus, "success"))
 
 		for {
 			msg, err := pubsub.ReceiveMessage(ctx)
@@ -180,7 +195,9 @@ func RunRedisSubscriber(ctx context.Context) {
 				}
 				configs.RedisCircuitRecordResult(err)
 				_ = pubsub.Close()
-				log.Printf("WebSocket: Redis pub/sub receive failed: %v", err)
+				observability.ErrorCtx(ctx, "websocket redis pubsub receive failed", err,
+					slog.String(observability.FieldOperation, "websocket_redis_receive"),
+					slog.String(observability.FieldStatus, "error"))
 				if !sleepWithContext(ctx, backoff) {
 					return
 				}
@@ -190,7 +207,10 @@ func RunRedisSubscriber(ctx context.Context) {
 
 			var envelope redisEventEnvelope
 			if err := json.Unmarshal([]byte(msg.Payload), &envelope); err != nil {
-				log.Printf("WebSocket: Redis pub/sub invalid payload: %v", err)
+				observability.WarnCtx(ctx, "websocket redis pubsub invalid payload",
+					slog.String(observability.FieldOperation, "websocket_redis_receive"),
+					slog.String(observability.FieldStatus, "invalid_payload"),
+					slog.String(observability.FieldError, err.Error()))
 				continue
 			}
 			if envelope.Origin == instanceID {
@@ -228,14 +248,18 @@ func publishEvent(ev Event) {
 
 	payload, err := json.Marshal(newRedisEventEnvelope(ev))
 	if err != nil {
-		log.Printf("WebSocket: Failed to marshal Redis pub/sub event: %v", err)
+		observability.ErrorCtx(ctx, "websocket redis pubsub marshal failed", err,
+			slog.String(observability.FieldOperation, "websocket_redis_publish"),
+			slog.String(observability.FieldStatus, "error"))
 		return
 	}
 
 	err = configs.RedisClient.Publish(ctx, redisWSChan, payload).Err()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
-		log.Printf("WebSocket: Failed to publish Redis pub/sub event: %v", err)
+		observability.ErrorCtx(ctx, "websocket redis pubsub publish failed", err,
+			slog.String(observability.FieldOperation, "websocket_redis_publish"),
+			slog.String(observability.FieldStatus, "error"))
 	}
 }
 
@@ -243,8 +267,13 @@ func enqueueBroadcast(ev Event, source string) {
 	select {
 	case Broadcast <- ev:
 	default:
-		log.Printf("WebSocket: Dropped broadcast event from %s because queue is full - type: %s, schema: %s, tenantID: %s, projectID: %s",
-			source, ev.Type, ev.Schema, ev.TenantID, ev.ProjectID)
+		attrs := append(observability.TenantProjectAttrs(ev.TenantID, ev.ProjectID),
+			slog.String(observability.FieldSchemaName, ev.Schema),
+			slog.String(observability.FieldOperation, "websocket_broadcast_enqueue"),
+			slog.String(observability.FieldStatus, "dropped"),
+			slog.String("source", source),
+			slog.String("event_type", ev.Type))
+		observability.WarnCtx(context.Background(), "websocket broadcast queue full", attrs...)
 	}
 }
 
@@ -316,7 +345,10 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	var tenantResult bson.M
 	err = tenantColl.FindOne(ctx, bson.M{"slug": tenantSlug}).Decode(&tenantResult)
 	if err != nil {
-		log.Printf("WebSocket: Tenant not found for slug '%s': %v", tenantSlug, err)
+		observability.WarnCtx(ctx, "websocket tenant slug not found",
+			slog.String(observability.FieldOperation, "websocket_resolve_context"),
+			slog.String(observability.FieldStatus, "not_found"),
+			slog.String(observability.FieldError, err.Error()))
 		return "", "", err
 	}
 
@@ -331,7 +363,10 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	var projectResult bson.M
 	err = projectColl.FindOne(ctx, bson.M{"slug": projectSlug, "tenantId": tenantID}).Decode(&projectResult)
 	if err != nil {
-		log.Printf("WebSocket: Project not found for slug '%s': %v", projectSlug, err)
+		observability.WarnCtx(ctx, "websocket project slug not found",
+			slog.String(observability.FieldOperation, "websocket_resolve_context"),
+			slog.String(observability.FieldStatus, "not_found"),
+			slog.String(observability.FieldError, err.Error()))
 		return "", "", err
 	}
 
@@ -342,8 +377,10 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	}
 	projectID = projectObjID.Hex()
 
-	log.Printf("WebSocket: Resolved slugs - tenant '%s' -> %s, project '%s' -> %s",
-		tenantSlug, tenantID, projectSlug, projectID)
+	observability.DebugCtx(ctx, "websocket tenant/project slugs resolved",
+		append(observability.TenantProjectAttrs(tenantID, projectID),
+			slog.String(observability.FieldOperation, "websocket_resolve_context"),
+			slog.String(observability.FieldStatus, "success"))...)
 
 	// Cache the result for future use (24 hours)
 	if configs.RedisClient != nil && configs.RedisCircuitAllow() {
@@ -386,7 +423,9 @@ func HandleWS(c *websocket.Conn) {
 
 	// Require both slugs for multi-tenancy isolation
 	if tenantSlug == "" || projectSlug == "" {
-		log.Printf("WebSocket: Connection rejected - missing tenant or project slug")
+		observability.WarnCtx(context.Background(), "websocket connection rejected",
+			slog.String(observability.FieldOperation, "websocket_connect"),
+			slog.String(observability.FieldStatus, "missing_context"))
 		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"tenantSlug and projectSlug required (or tenantId/projectId)"}`))
 		c.Close()
 		return
@@ -395,14 +434,19 @@ func HandleWS(c *websocket.Conn) {
 	// Resolve slugs to actual database IDs
 	tenantID, projectID, err := resolveTenantAndProjectIDs(tenantSlug, projectSlug)
 	if err != nil {
-		log.Printf("WebSocket: Failed to resolve tenant/project IDs from slugs '%s/%s': %v", tenantSlug, projectSlug, err)
+		observability.WarnCtx(context.Background(), "websocket connection rejected",
+			slog.String(observability.FieldOperation, "websocket_connect"),
+			slog.String(observability.FieldStatus, "invalid_context"),
+			slog.String(observability.FieldError, err.Error()))
 		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"Invalid tenant or project"}`))
 		c.Close()
 		return
 	}
 
-	log.Printf("WebSocket: Client connected - tenantSlug: %s (%s), projectSlug: %s (%s)",
-		tenantSlug, tenantID, projectSlug, projectID)
+	observability.InfoCtx(context.Background(), "websocket client connected",
+		append(observability.TenantProjectAttrs(tenantID, projectID),
+			slog.String(observability.FieldOperation, "websocket_connect"),
+			slog.String(observability.FieldStatus, "success"))...)
 
 	// Register client with tenant/project context
 	clientInfo := &ClientInfo{
@@ -417,7 +461,10 @@ func HandleWS(c *websocket.Conn) {
 	totalClients := len(clients)
 	clientsMu.Unlock()
 
-	log.Printf("WebSocket: Total connected clients: %d", totalClients)
+	observability.SetWebsocketClientsConnected(totalClients)
+	observability.DebugCtx(context.Background(), "websocket client count updated",
+		slog.String(observability.FieldOperation, "websocket_client_count"),
+		slog.Int("connected_clients", totalClients))
 
 	defer func() {
 		unregisterClient(c, clientInfo, "read closed")
@@ -439,7 +486,10 @@ func EmitInvalidate(schema string, userId string, tenantID string, projectID str
 	if len(eventID) > 0 {
 		idempotencyKey = eventID[0]
 	}
-	log.Printf("WebSocket: Emitting invalidate event - schema: %s, userId: %s, tenantID: %s, projectID: %s, eventID: %s", schema, userId, tenantID, projectID, idempotencyKey)
+	observability.DebugCtx(context.Background(), "websocket invalidate event emitted",
+		append(observability.TenantProjectAttrs(tenantID, projectID),
+			slog.String(observability.FieldSchemaName, schema),
+			slog.String(observability.FieldOperation, "websocket_emit_invalidate"))...)
 
 	publishEvent(Event{
 		Type:      "invalidate",
