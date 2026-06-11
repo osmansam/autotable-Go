@@ -21,16 +21,23 @@ func NewDynamicCache() *DynamicCache {
 }
 
 func (d *DynamicCache) InvalidateCreateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel) error {
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("invalidate", schemaName)...)
 	start := time.Now()
 	err := d.invalidateWriteCaches(ctx, tenantID, projectID, schemaName, container)
 	recordCacheResult("invalidate", schemaName, err)
 	logCacheError(ctx, "invalidate", schemaName, start, err)
+	observability.EndSpan(span, cacheStatus(err), err)
 	return err
 }
 
 func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]interface{}, bool) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("get_items", schemaName)...)
+	status := "hit"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("get_items", schemaName, "skipped")
 		return nil, false
 	}
@@ -38,12 +45,15 @@ func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]i
 	data, err := configs.RedisClient.Get(ctx, key).Result()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
+		status = "miss"
 		observability.RecordCacheRequest("get_items", schemaName, "miss")
 		return nil, false
 	}
 
 	var items []map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &items); err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("get_items", schemaName, "error")
 		logCacheError(ctx, "get_items", schemaName, time.Now(), err)
 		return nil, false
@@ -55,7 +65,12 @@ func (d *DynamicCache) GetItems(ctx context.Context, key string) ([]map[string]i
 
 func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]interface{}, bool) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("get_item", schemaName)...)
+	status := "hit"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("get_item", schemaName, "skipped")
 		return nil, false
 	}
@@ -63,12 +78,15 @@ func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]inte
 	data, err := configs.RedisClient.Get(ctx, key).Result()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
+		status = "miss"
 		observability.RecordCacheRequest("get_item", schemaName, "miss")
 		return nil, false
 	}
 
 	var item map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("get_item", schemaName, "error")
 		logCacheError(ctx, "get_item", schemaName, time.Now(), err)
 		return nil, false
@@ -81,14 +99,21 @@ func (d *DynamicCache) GetItem(ctx context.Context, key string) (map[string]inte
 func (d *DynamicCache) SetItems(ctx context.Context, key string, items []map[string]interface{}, ttlMinutes int) {
 	start := time.Now()
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("set_items", schemaName)...)
 	err := utils.SetCache(ctx, key, items, cacheTTL(ttlMinutes))
 	recordCacheResult("set_items", schemaName, err)
 	logCacheError(ctx, "set_items", schemaName, start, err)
+	observability.EndSpan(span, cacheStatus(err), err)
 }
 
 func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, bool) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("get_response", schemaName)...)
+	status := "hit"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("get_response", schemaName, "skipped")
 		return nil, false
 	}
@@ -96,12 +121,15 @@ func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, 
 	data, err := configs.RedisClient.Get(ctx, key).Result()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
+		status = "miss"
 		observability.RecordCacheRequest("get_response", schemaName, "miss")
 		return nil, false
 	}
 
 	var response fiber.Map
 	if err := json.Unmarshal([]byte(data), &response); err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("get_response", schemaName, "error")
 		logCacheError(ctx, "get_response", schemaName, time.Now(), err)
 		return nil, false
@@ -114,14 +142,21 @@ func (d *DynamicCache) GetResponse(ctx context.Context, key string) (fiber.Map, 
 func (d *DynamicCache) SetResponse(ctx context.Context, key string, response fiber.Map, ttlMinutes int) {
 	start := time.Now()
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("set_response", schemaName)...)
 	err := utils.SetCache(ctx, key, response, cacheTTL(ttlMinutes))
 	recordCacheResult("set_response", schemaName, err)
 	logCacheError(ctx, "set_response", schemaName, start, err)
+	observability.EndSpan(span, cacheStatus(err), err)
 }
 
 func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, bool) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("get_value", schemaName)...)
+	status := "hit"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("get_value", schemaName, "skipped")
 		return nil, false
 	}
@@ -129,12 +164,15 @@ func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, b
 	data, err := configs.RedisClient.Get(ctx, key).Result()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
+		status = "miss"
 		observability.RecordCacheRequest("get_value", schemaName, "miss")
 		return nil, false
 	}
 
 	var result interface{}
 	if err := json.Unmarshal([]byte(data), &result); err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("get_value", schemaName, "error")
 		logCacheError(ctx, "get_value", schemaName, time.Now(), err)
 		return nil, false
@@ -147,14 +185,21 @@ func (d *DynamicCache) GetValue(ctx context.Context, key string) (interface{}, b
 func (d *DynamicCache) SetValue(ctx context.Context, key string, value interface{}, ttl time.Duration) {
 	start := time.Now()
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("set_value", schemaName)...)
 	err := utils.SetCache(ctx, key, value, ttl)
 	recordCacheResult("set_value", schemaName, err)
 	logCacheError(ctx, "set_value", schemaName, start, err)
+	observability.EndSpan(span, cacheStatus(err), err)
 }
 
 func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery string) ([]map[string]interface{}, bool) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("get_pipeline_items", schemaName)...)
+	status := "hit"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("get_pipeline_items", schemaName, "skipped")
 		return nil, false
 	}
@@ -162,17 +207,28 @@ func (d *DynamicCache) GetPipelineItems(ctx context.Context, key, currentQuery s
 	storedQuery, err := configs.RedisClient.Get(ctx, key+"-query").Result()
 	configs.RedisCircuitRecordResult(err)
 	if err == nil && storedQuery != currentQuery {
+		status = "miss"
 		observability.RecordCacheRequest("get_pipeline_items", schemaName, "miss")
 		return nil, false
 	}
 
-	return d.GetItems(ctx, key)
+	items, ok := d.GetItems(ctx, key)
+	if !ok {
+		status = "miss"
+	}
+	return items, ok
 }
 
 func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery string, items []map[string]interface{}, cacheMinutes int) {
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("set_pipeline_items", schemaName)...)
+	status := "success"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	payload, err := json.Marshal(items)
 	if err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("set_pipeline_items", schemaName, "error")
 		logCacheError(ctx, "set_pipeline_items", schemaName, time.Now(), err)
 		return
@@ -181,18 +237,23 @@ func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery s
 	start := time.Now()
 	expiration := cacheTTL(cacheMinutes)
 	if !configs.RedisCircuitAllow() {
+		status = "skipped"
 		observability.RecordCacheRequest("set_pipeline_items", schemaName, "skipped")
 		return
 	}
 	err = configs.RedisClient.Set(ctx, key, payload, expiration).Err()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
+		status = "error"
+		spanErr = err
 		observability.RecordCacheRequest("set_pipeline_items", schemaName, "error")
 		logCacheError(ctx, "set_pipeline_items", schemaName, start, err)
 		return
 	}
 	err = configs.RedisClient.Set(ctx, key+"-query", currentQuery, expiration).Err()
 	configs.RedisCircuitRecordResult(err)
+	status = cacheStatus(err)
+	spanErr = err
 	recordCacheResult("set_pipeline_items", schemaName, err)
 	logCacheError(ctx, "set_pipeline_items", schemaName, start, err)
 }
@@ -200,16 +261,20 @@ func (d *DynamicCache) SetPipelineItems(ctx context.Context, key, currentQuery s
 func (d *DynamicCache) SetItem(ctx context.Context, key string, item map[string]interface{}, ttlMinutes int) {
 	start := time.Now()
 	schemaName := cacheSchemaName(key)
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("set_item", schemaName)...)
 	err := utils.SetCache(ctx, key, item, cacheTTL(ttlMinutes))
 	recordCacheResult("set_item", schemaName, err)
 	logCacheError(ctx, "set_item", schemaName, start, err)
+	observability.EndSpan(span, cacheStatus(err), err)
 }
 
 func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, projectID, schemaName string, container *models.ContainerModel, onTriggeredSchema func(string)) error {
+	ctx, span := observability.StartSpan(ctx, "redis.cache", observability.CacheTraceAttrs("invalidate", schemaName)...)
 	start := time.Now()
 	if err := d.invalidateWriteCaches(ctx, tenantID, projectID, schemaName, container); err != nil {
 		recordCacheResult("invalidate", schemaName, err)
 		logCacheError(ctx, "invalidate", schemaName, start, err)
+		observability.EndSpan(span, "error", err)
 		return err
 	}
 
@@ -220,6 +285,7 @@ func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, pro
 	}
 
 	recordCacheResult("invalidate", schemaName, nil)
+	observability.EndSpan(span, "success", nil)
 	return nil
 }
 
@@ -237,6 +303,13 @@ func recordCacheResult(operation, schemaName string, err error) {
 		result = "error"
 	}
 	observability.RecordCacheRequest(operation, schemaName, result)
+}
+
+func cacheStatus(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "success"
 }
 
 func logCacheError(ctx context.Context, operation, schemaName string, start time.Time, err error) {

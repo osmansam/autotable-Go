@@ -16,12 +16,40 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: autotable-tempo
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - "-config.file=/etc/tempo.yml"
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/tmp/tempo
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    container_name: autotable-otel-collector
+    restart: unless-stopped
+    command:
+      - "--config=/etc/otel-collector.yml"
+    depends_on:
+      - tempo
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./otel-collector.yml:/etc/otel-collector.yml:ro
+
   grafana:
     image: grafana/grafana:11.3.1
     container_name: autotable-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
+      - tempo
     ports:
       - "3000:3000"
     environment:
@@ -35,3 +63,4 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  tempo-data:
