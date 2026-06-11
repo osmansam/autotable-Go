@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +13,80 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/utils"
 )
+
+func TestRequestIDUsesIncomingHeader(t *testing.T) {
+	app := fiber.New()
+	app.Use(RequestID())
+	app.Get("/", func(c *fiber.Ctx) error {
+		if got := c.Locals("requestID"); got != "incoming-request-id" {
+			t.Fatalf("requestID local = %v", got)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Request-ID", "incoming-request-id")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if got := resp.Header.Get("X-Request-ID"); got != "incoming-request-id" {
+		t.Fatalf("X-Request-ID = %q", got)
+	}
+}
+
+func TestRequestIDGeneratesMissingHeader(t *testing.T) {
+	app := fiber.New()
+	app.Use(RequestID())
+	app.Get("/", func(c *fiber.Ctx) error {
+		if got, _ := c.Locals("requestID").(string); got == "" {
+			t.Fatal("requestID local is empty")
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if got := resp.Header.Get("X-Request-ID"); got == "" {
+		t.Fatal("X-Request-ID header is empty")
+	}
+}
+
+func TestPrometheusMetricsEndpoint(t *testing.T) {
+	observability.RecordWorkflowExecution("workflow", "schema", "success", time.Millisecond)
+	observability.SetWebsocketClientsConnected(1)
+
+	app := fiber.New()
+	app.Use(PrometheusMetrics())
+	app.Get("/ok", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusNoContent)
+	})
+	app.Get("/metrics", PrometheusHandler())
+
+	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/ok", nil)); err != nil {
+		t.Fatalf("app.Test(/ok) error = %v", err)
+	}
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if err != nil {
+		t.Fatalf("app.Test(/metrics) error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+	for _, metricName := range []string{"http_requests_total", "http_request_duration_seconds", "workflow_executions_total", "websocket_clients_connected"} {
+		if !strings.Contains(text, metricName) {
+			t.Fatalf("metrics response missing %q", metricName)
+		}
+	}
+	if strings.Contains(text, `route="/metrics"`) {
+		t.Fatal("metrics scrape should not be recorded as an HTTP request metric")
+	}
+}
 
 func TestBodySizeLimit(t *testing.T) {
 	tests := []struct {

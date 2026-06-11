@@ -1,0 +1,165 @@
+package observability
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+const (
+	LocalRequestID = "requestID"
+
+	FieldRequestID    = "request_id"
+	FieldTenantID     = "tenant_id"
+	FieldProjectID    = "project_id"
+	FieldSchemaName   = "schema_name"
+	FieldWorkflowName = "workflow_name"
+	FieldPipelineName = "pipeline_name"
+	// user_id is allowed in logs for debugging, but never use it as a Prometheus label.
+	FieldUserID     = "user_id"
+	FieldDurationMS = "duration_ms"
+	FieldError      = "error"
+)
+
+var logger = newJSONLogger()
+
+func newJSONLogger() *slog.Logger {
+	level := new(slog.LevelVar)
+	level.Set(parseLogLevel(os.Getenv("LOG_LEVEL")))
+
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	}))
+}
+
+func parseLogLevel(value string) slog.Level {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func Logger() *slog.Logger {
+	return logger
+}
+
+func Debug(c *fiber.Ctx, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(c.UserContext(), slog.LevelDebug, msg, append(RequestAttrs(c), attrs...)...)
+}
+
+func Info(c *fiber.Ctx, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(c.UserContext(), slog.LevelInfo, msg, append(RequestAttrs(c), attrs...)...)
+}
+
+func Warn(c *fiber.Ctx, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(c.UserContext(), slog.LevelWarn, msg, append(RequestAttrs(c), attrs...)...)
+}
+
+func Error(c *fiber.Ctx, msg string, err error, attrs ...slog.Attr) {
+	if err != nil {
+		attrs = append(attrs, slog.String(FieldError, err.Error()))
+	}
+	logger.LogAttrs(c.UserContext(), slog.LevelError, msg, append(RequestAttrs(c), attrs...)...)
+}
+
+func DebugCtx(ctx context.Context, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(ctx, slog.LevelDebug, msg, attrs...)
+}
+
+func InfoCtx(ctx context.Context, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(ctx, slog.LevelInfo, msg, attrs...)
+}
+
+func WarnCtx(ctx context.Context, msg string, attrs ...slog.Attr) {
+	logger.LogAttrs(ctx, slog.LevelWarn, msg, attrs...)
+}
+
+func ErrorCtx(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	if err != nil {
+		attrs = append(attrs, slog.String(FieldError, err.Error()))
+	}
+	logger.LogAttrs(ctx, slog.LevelError, msg, attrs...)
+}
+
+func TenantProjectAttrs(tenantID, projectID string) []slog.Attr {
+	attrs := make([]slog.Attr, 0, 2)
+	attrs = appendTrimmedStringAttr(attrs, FieldTenantID, tenantID)
+	attrs = appendTrimmedStringAttr(attrs, FieldProjectID, projectID)
+	return attrs
+}
+
+func WorkflowAttrs(tenantID, projectID, schemaName, workflowName string) []slog.Attr {
+	attrs := TenantProjectAttrs(tenantID, projectID)
+	attrs = appendTrimmedStringAttr(attrs, FieldSchemaName, schemaName)
+	attrs = appendTrimmedStringAttr(attrs, FieldWorkflowName, workflowName)
+	return attrs
+}
+
+func PipelineAttrs(tenantID, projectID, schemaName, pipelineName string) []slog.Attr {
+	attrs := TenantProjectAttrs(tenantID, projectID)
+	attrs = appendTrimmedStringAttr(attrs, FieldSchemaName, schemaName)
+	attrs = appendTrimmedStringAttr(attrs, FieldPipelineName, pipelineName)
+	return attrs
+}
+
+// RequestAttrs extracts stable request context fields. Do not add request bodies,
+// tokens, emails, passwords, API keys, or exact cache keys here.
+func RequestAttrs(c *fiber.Ctx) []slog.Attr {
+	if c == nil {
+		return nil
+	}
+
+	attrs := make([]slog.Attr, 0, 7)
+	attrs = appendTrimmedStringAttr(attrs, FieldRequestID, RequestID(c))
+	attrs = appendTrimmedStringAttr(attrs, FieldTenantID, localString(c, "tenantID"))
+	attrs = appendTrimmedStringAttr(attrs, FieldProjectID, localString(c, "projectID"))
+	attrs = appendTrimmedStringAttr(attrs, FieldSchemaName, firstNonEmpty(localString(c, "schemaName"), c.Query("schemaName")))
+	attrs = appendTrimmedStringAttr(attrs, FieldWorkflowName, firstNonEmpty(localString(c, "workflowName"), c.Params("workflowName"), c.Query("workflowName")))
+	attrs = appendTrimmedStringAttr(attrs, FieldPipelineName, firstNonEmpty(localString(c, "pipelineName"), c.Query("pipelineName")))
+	attrs = appendTrimmedStringAttr(attrs, FieldUserID, firstNonEmpty(localString(c, "userID"), localString(c, "tenantUserID")))
+
+	return attrs
+}
+
+func RequestID(c *fiber.Ctx) string {
+	if c == nil {
+		return ""
+	}
+	return localString(c, LocalRequestID)
+}
+
+func DurationMS(start time.Time) float64 {
+	return float64(time.Since(start).Microseconds()) / 1000
+}
+
+func localString(c *fiber.Ctx, key string) string {
+	value, _ := c.Locals(key).(string)
+	return value
+}
+
+func appendTrimmedStringAttr(attrs []slog.Attr, key, value string) []slog.Attr {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return attrs
+	}
+	return append(attrs, slog.String(key, value))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}

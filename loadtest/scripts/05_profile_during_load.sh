@@ -57,7 +57,7 @@ echo "✅ Allocs profile collected"
 
 # Collect runtime metrics
 echo "Collecting runtime metrics..."
-curl -s "$SERVER_URL/debug/vars" > "$RESULTS_DIR/metrics.json"
+curl -s "$SERVER_URL/metrics" > "$RESULTS_DIR/metrics.prom"
 echo "✅ Runtime metrics collected"
 
 # Wait for load test to complete

@@ -2,18 +2,15 @@ package main
 
 import (
 	"context"
-	"expvar"
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/pprof"
-	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
@@ -43,11 +40,11 @@ func main() {
 		},
 	})
 
-	app.Use(requestid.New())
+	app.Use(middlewares.RequestID())
+	app.Use(middlewares.PrometheusMetrics())
+	app.Use(middlewares.RequestLogger())
+	app.Get("/metrics", middlewares.PrometheusHandler())
 	configurePprof(app, portNumber)
-
-	// Initialize custom metrics
-	initMetrics()
 
 	// Create a new directory if not exists to store images
 	if _, err := os.Stat("./temp"); os.IsNotExist(err) {
@@ -124,7 +121,7 @@ func main() {
 	}()
 
 	log.Println("Server is running on port: ", portNumber)
-	log.Println("Metrics available at http://localhost" + portNumber + "/debug/vars")
+	log.Println("Prometheus metrics available at http://localhost" + portNumber + "/metrics")
 	if err := app.Listen(portNumber); err != nil {
 		log.Printf("Server stopped: %v", err)
 	}
@@ -166,30 +163,4 @@ func configurePprof(app *fiber.App, portNumber string) {
 
 func isProduction() bool {
 	return strings.EqualFold(os.Getenv("NODE_ENV"), "production")
-}
-
-// initMetrics initializes custom runtime metrics for monitoring
-func initMetrics() {
-	// Publish goroutine count
-	expvar.Publish("goroutines", expvar.Func(func() interface{} {
-		return runtime.NumGoroutine()
-	}))
-
-	// Publish memory statistics
-	expvar.Publish("memory", expvar.Func(func() interface{} {
-		var m runtime.MemStats
-		runtime.ReadMemStats(&m)
-		return map[string]interface{}{
-			"alloc_mb":       m.Alloc / 1024 / 1024,
-			"total_alloc_mb": m.TotalAlloc / 1024 / 1024,
-			"sys_mb":         m.Sys / 1024 / 1024,
-			"num_gc":         m.NumGC,
-			"heap_objects":   m.HeapObjects,
-		}
-	}))
-
-	// Publish CPU count
-	expvar.Publish("num_cpu", expvar.Func(func() interface{} {
-		return runtime.NumCPU()
-	}))
 }

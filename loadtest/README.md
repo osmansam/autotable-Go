@@ -76,10 +76,10 @@ go tool pprof -http=:8081 loadtest/results/profile_*/goroutine.prof
 ### View Runtime Metrics
 ```bash
 # While server is running
-curl http://localhost:8080/debug/vars | jq
+curl http://localhost:8080/metrics
 
 # From saved results
-cat loadtest/results/profile_*/metrics.json | jq
+cat loadtest/results/profile_*/metrics.prom
 ```
 
 ### View Test Results
@@ -119,7 +119,7 @@ loadtest/
 Your server now exposes these endpoints:
 
 - **pprof:** `http://localhost:8080/debug/pprof/`
-- **Metrics:** `http://localhost:8080/debug/vars`
+- **Prometheus metrics:** `http://localhost:8080/metrics`
 
 ## Troubleshooting
 

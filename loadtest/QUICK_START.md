@@ -6,7 +6,7 @@ Your server is now running with performance monitoring enabled!
 
 - ✅ Server running on port **3002**
 - ✅ pprof profiling: `http://localhost:3002/debug/pprof/`
-- ✅ Runtime metrics: `http://localhost:3002/debug/vars`
+- ✅ Prometheus metrics: `http://localhost:3002/metrics`
 - ✅ Load testing tools installed (vegeta, k6)
 - ✅ Test scripts ready to run
 
@@ -20,8 +20,8 @@ cd /Users/osmansamilerdogan/Desktop/autotable-Go
 
 ### 2. View Live Metrics
 ```bash
-# See goroutines, memory usage, GC stats
-curl http://localhost:3002/debug/vars | jq
+# See Prometheus metrics, including Go runtime/process stats
+curl http://localhost:3002/metrics
 ```
 
 ### 3. Medium Load Test (1 minute)
@@ -88,11 +88,11 @@ curl http://localhost:3002/api/v1/container
 # View pprof index
 curl http://localhost:3002/debug/pprof/
 
-# Get current goroutine count
-curl -s http://localhost:3002/debug/vars | jq '.goroutines'
+# Get current goroutine metric
+curl -s http://localhost:3002/metrics | grep '^go_goroutines'
 
-# Get memory stats
-curl -s http://localhost:3002/debug/vars | jq '.memory'
+# Get memory metrics
+curl -s http://localhost:3002/metrics | grep '^go_memstats'
 
 # Quick 100 request test
 ~/go/bin/hey -n 100 http://localhost:3002/api/v1/container
@@ -114,7 +114,7 @@ This will:
 ## 📈 Next Steps
 
 1. Run the quick smoke test above
-2. Check the metrics at `/debug/vars`
+2. Check the metrics at `/metrics`
 3. Run a medium load test
 4. Collect a CPU profile
 5. Run the full test suite when ready
@@ -136,5 +136,5 @@ curl http://localhost:3002/api/v1/container
 **Want to see real-time updates**
 ```bash
 # Watch metrics update
-watch -n 1 'curl -s http://localhost:3002/debug/vars | jq ".goroutines, .memory"'
+watch -n 1 'curl -s http://localhost:3002/metrics | grep -E "^(go_goroutines|go_memstats_alloc_bytes)"'
 ```
