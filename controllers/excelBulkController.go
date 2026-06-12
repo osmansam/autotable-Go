@@ -122,11 +122,7 @@ func UploadMultipleExcel(c *fiber.Ctx) error {
 				ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
 				GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
 			},
-			Redis: models.Redis{
-				IsRedisCached:        false,
-				CacheTime:            0,
-				TriggeredRedisCaches: []string{},
-			},
+			Redis:            defaultContainerRedis(nil),
 			Pipelines:        []models.PipelineStage{},
 			DynamicFunctions: []models.DynamicFunction{},
 			Workflows:        []models.DynamicWorkflow{},

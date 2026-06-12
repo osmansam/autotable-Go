@@ -21,7 +21,9 @@ import (
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/xuri/excelize/v2"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
 )
 
 func TestDetectFieldType(t *testing.T) {
@@ -175,6 +177,95 @@ func TestDetectRelationshipsAndOrderDependencies(t *testing.T) {
 	if ordered[0].SchemaName != "users" || ordered[1].SchemaName != "orders" {
 		t.Fatalf("orderByDependencies() = %#v", ordered)
 	}
+}
+
+func TestReferencedObjectSchemaNames(t *testing.T) {
+	fields := []models.Field{
+		{Name: "owner", Type: "objectId", ObjectSchemaName: "users"},
+		{Name: "members", Type: "objectIdArray", ObjectSchemaName: "users"},
+		{Name: "category", Type: "objectIdArray", ObjectSchemaName: "categories"},
+		{Name: "driver", Type: "objectid", ObjectSchemaName: " car "},
+		{Name: "ignored", Type: "string", ObjectSchemaName: "products"},
+		{Name: "blank", Type: "objectId"},
+	}
+	want := []string{"users", "categories", "car"}
+	if got := referencedObjectSchemaNames(fields); !reflect.DeepEqual(got, want) {
+		t.Fatalf("referencedObjectSchemaNames() = %#v, want %#v", got, want)
+	}
+}
+
+func TestDefaultContainerRedis(t *testing.T) {
+	got := defaultContainerRedis([]string{"stock"})
+	if !got.IsRedisCached {
+		t.Fatal("defaultContainerRedis().IsRedisCached = false, want true")
+	}
+	if got.CacheTime <= 0 {
+		t.Fatalf("defaultContainerRedis().CacheTime = %d, want positive", got.CacheTime)
+	}
+	if !reflect.DeepEqual(got.TriggeredRedisCaches, []string{"stock"}) {
+		t.Fatalf("defaultContainerRedis().TriggeredRedisCaches = %#v", got.TriggeredRedisCaches)
+	}
+}
+
+func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	defer mt.Close()
+
+	mt.Run("rejects self reference", func(mt *mtest.T) {
+		container := models.ContainerModel{
+			SchemaName: "orders",
+			Fields:     []models.Field{{Name: "parent", Type: "objectIdArray", ObjectSchemaName: "orders"}},
+		}
+		if _, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NilObjectID); err == nil {
+			t.Fatal("validateObjectReferences() error = nil")
+		}
+	})
+
+	mt.Run("validates objectIdArray and adds invalidation trigger", func(mt *mtest.T) {
+		container := models.ContainerModel{
+			SchemaName: "orders",
+			Fields:     []models.Field{{Name: "users", Type: "objectIdArray", ObjectSchemaName: "users"}},
+		}
+		userID := primitive.NewObjectID()
+		mt.AddMockResponses(
+			mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "_id", Value: userID}}),
+			mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}, bson.E{Key: "nModified", Value: 1}),
+		)
+		referencedIDs, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NewObjectID())
+		if err != nil {
+			t.Fatalf("validateObjectReferences() error = %v", err)
+		}
+		gotIDs, err := syncReferencedInvalidations(context.Background(), mt.Coll, models.ContainerModel{}, container, referencedIDs)
+		if err != nil {
+			t.Fatalf("syncReferencedInvalidations() error = %v", err)
+		}
+		if !reflect.DeepEqual(gotIDs, []primitive.ObjectID{userID}) {
+			t.Fatalf("syncReferencedInvalidations() ids = %#v, want %#v", gotIDs, []primitive.ObjectID{userID})
+		}
+	})
+
+	mt.Run("removes stale invalidation trigger when reference is removed", func(mt *mtest.T) {
+		carID := primitive.NewObjectID()
+		existing := models.ContainerModel{
+			SchemaName: "stock",
+			Fields:     []models.Field{{Name: "car", Type: "objectId", ObjectSchemaName: "car"}},
+		}
+		updated := models.ContainerModel{
+			SchemaName: "stock",
+			Fields:     []models.Field{{Name: "quantity", Type: "int"}},
+		}
+		mt.AddMockResponses(
+			mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "_id", Value: carID}}),
+			mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}, bson.E{Key: "nModified", Value: 1}),
+		)
+		gotIDs, err := syncReferencedInvalidations(context.Background(), mt.Coll, existing, updated, nil)
+		if err != nil {
+			t.Fatalf("syncReferencedInvalidations(remove) error = %v", err)
+		}
+		if !reflect.DeepEqual(gotIDs, []primitive.ObjectID{carID}) {
+			t.Fatalf("syncReferencedInvalidations(remove) ids = %#v, want %#v", gotIDs, []primitive.ObjectID{carID})
+		}
+	})
 }
 
 func TestConvertValueWithReference(t *testing.T) {

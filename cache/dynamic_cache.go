@@ -278,7 +278,7 @@ func (d *DynamicCache) InvalidateUpdateCaches(ctx context.Context, tenantID, pro
 		return err
 	}
 
-	if container.Redis.IsRedisCached && onTriggeredSchema != nil {
+	if onTriggeredSchema != nil {
 		for _, triggeredSchema := range container.Redis.TriggeredRedisCaches {
 			onTriggeredSchema(triggeredSchema)
 		}
