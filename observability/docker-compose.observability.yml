@@ -43,6 +43,35 @@ services:
     volumes:
       - ./otel-collector.yml:/etc/otel-collector.yml:ro
 
+  loki:
+    image: grafana/loki:3.3.1
+    container_name: autotable-loki
+    restart: unless-stopped
+    command:
+      - "-config.file=/etc/loki/loki.yml"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    container_name: autotable-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--stability.level=experimental"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "/etc/alloy/config.alloy"
+    depends_on:
+      - loki
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./alloy.yml:/etc/alloy/config.alloy:ro
+      - ../logs:/var/log/autotable:ro
+
   grafana:
     image: grafana/grafana:11.3.1
     container_name: autotable-grafana
@@ -50,6 +79,7 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
     ports:
       - "3000:3000"
     environment:
@@ -64,3 +94,4 @@ volumes:
   prometheus-data:
   grafana-data:
   tempo-data:
+  loki-data:

@@ -16,6 +16,17 @@ datasources:
     editable: true
     jsonData:
       tracesToLogsV2:
-        datasourceUid: ""
+        datasourceUid: loki
+        tags:
+          - key: service.name
+            value: service_name
+        filterByTraceID: true
+        filterBySpanID: true
       serviceMap:
         datasourceUid: prometheus
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true

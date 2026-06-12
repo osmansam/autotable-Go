@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -23,6 +24,7 @@ func RequestLogger() fiber.Handler {
 			slog.String("method", stableString(c.Method())),
 			slog.String("path", stableString(c.Path())),
 			slog.String("route", routePath(c)),
+			slog.String(observability.FieldStatus, strconv.Itoa(statusCode)),
 			slog.Int("status_code", statusCode),
 			slog.Float64(observability.FieldDurationMS, float64(duration.Microseconds())/1000),
 		}

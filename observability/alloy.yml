@@ -1,0 +1,65 @@
+livedebugging {
+  enabled = true
+}
+
+local.file_match "autotable" {
+  path_targets = [
+    {
+      "__path__"     = "/var/log/autotable/*.log",
+      "job"          = "autotable-api",
+      "service_name" = "autotable-go",
+    },
+  ]
+}
+
+loki.source.file "autotable" {
+  targets    = local.file_match.autotable.targets
+  forward_to = [loki.process.autotable.receiver]
+}
+
+loki.process "autotable" {
+  stage.json {
+    expressions = {
+      level      = "level",
+      trace_id   = "trace_id",
+      span_id    = "span_id",
+      request_id = "request_id",
+      tenant_id  = "tenant_id",
+      project_id = "project_id",
+      method     = "method",
+      route      = "route",
+      status     = "status",
+      status_code = "status_code",
+      duration_ms = "duration_ms",
+    }
+  }
+
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id   = "",
+      span_id    = "",
+      request_id = "",
+      tenant_id  = "",
+      project_id = "",
+      method     = "",
+      route      = "",
+      status     = "",
+      status_code = "",
+      duration_ms = "",
+    }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

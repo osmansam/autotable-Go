@@ -267,7 +267,7 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 		if err != nil {
 			observability.ErrorCtx(ctx, "workflow step execution failed", err, attrs...)
 		} else {
-			observability.InfoCtx(ctx, "workflow step execution completed", attrs...)
+			observability.DebugCtx(ctx, "workflow step execution completed", attrs...)
 		}
 		if err != nil && stopOnError && !step.ContinueOnError {
 			return fmt.Errorf("workflow %s step %s failed: %w", workflowName, step.Name, err)
@@ -1358,7 +1358,7 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		attrs := append(observability.WorkflowAttrs(event.TenantID, event.ProjectID, event.SchemaName, event.Payload.WorkflowName),
 			observability.OperationAttrs("workflow_outbox_step_execute", status, duration)...)
 		attrs = append(attrs, slog.String(observability.FieldStepType, event.Payload.StepType))
-		observability.InfoCtx(ctx, "workflow outbox step execution completed", attrs...)
+		observability.DebugCtx(ctx, "workflow outbox step execution completed", attrs...)
 		observability.EndSpan(span, status, spanErr)
 	}()
 

@@ -2,12 +2,15 @@ package observability
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -26,6 +29,8 @@ const (
 	FieldUserID     = "user_id"
 	FieldDurationMS = "duration_ms"
 	FieldError      = "error"
+	FieldTraceID    = "trace_id"
+	FieldSpanID     = "span_id"
 )
 
 var logger = newJSONLogger()
@@ -34,9 +39,27 @@ func newJSONLogger() *slog.Logger {
 	level := new(slog.LevelVar)
 	level.Set(parseLogLevel(os.Getenv("LOG_LEVEL")))
 
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	output := io.Writer(os.Stdout)
+	if logFile := strings.TrimSpace(os.Getenv("LOG_FILE")); logFile != "" {
+		if file, err := openLogFile(logFile); err == nil {
+			output = io.MultiWriter(os.Stdout, file)
+		}
+	} else if file, err := openLogFile("logs/autotable.log"); err == nil {
+		output = io.MultiWriter(os.Stdout, file)
+	}
+
+	return slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{
 		Level: level,
 	}))
+}
+
+func openLogFile(path string) (*os.File, error) {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, err
+		}
+	}
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 }
 
 func parseLogLevel(value string) slog.Level {
@@ -138,7 +161,21 @@ func RequestAttrs(c *fiber.Ctx) []slog.Attr {
 	attrs = appendTrimmedStringAttr(attrs, FieldWorkflowName, firstNonEmpty(localString(c, "workflowName"), c.Params("workflowName"), c.Query("workflowName")))
 	attrs = appendTrimmedStringAttr(attrs, FieldPipelineName, firstNonEmpty(localString(c, "pipelineName"), c.Query("pipelineName")))
 	attrs = appendTrimmedStringAttr(attrs, FieldUserID, firstNonEmpty(localString(c, "userID"), localString(c, "tenantUserID")))
+	attrs = appendTraceAttrs(attrs, c.UserContext())
 
+	return attrs
+}
+
+func appendTraceAttrs(attrs []slog.Attr, ctx context.Context) []slog.Attr {
+	if ctx == nil {
+		return attrs
+	}
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
+		return attrs
+	}
+	attrs = append(attrs, slog.String(FieldTraceID, spanContext.TraceID().String()))
+	attrs = append(attrs, slog.String(FieldSpanID, spanContext.SpanID().String()))
 	return attrs
 }
 
