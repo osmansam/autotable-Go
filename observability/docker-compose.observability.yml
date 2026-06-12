@@ -16,12 +16,70 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: autotable-tempo
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - "-config.file=/etc/tempo.yml"
+    ports:
+      - "3200:3200"
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/tmp/tempo
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    container_name: autotable-otel-collector
+    restart: unless-stopped
+    command:
+      - "--config=/etc/otel-collector.yml"
+    depends_on:
+      - tempo
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./otel-collector.yml:/etc/otel-collector.yml:ro
+
+  loki:
+    image: grafana/loki:3.3.1
+    container_name: autotable-loki
+    restart: unless-stopped
+    command:
+      - "-config.file=/etc/loki/loki.yml"
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    container_name: autotable-alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--stability.level=experimental"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "/etc/alloy/config.alloy"
+    depends_on:
+      - loki
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./alloy.yml:/etc/alloy/config.alloy:ro
+      - ../logs:/var/log/autotable:ro
+
   grafana:
     image: grafana/grafana:11.3.1
     container_name: autotable-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
+      - tempo
+      - loki
     ports:
       - "3000:3000"
     environment:
@@ -35,3 +93,5 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  tempo-data:
+  loki-data:

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -16,6 +17,7 @@ import (
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/routes"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
@@ -32,6 +34,18 @@ func main() {
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
+	tracingShutdown, err := observability.InitTracing(appCtx)
+	if err != nil {
+		log.Printf("OpenTelemetry tracing disabled: %v", err)
+		tracingShutdown = func(context.Context) error { return nil }
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracingShutdown(shutdownCtx); err != nil {
+			log.Printf("OpenTelemetry tracing shutdown failed: %v", err)
+		}
+	}()
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: configs.GetMaxRequestBodySizeLimit(),
@@ -41,6 +55,7 @@ func main() {
 	})
 
 	app.Use(middlewares.RequestID())
+	app.Use(observability.TracingMiddleware())
 	app.Use(middlewares.PrometheusMetrics())
 	app.Use(middlewares.RequestLogger())
 	app.Get("/metrics", middlewares.PrometheusHandler())
@@ -122,6 +137,11 @@ func main() {
 
 	log.Println("Server is running on port: ", portNumber)
 	log.Println("Prometheus metrics available at http://localhost" + portNumber + "/metrics")
+	traceEndpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	if traceEndpoint == "" {
+		traceEndpoint = "localhost:4317"
+	}
+	log.Println("OpenTelemetry traces exported to " + traceEndpoint)
 	if err := app.Listen(portNumber); err != nil {
 		log.Printf("Server stopped: %v", err)
 	}

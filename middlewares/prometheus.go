@@ -11,18 +11,15 @@ import (
 
 func PrometheusMetrics() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if c.Path() == "/metrics" {
+		if shouldSkipObservability(c) {
 			return c.Next()
 		}
 
 		start := time.Now()
 		err := c.Next()
-		statusCode := c.Response().StatusCode()
-		if err != nil && statusCode < fiber.StatusBadRequest {
-			statusCode = fiber.StatusInternalServerError
-		}
+		statusCode := observedStatusCode(c, err)
 
-		observability.RecordHTTPRequest(c.Method(), routePath(c), statusCode, time.Since(start))
+		observability.RecordHTTPRequest(stableString(c.Method()), routePath(c), statusCode, time.Since(start))
 		return err
 	}
 }

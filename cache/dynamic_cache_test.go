@@ -76,7 +76,7 @@ func TestPipelineCacheAndInvalidation(t *testing.T) {
 		t.Fatal("GetPipelineItems(mismatched query) ok = true")
 	}
 
-	container := &models.ContainerModel{Redis: models.Redis{IsRedisCached: true, TriggeredRedisCaches: []string{"customers"}}}
+	container := &models.ContainerModel{Redis: models.Redis{IsRedisCached: false, TriggeredRedisCaches: []string{"customers"}}}
 	for _, schema := range []string{"orders", "customers"} {
 		if got, err := utils.GetSchemaCacheVersion(ctx, "tenant", "project", schema); err != nil || got != 1 {
 			t.Fatalf("initial schema %q version = %d, %v; want 1", schema, got, err)

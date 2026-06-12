@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -10,28 +11,30 @@ import (
 
 func RequestLogger() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if c.Path() == "/metrics" {
+		if shouldSkipObservability(c) {
 			return c.Next()
 		}
 
 		start := time.Now()
 		err := c.Next()
 		duration := time.Since(start)
-		statusCode := c.Response().StatusCode()
-		if err != nil && statusCode < fiber.StatusBadRequest {
-			statusCode = fiber.StatusInternalServerError
-		}
+		statusCode := observedStatusCode(c, err)
 
 		attrs := []slog.Attr{
-			slog.String("method", c.Method()),
-			slog.String("path", c.Path()),
+			slog.String("method", stableString(c.Method())),
+			slog.String("path", stableString(c.Path())),
 			slog.String("route", routePath(c)),
+			slog.String(observability.FieldStatus, strconv.Itoa(statusCode)),
 			slog.Int("status_code", statusCode),
 			slog.Float64(observability.FieldDurationMS, float64(duration.Microseconds())/1000),
 		}
 
 		if err != nil {
-			observability.Error(c, "http request completed with error", err, attrs...)
+			if statusCode >= fiber.StatusInternalServerError {
+				observability.Error(c, "http request completed with error", err, attrs...)
+			} else {
+				observability.Warn(c, "http request completed with client error", append(attrs, slog.String(observability.FieldError, err.Error()))...)
+			}
 			return err
 		}
 
@@ -44,5 +47,5 @@ func routePath(c *fiber.Ctx) string {
 	if c == nil || c.Route() == nil || c.Route().Path == "" {
 		return "unknown"
 	}
-	return c.Route().Path
+	return stableString(c.Route().Path)
 }

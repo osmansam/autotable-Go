@@ -7,6 +7,7 @@ import (
 
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -234,11 +235,17 @@ func (r *DynamicRepository) CountByField(ctx context.Context, tenantID, projectI
 }
 
 func (r *DynamicRepository) Count(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (int64, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, filter)
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("count", schemaName)...)
+	count, err := r.GetCollection(tenantID, projectID, schemaName).CountDocuments(ctx, filter)
+	observability.EndSpan(span, traceStatus(err), err)
+	return count, err
 }
 
 func (r *DynamicRepository) Distinct(ctx context.Context, tenantID, projectID, schemaName, fieldName string, filter bson.M) ([]interface{}, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).Distinct(ctx, fieldName, filter)
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("distinct", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).Distinct(ctx, fieldName, filter)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) CountByFieldIn(ctx context.Context, tenantID, projectID, schemaName, fieldName string, values []interface{}) (int64, error) {
@@ -254,40 +261,60 @@ func (r *DynamicRepository) CountByFieldExcludingID(ctx context.Context, tenantI
 }
 
 func (r *DynamicRepository) Insert(ctx context.Context, tenantID, projectID, schemaName string, item map[string]interface{}) (*mongo.InsertOneResult, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).InsertOne(ctx, item)
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("insert_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).InsertOne(ctx, item)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) InsertMany(ctx context.Context, tenantID, projectID, schemaName string, items []map[string]interface{}) (*mongo.InsertManyResult, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("insert_many", schemaName)...)
 	docs := make([]interface{}, len(items))
 	for i, item := range items {
 		docs[i] = item
 	}
-	return r.GetCollection(tenantID, projectID, schemaName).InsertMany(ctx, docs)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).InsertMany(ctx, docs)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) FindByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}) (bson.M, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_by_id", schemaName)...)
 	var item bson.M
 	err := r.GetCollection(tenantID, projectID, schemaName).FindOne(ctx, bson.M{"_id": id}).Decode(&item)
+	observability.EndSpan(span, traceStatus(err), err)
 	return item, err
 }
 
 func (r *DynamicRepository) FindOne(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (bson.M, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_one", schemaName)...)
 	var item bson.M
 	err := r.GetCollection(tenantID, projectID, schemaName).FindOne(ctx, filter).Decode(&item)
+	observability.EndSpan(span, traceStatus(err), err)
 	return item, err
 }
 
 func (r *DynamicRepository) FindAll(ctx context.Context, tenantID, projectID, schemaName string, limit int64) ([]map[string]interface{}, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_all", schemaName)...)
 	pager := utils.Pager{Enabled: false}
 	opts := options.Find().SetLimit(limit)
-	return utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, bson.M{}, opts, &pager)
+	result, err := utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, bson.M{}, opts, &pager)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) Query(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M, opts *options.FindOptions, pager *utils.Pager) ([]map[string]interface{}, error) {
-	return utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, filter, opts, pager)
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("query", schemaName)...)
+	result, err := utils.QueryAndDecodeCollection(ctx, r.GetCollection(tenantID, projectID, schemaName), schemaName, filter, opts, pager)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string) ([]map[string]interface{}, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_for_selection", schemaName)...)
+	status := "success"
+	var spanErr error
+	defer func() { observability.EndSpan(span, status, spanErr) }()
 	projection := bson.M{
 		"_id":     1,
 		fieldName: 1,
@@ -295,20 +322,26 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 
 	cursor, err := r.GetCollection(tenantID, projectID, schemaName).Find(ctx, bson.M{}, options.Find().SetProjection(projection))
 	if err != nil {
+		status = "error"
+		spanErr = err
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	var items []map[string]interface{}
 	if err := cursor.All(ctx, &items); err != nil {
+		status = "error"
+		spanErr = err
 		return nil, err
 	}
 	return items, nil
 }
 
 func (r *DynamicRepository) ExecutePipeline(ctx context.Context, tenantID, projectID, schemaName string, pipelineStage models.PipelineStage) ([]map[string]interface{}, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("aggregate", schemaName)...)
 	items, err := utils.ExecuteDynamicPipeline(ctx, r.GetCollection(tenantID, projectID, schemaName), pipelineStage)
 	if err != nil {
+		observability.EndSpan(span, "error", err)
 		return nil, err
 	}
 
@@ -316,19 +349,29 @@ func (r *DynamicRepository) ExecutePipeline(ctx context.Context, tenantID, proje
 	for _, doc := range items {
 		resultItems = append(resultItems, map[string]interface{}(doc))
 	}
+	observability.EndSpan(span, "success", nil)
 	return resultItems, nil
 }
 
 func (r *DynamicRepository) DeleteByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}) (*mongo.DeleteResult, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).DeleteOne(ctx, bson.M{"_id": id})
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("delete_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).DeleteOne(ctx, bson.M{"_id": id})
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) DeleteManyByField(ctx context.Context, tenantID, projectID, schemaName, fieldName string, fieldValue interface{}) (*mongo.DeleteResult, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).DeleteMany(ctx, bson.M{fieldName: fieldValue})
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("delete_many", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).DeleteMany(ctx, bson.M{fieldName: fieldValue})
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) UpdateByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}, item map[string]interface{}) (*mongo.UpdateResult, error) {
-	return r.GetCollection(tenantID, projectID, schemaName).UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": item})
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("update_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": item})
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
 }
 
 func (r *DynamicRepository) NextSequence(ctx context.Context, schemaName string) (int64, error) {
@@ -512,4 +555,11 @@ func (r *DynamicRepository) MarkOutboxEventFailed(ctx context.Context, event mod
 	}
 	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, event.ID, update)
 	return err
+}
+
+func traceStatus(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "success"
 }

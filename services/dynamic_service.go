@@ -21,6 +21,7 @@ import (
 	"github.com/osmansam/autotableGo/events"
 	"github.com/osmansam/autotableGo/files"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/requests"
 	"github.com/osmansam/autotableGo/utils"
@@ -1054,7 +1055,6 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	log.Printf("Successfully fetched %d items for selection", len(items))
 	return utils.FilterDocuments(items, container.Fields, input.UserRole), nil
 }
 
@@ -1494,7 +1494,18 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 }
 
 func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput) ([]map[string]interface{}, error) {
+	start := time.Now()
+	status := "success"
+	defer func() {
+		duration := time.Since(start)
+		observability.RecordPipelineExecution(input.PipelineName, input.Schema, status, duration)
+		attrs := append(observability.PipelineAttrs(input.TenantID, input.ProjectID, input.Schema, input.PipelineName),
+			observability.OperationAttrs("pipeline_execute", status, duration)...)
+		observability.InfoCtx(ctx, "pipeline execution completed", attrs...)
+	}()
+
 	if input.Schema == "" || input.PipelineName == "" {
+		status = "error"
 		return nil, &ServiceError{
 			Status:  http.StatusBadRequest,
 			Message: "schemaName and pipelineName are required",
@@ -1504,6 +1515,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 
 	container, err := s.resolvePipelineContainer(ctx, input)
 	if err != nil {
+		status = "error"
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to fetch container model",
@@ -1513,6 +1525,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 
 	pipelineStage, found := findPipelineStage(container, input.PipelineName)
 	if !found {
+		status = "error"
 		return nil, &ServiceError{
 			Status:  http.StatusNotFound,
 			Message: "Pipeline not found",
@@ -1528,6 +1541,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "pipeline_"+input.PipelineName, input.CurrentQuery)
 	if shouldCache {
 		if items, ok := s.cache.GetPipelineItems(ctx, redisKey, input.CurrentQuery); ok {
+			status = "cache_hit"
 			return items, nil
 		}
 
@@ -1541,6 +1555,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 				cachedItems, ok = s.cache.GetPipelineItems(ctx, redisKey, input.CurrentQuery)
 				return ok
 			}) {
+				status = "cache_hit"
 				return cachedItems, nil
 			}
 		}
@@ -1548,6 +1563,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 
 	resultItems, err := s.repository.ExecutePipeline(ctx, input.TenantID, input.ProjectID, input.Schema, pipelineStage)
 	if err != nil {
+		status = "error"
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to execute dynamic pipeline",
@@ -1559,7 +1575,6 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 		s.cache.SetPipelineItems(ctx, redisKey, input.CurrentQuery, resultItems, pipelineStage.CacheTime)
 	}
 
-	log.Printf("Pipeline results successfully fetched and filtered for schema: %s with pipeline name: %s", input.Schema, input.PipelineName)
 	return resultItems, nil
 }
 

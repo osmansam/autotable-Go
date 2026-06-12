@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator"
@@ -32,6 +33,182 @@ type WorkflowsUpdate struct {
 }
 
 var validate = validator.New()
+
+func isObjectReferenceField(fieldType string) bool {
+	switch strings.ToLower(strings.TrimSpace(fieldType)) {
+	case "objectid", "objectidarray":
+		return true
+	default:
+		return false
+	}
+}
+
+func referencedObjectSchemaNames(fields []models.Field) []string {
+	seen := map[string]struct{}{}
+	var schemaNames []string
+	for _, field := range fields {
+		objectSchemaName := strings.TrimSpace(field.ObjectSchemaName)
+		if !isObjectReferenceField(field.Type) || objectSchemaName == "" {
+			continue
+		}
+		if _, ok := seen[objectSchemaName]; ok {
+			continue
+		}
+		seen[objectSchemaName] = struct{}{}
+		schemaNames = append(schemaNames, objectSchemaName)
+	}
+	return schemaNames
+}
+
+func normalizedSchemaName(schemaName string) string {
+	return strings.TrimSpace(schemaName)
+}
+
+func defaultContainerCacheTime() int {
+	cacheTTL := configs.GetDefaultCacheTTL()
+	if cacheTTL <= 0 {
+		return configs.DefaultCacheTTLMinutes
+	}
+	cacheMinutes := int(cacheTTL / time.Minute)
+	if cacheMinutes < 1 {
+		return configs.DefaultCacheTTLMinutes
+	}
+	return cacheMinutes
+}
+
+func defaultContainerRedis(triggeredSchemas []string) models.Redis {
+	return models.Redis{
+		IsRedisCached:        true,
+		CacheTime:            defaultContainerCacheTime(),
+		TriggeredRedisCaches: triggeredSchemas,
+	}
+}
+
+func validateObjectReferences(ctx context.Context, containerCollection *mongo.Collection, container models.ContainerModel, currentID primitive.ObjectID) (map[string]primitive.ObjectID, error) {
+	referencedIDs := map[string]primitive.ObjectID{}
+	containerSchemaName := normalizedSchemaName(container.SchemaName)
+	for _, referencedSchemaName := range referencedObjectSchemaNames(container.Fields) {
+		if referencedSchemaName == containerSchemaName {
+			return nil, fmt.Errorf("field with type 'objectId' or 'objectIdArray' must reference an already defined container name, not the one being created or updated")
+		}
+
+		filter := bson.M{"schemaName": referencedSchemaName}
+		if currentID != primitive.NilObjectID {
+			filter["_id"] = bson.M{"$ne": currentID}
+		}
+		var referencedContainer struct {
+			ID primitive.ObjectID `bson:"_id"`
+		}
+		err := containerCollection.FindOne(ctx, filter).Decode(&referencedContainer)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return nil, fmt.Errorf("field with type 'objectId' or 'objectIdArray' must reference a valid, existing container name")
+			}
+			return nil, fmt.Errorf("database error while verifying object reference %s: %w", referencedSchemaName, err)
+		}
+		referencedIDs[referencedSchemaName] = referencedContainer.ID
+	}
+	return referencedIDs, nil
+}
+
+func referencedContainerID(ctx context.Context, containerCollection *mongo.Collection, schemaName string) primitive.ObjectID {
+	var container struct {
+		ID primitive.ObjectID `bson:"_id"`
+	}
+	if err := containerCollection.FindOne(ctx, bson.M{"schemaName": schemaName}).Decode(&container); err != nil {
+		return primitive.NilObjectID
+	}
+	return container.ID
+}
+
+func syncReferencedInvalidations(ctx context.Context, containerCollection *mongo.Collection, existingContainer, container models.ContainerModel, referencedIDs map[string]primitive.ObjectID) ([]primitive.ObjectID, error) {
+	oldReferences := map[string]struct{}{}
+	for _, referencedSchemaName := range referencedObjectSchemaNames(existingContainer.Fields) {
+		oldReferences[referencedSchemaName] = struct{}{}
+	}
+
+	containerSchemaName := normalizedSchemaName(container.SchemaName)
+	existingSchemaName := normalizedSchemaName(existingContainer.SchemaName)
+	var updatedReferencedIDs []primitive.ObjectID
+	for _, referencedSchemaName := range referencedObjectSchemaNames(container.Fields) {
+		if referencedSchemaName == containerSchemaName {
+			continue
+		}
+		referencedID := referencedIDs[referencedSchemaName]
+		filter := bson.M{"schemaName": referencedSchemaName}
+		if referencedID != primitive.NilObjectID {
+			filter = bson.M{"_id": referencedID}
+		}
+		result, err := containerCollection.UpdateOne(
+			ctx,
+			filter,
+			bson.M{"$addToSet": bson.M{"redis.triggeredRedisCaches": containerSchemaName}},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update invalidation schema %s for referenced container %s: %w", containerSchemaName, referencedSchemaName, err)
+		}
+		if result.MatchedCount == 0 {
+			return nil, fmt.Errorf("failed to update invalidation schema %s for referenced container %s: no container matched", containerSchemaName, referencedSchemaName)
+		}
+		if referencedID != primitive.NilObjectID {
+			updatedReferencedIDs = append(updatedReferencedIDs, referencedID)
+		}
+		delete(oldReferences, referencedSchemaName)
+	}
+
+	for referencedSchemaName := range oldReferences {
+		if referencedSchemaName == "" {
+			continue
+		}
+		if id := referencedContainerID(ctx, containerCollection, referencedSchemaName); id != primitive.NilObjectID {
+			updatedReferencedIDs = append(updatedReferencedIDs, id)
+		}
+		_, err := containerCollection.UpdateOne(
+			ctx,
+			bson.M{"schemaName": referencedSchemaName},
+			bson.M{"$pull": bson.M{"redis.triggeredRedisCaches": existingSchemaName}},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove invalidation schema %s from referenced container %s: %w", existingSchemaName, referencedSchemaName, err)
+		}
+	}
+
+	if existingSchemaName != "" && existingSchemaName != containerSchemaName {
+		for _, referencedSchemaName := range referencedObjectSchemaNames(container.Fields) {
+			if referencedSchemaName == "" || referencedSchemaName == containerSchemaName {
+				continue
+			}
+			_, err := containerCollection.UpdateOne(
+				ctx,
+				bson.M{"schemaName": referencedSchemaName},
+				bson.M{"$pull": bson.M{"redis.triggeredRedisCaches": existingSchemaName}},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to remove renamed invalidation schema %s from referenced container %s: %w", existingSchemaName, referencedSchemaName, err)
+			}
+		}
+	}
+
+	return updatedReferencedIDs, nil
+}
+
+func containerCacheKeys(tenantID, projectID string, containerIDs []primitive.ObjectID) []string {
+	keys := []string{fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)}
+	for _, containerID := range containerIDs {
+		if containerID == primitive.NilObjectID {
+			continue
+		}
+		keys = append(keys, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerID.Hex(), tenantID, projectID))
+	}
+	return keys
+}
+
+func appendContainerCacheKey(keys []string, tenantID, projectID, containerID string) []string {
+	if containerID == "" {
+		return keys
+	}
+	return append(keys, fmt.Sprintf("container:%s:tenant_%s:project_%s", containerID, tenantID, projectID))
+}
 
 // ensureRoleSchemaExists checks if a "role" schema exists and creates it if not
 func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Collection) error {
@@ -76,11 +253,7 @@ func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Coll
 			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
 			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
 		},
-		Redis: models.Redis{
-			IsRedisCached:        false,
-			CacheTime:            0,
-			TriggeredRedisCaches: []string{},
-		},
+		Redis:            defaultContainerRedis(nil),
 		IsAuthContainer:  false,
 		PopulatedRoutes:  []string{},
 		Pipelines:        []models.PipelineStage{},
@@ -190,31 +363,17 @@ func CreateContainer(c *fiber.Ctx) error {
 		}
 	}
 
-	// Validate that objectId fields reference an existing container (not the one being created)
-	for _, field := range container.Fields {
-		if field.Type == "objectId" {
-			// Ensure the field's name is not the same as the container being created.
-			if field.ObjectSchemaName == container.SchemaName {
-				log.Println("ObjectId field cannot reference the container being created")
-				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference an already defined container name, not the one being created.")
-			}
-			// Optionally, verify that the referenced container exists in the database.
-			count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": field.ObjectSchemaName})
-			if err != nil {
-				log.Printf("Database error when verifying objectId reference: %v", err)
-				return utils.SendErrorResponse(c, err, "Database error while verifying objectId reference.")
-			}
-			if count == 0 {
-				log.Printf("Referenced container %s does not exist", field.ObjectSchemaName)
-				return utils.SendErrorResponse(c, nil, "Field with type 'objectId' must reference a valid, existing container name.")
-			}
-		}
+	referencedIDs, err := validateObjectReferences(ctx, containerCollection, container, primitive.NilObjectID)
+	if err != nil {
+		log.Printf("Invalid object reference in CreateContainer: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
 	}
+
 	newContainer := models.ContainerModel{
 		SchemaName:       container.SchemaName,
 		Fields:           container.Fields,
 		Routes:           container.Routes,
-		Redis:            container.Redis,
+		Redis:            defaultContainerRedis(nil),
 		Pipelines:        container.Pipelines,
 		IsAuthContainer:  container.IsAuthContainer,
 		PopulatedRoutes:  container.PopulatedRoutes,
@@ -235,8 +394,14 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
 	}
 
+	referencedContainerIDs, err := syncReferencedInvalidations(ctx, containerCollection, models.ContainerModel{}, newContainer, referencedIDs)
+	if err != nil {
+		log.Printf("Failed to update referenced container invalidation settings: %v", err)
+		return utils.SendErrorResponse(c, err, "Container created but failed to update referenced container invalidation settings.")
+	}
+
 	// Invalidate Redis cache for all containers (project-specific)
-	_ = configs.RedisDelKeys(ctx, fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID))
+	_ = configs.RedisDelKeys(ctx, containerCacheKeys(tenantID, projectID, referencedContainerIDs)...)
 	log.Println("Invalidated containers cache after creation")
 
 	// Emit WebSocket event for container change
@@ -506,6 +671,13 @@ func UpdateContainer(c *fiber.Ctx) error {
 	updatedContainer.Pipelines = existingContainer.Pipelines
 	updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
 	updatedContainer.Workflows = existingContainer.Workflows
+	updatedContainer.Redis = defaultContainerRedis(existingContainer.Redis.TriggeredRedisCaches)
+
+	referencedIDs, err := validateObjectReferences(ctx, containerCollection, updatedContainer, updateId)
+	if err != nil {
+		log.Printf("Invalid object reference in UpdateContainer: %v", err)
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
 
 	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
 		log.Printf("Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
@@ -528,11 +700,15 @@ func UpdateContainer(c *fiber.Ctx) error {
 		})
 	}
 
+	referencedContainerIDs, err := syncReferencedInvalidations(ctx, containerCollection, existingContainer, updatedContainer, referencedIDs)
+	if err != nil {
+		log.Printf("Failed to update referenced container invalidation settings: %v", err)
+		return utils.SendErrorResponse(c, err, "Container updated but failed to update referenced container invalidation settings.")
+	}
+
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
-		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
-		fmt.Sprintf("container:%s:tenant_%s:project_%s", updateIdStr, tenantID, projectID),
-	)
+	cacheKeys := appendContainerCacheKey(containerCacheKeys(tenantID, projectID, referencedContainerIDs), tenantID, projectID, updateIdStr)
+	_ = configs.RedisDelKeys(ctx, cacheKeys...)
 	log.Println("Invalidated containers cache after update")
 
 	// Emit WebSocket event for container change

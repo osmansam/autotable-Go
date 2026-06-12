@@ -58,7 +58,7 @@ func TestRequestIDGeneratesMissingHeader(t *testing.T) {
 }
 
 func TestPrometheusMetricsEndpoint(t *testing.T) {
-	observability.RecordWorkflowExecution("workflow", "schema", "success", time.Millisecond)
+	observability.RecordWorkflowExecution("tenant", "project", "workflow", "schema", "success", time.Millisecond)
 	observability.SetWebsocketClientsConnected(1)
 
 	app := fiber.New()
@@ -85,6 +85,48 @@ func TestPrometheusMetricsEndpoint(t *testing.T) {
 	}
 	if strings.Contains(text, `route="/metrics"`) {
 		t.Fatal("metrics scrape should not be recorded as an HTTP request metric")
+	}
+}
+
+func TestObservedStatusCodeUsesFiberErrorCode(t *testing.T) {
+	app := fiber.New()
+	app.Use(PrometheusMetrics())
+	app.Get("/metrics", PrometheusHandler())
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/missing", nil))
+	if err != nil {
+		t.Fatalf("app.Test(/missing) error = %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+
+	metricsResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if err != nil {
+		t.Fatalf("app.Test(/metrics) error = %v", err)
+	}
+	body, _ := io.ReadAll(metricsResp.Body)
+	if !strings.Contains(string(body), `status="404"`) {
+		t.Fatal("missing route should be recorded with status 404")
+	}
+}
+
+func TestFaviconIsSkippedByObservability(t *testing.T) {
+	app := fiber.New()
+	app.Use(PrometheusMetrics())
+	app.Get("/metrics", PrometheusHandler())
+
+	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)); err != nil {
+		t.Fatalf("app.Test(/favicon.ico) error = %v", err)
+	}
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if err != nil {
+		t.Fatalf("app.Test(/metrics) error = %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "/favicon.ico") {
+		t.Fatal("favicon requests should not be recorded as HTTP request metrics")
 	}
 }
 
