@@ -361,7 +361,7 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 
 	// Find project by slug and tenant
 	var projectResult bson.M
-	err = projectColl.FindOne(ctx, bson.M{"slug": projectSlug, "tenantId": tenantID}).Decode(&projectResult)
+	err = projectColl.FindOne(ctx, bson.M{"slug": projectSlug, "tenantId": tenantObjID}).Decode(&projectResult)
 	if err != nil {
 		observability.WarnCtx(ctx, "websocket project slug not found",
 			slog.String(observability.FieldOperation, "websocket_resolve_context"),
@@ -391,53 +391,97 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	return tenantID, projectID, nil
 }
 
+func validateTenantAndProjectIDs(tenantID, projectID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tenantObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(tenantID))
+	if err != nil {
+		return fmt.Errorf("invalid tenantId")
+	}
+	projectObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(projectID))
+	if err != nil {
+		return fmt.Errorf("invalid projectId")
+	}
+
+	projectColl := configs.GetCollection("projects")
+	if err := projectColl.FindOne(ctx, bson.M{"_id": projectObjID, "tenantId": tenantObjID}).Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam string) []slog.Attr {
+	attrs := make([]slog.Attr, 0, 4)
+	attrs = appendTrimmedWSAttr(attrs, "tenant_slug", tenantSlug)
+	attrs = appendTrimmedWSAttr(attrs, "project_slug", projectSlug)
+	attrs = appendTrimmedWSAttr(attrs, "tenant_id_param", tenantIDParam)
+	attrs = appendTrimmedWSAttr(attrs, "project_id_param", projectIDParam)
+	return attrs
+}
+
+func appendTrimmedWSAttr(attrs []slog.Attr, key, value string) []slog.Attr {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return attrs
+	}
+	return append(attrs, slog.String(key, strings.Clone(value)))
+}
+
 // HandleWS adds clients and keeps them alive.
 // Expects tenantSlug and projectSlug as query parameters: /ws?tenantSlug=xxx&projectSlug=yyy
 // Also accepts tenantId and projectId for backward compatibility
 func HandleWS(c *websocket.Conn) {
-	// Extract tenant and project slugs from query parameters
-	// Try new parameter names first, fall back to old names
 	tenantSlug := c.Query("tenantSlug")
-	if tenantSlug == "" {
-		tenantSlug = c.Query("tenantId") // backward compatibility
-	}
-
 	projectSlug := c.Query("projectSlug")
-	if projectSlug == "" {
-		projectSlug = c.Query("projectId") // backward compatibility
-	}
+	tenantIDParam := c.Query("tenantId")
+	projectIDParam := c.Query("projectId")
 
-	// If not provided, try to get from headers (for backward compatibility)
 	if tenantSlug == "" {
 		tenantSlug = c.Headers("X-Tenant-Slug")
-		if tenantSlug == "" {
-			tenantSlug = c.Headers("X-Tenant-Id")
-		}
 	}
 	if projectSlug == "" {
 		projectSlug = c.Headers("X-Project-Slug")
-		if projectSlug == "" {
-			projectSlug = c.Headers("X-Project-Id")
-		}
+	}
+	if tenantIDParam == "" {
+		tenantIDParam = c.Headers("X-Tenant-Id")
+	}
+	if projectIDParam == "" {
+		projectIDParam = c.Headers("X-Project-Id")
 	}
 
-	// Require both slugs for multi-tenancy isolation
-	if tenantSlug == "" || projectSlug == "" {
-		observability.WarnCtx(context.Background(), "websocket connection rejected",
+	var tenantID, projectID string
+	var err error
+	if tenantSlug != "" && projectSlug != "" {
+		tenantID, projectID, err = resolveTenantAndProjectIDs(tenantSlug, projectSlug)
+	} else if tenantIDParam != "" && projectIDParam != "" {
+		tenantID = strings.TrimSpace(tenantIDParam)
+		projectID = strings.TrimSpace(projectIDParam)
+		if looksLikeObjectID(tenantID) && looksLikeObjectID(projectID) {
+			err = validateTenantAndProjectIDs(tenantID, projectID)
+		} else {
+			tenantID, projectID, err = resolveTenantAndProjectIDs(tenantID, projectID)
+		}
+	} else {
+		attrs := []slog.Attr{
 			slog.String(observability.FieldOperation, "websocket_connect"),
-			slog.String(observability.FieldStatus, "missing_context"))
+			slog.String(observability.FieldStatus, "missing_context"),
+		}
+		attrs = append(attrs, websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam)...)
+		observability.WarnCtx(context.Background(), "websocket connection rejected", attrs...)
 		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"tenantSlug and projectSlug required (or tenantId/projectId)"}`))
 		c.Close()
 		return
 	}
 
-	// Resolve slugs to actual database IDs
-	tenantID, projectID, err := resolveTenantAndProjectIDs(tenantSlug, projectSlug)
 	if err != nil {
-		observability.WarnCtx(context.Background(), "websocket connection rejected",
+		attrs := []slog.Attr{
 			slog.String(observability.FieldOperation, "websocket_connect"),
 			slog.String(observability.FieldStatus, "invalid_context"),
-			slog.String(observability.FieldError, err.Error()))
+			slog.String(observability.FieldError, err.Error()),
+		}
+		attrs = append(attrs, websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam)...)
+		observability.WarnCtx(context.Background(), "websocket connection rejected", attrs...)
 		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"Invalid tenant or project"}`))
 		c.Close()
 		return
@@ -478,6 +522,11 @@ func HandleWS(c *websocket.Conn) {
 			return
 		}
 	}
+}
+
+func looksLikeObjectID(value string) bool {
+	_, err := primitive.ObjectIDFromHex(strings.TrimSpace(value))
+	return err == nil
 }
 
 // EmitInvalidate pushes an invalidate event to clients in the same tenant/project.
