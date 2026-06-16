@@ -54,6 +54,119 @@ func ValidateFrontendLinkConfig(f *Frontend) error {
 	return nil
 }
 
+func validateLinkType(linkType string) error {
+	if linkType == "" {
+		return nil
+	}
+
+	for _, validType := range ValidLinkTypes {
+		if linkType == validType {
+			return nil
+		}
+	}
+
+	return fmt.Errorf(
+		"invalid linkType '%s': must be one of [%s]",
+		linkType,
+		strings.Join(ValidLinkTypes, ", "),
+	)
+}
+
+func ValidateTableComponentConfig(table *TableComponentConfig) error {
+	if table == nil {
+		return nil
+	}
+
+	for _, column := range table.Columns {
+		if column.Link == nil {
+			continue
+		}
+		if err := validateLinkType(column.Link.Type); err != nil {
+			return fmt.Errorf("table column '%s': %w", column.Field, err)
+		}
+	}
+
+	return nil
+}
+
+func ValidateComponentTableConfig(component *ComponentBlock) error {
+	if component == nil {
+		return nil
+	}
+
+	if component.Type == ComponentTypeTable {
+		if err := ValidateTableComponentConfig(component.Table); err != nil {
+			return fmt.Errorf("component '%s': %w", component.ID, err)
+		}
+	}
+
+	for i := range component.Tabs {
+		for j := range component.Tabs[i].Components {
+			if err := ValidateComponentTableConfig(&component.Tabs[i].Components[j]); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func ValidatePageTableConfig(page *PageModel) error {
+	if page == nil {
+		return nil
+	}
+
+	for i := range page.Sections {
+		section := &page.Sections[i]
+		if err := ValidateComponentTableConfig(section.Component); err != nil {
+			return err
+		}
+		if section.Grid != nil {
+			for j := range section.Grid.Cells {
+				for k := range section.Grid.Cells[j].Components {
+					if err := ValidateComponentTableConfig(&section.Grid.Cells[j].Components[k]); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if section.Tabs != nil {
+			for j := range section.Tabs.Tabs {
+				for k := range section.Tabs.Tabs[j].Sections {
+					tabSection := &section.Tabs.Tabs[j].Sections[k]
+					if err := ValidateComponentTableConfig(tabSection.Component); err != nil {
+						return err
+					}
+					if tabSection.Grid != nil {
+						for l := range tabSection.Grid.Cells {
+							for m := range tabSection.Grid.Cells[l].Components {
+								if err := ValidateComponentTableConfig(&tabSection.Grid.Cells[l].Components[m]); err != nil {
+									return err
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		for j := range section.Cells {
+			for k := range section.Cells[j].Components {
+				if err := ValidateComponentTableConfig(&section.Cells[j].Components[k]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	if page.SubPage != nil {
+		if err := ValidatePageTableConfig(page.SubPage); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ValidateFieldFrontendConfig validates the frontend configuration for a single field
 func ValidateFieldFrontendConfig(field *Field) error {
 	if field == nil {

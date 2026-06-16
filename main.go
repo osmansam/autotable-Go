@@ -103,7 +103,6 @@ func main() {
 			"message": "Server is healthy",
 		})
 	})
-
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes

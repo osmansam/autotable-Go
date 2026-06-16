@@ -76,12 +76,29 @@ func defaultContainerCacheTime() int {
 	return cacheMinutes
 }
 
-func defaultContainerRedis(triggeredSchemas []string) models.Redis {
+func defaultContainerRedis(schemaName string, triggeredSchemas []string) models.Redis {
 	return models.Redis{
 		IsRedisCached:        true,
 		CacheTime:            defaultContainerCacheTime(),
-		TriggeredRedisCaches: triggeredSchemas,
+		TriggeredRedisCaches: triggeredSchemasWithSelf(schemaName, triggeredSchemas),
 	}
+}
+
+func triggeredSchemasWithSelf(schemaName string, triggeredSchemas []string) []string {
+	seen := map[string]struct{}{}
+	var result []string
+	for _, name := range append([]string{schemaName}, triggeredSchemas...) {
+		name = normalizedSchemaName(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	return result
 }
 
 func validateObjectReferences(ctx context.Context, containerCollection *mongo.Collection, container models.ContainerModel, currentID primitive.ObjectID) (map[string]primitive.ObjectID, error) {
@@ -253,7 +270,7 @@ func ensureRoleSchemaExists(ctx context.Context, containerCollection *mongo.Coll
 			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
 			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
 		},
-		Redis:            defaultContainerRedis(nil),
+		Redis:            defaultContainerRedis("role", nil),
 		IsAuthContainer:  false,
 		PopulatedRoutes:  []string{},
 		Pipelines:        []models.PipelineStage{},
@@ -373,7 +390,7 @@ func CreateContainer(c *fiber.Ctx) error {
 		SchemaName:       container.SchemaName,
 		Fields:           container.Fields,
 		Routes:           container.Routes,
-		Redis:            defaultContainerRedis(nil),
+		Redis:            defaultContainerRedis(container.SchemaName, nil),
 		Pipelines:        container.Pipelines,
 		IsAuthContainer:  container.IsAuthContainer,
 		PopulatedRoutes:  container.PopulatedRoutes,
@@ -671,7 +688,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 	updatedContainer.Pipelines = existingContainer.Pipelines
 	updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
 	updatedContainer.Workflows = existingContainer.Workflows
-	updatedContainer.Redis = defaultContainerRedis(existingContainer.Redis.TriggeredRedisCaches)
+	updatedContainer.Redis = defaultContainerRedis(updatedContainer.SchemaName, existingContainer.Redis.TriggeredRedisCaches)
 
 	referencedIDs, err := validateObjectReferences(ctx, containerCollection, updatedContainer, updateId)
 	if err != nil {

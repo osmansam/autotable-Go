@@ -2329,13 +2329,27 @@ func (s *DynamicService) forceDeleteReferences(ctx context.Context, tenantID, pr
 			if field.Type != "objectId" || field.Name != schemaName || !field.IsForceDelete {
 				continue
 			}
-			if _, err := s.repository.DeleteManyByField(ctx, tenantID, projectID, container.SchemaName, field.Name, deleteID); err != nil {
+			result, err := s.repository.DeleteManyByField(ctx, tenantID, projectID, container.SchemaName, field.Name, deleteID)
+			if err != nil {
 				log.Printf("Failed to force delete referenced items for schema: %s, error: %v", schemaName, err)
 				if failOnError {
 					return &ServiceError{
 						Status:  http.StatusInternalServerError,
 						Message: "Failed to force delete referenced items.",
 						Err:     err,
+					}
+				}
+				continue
+			}
+			if result != nil && result.DeletedCount > 0 {
+				if err := utils.InvalidateSchemaAndTriggeredCaches(ctx, tenantID, projectID, container.SchemaName, container.Redis.TriggeredRedisCaches); err != nil {
+					log.Printf("Failed to invalidate force-deleted referenced schema cache for schema: %s, error: %v", container.SchemaName, err)
+					if failOnError {
+						return &ServiceError{
+							Status:  http.StatusInternalServerError,
+							Message: "Failed to invalidate force-deleted referenced schema cache.",
+							Err:     err,
+						}
 					}
 				}
 			}

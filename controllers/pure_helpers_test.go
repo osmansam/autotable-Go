@@ -195,14 +195,14 @@ func TestReferencedObjectSchemaNames(t *testing.T) {
 }
 
 func TestDefaultContainerRedis(t *testing.T) {
-	got := defaultContainerRedis([]string{"stock"})
+	got := defaultContainerRedis("orders", []string{"stock", "orders", " stock "})
 	if !got.IsRedisCached {
 		t.Fatal("defaultContainerRedis().IsRedisCached = false, want true")
 	}
 	if got.CacheTime <= 0 {
 		t.Fatalf("defaultContainerRedis().CacheTime = %d, want positive", got.CacheTime)
 	}
-	if !reflect.DeepEqual(got.TriggeredRedisCaches, []string{"stock"}) {
+	if !reflect.DeepEqual(got.TriggeredRedisCaches, []string{"orders", "stock"}) {
 		t.Fatalf("defaultContainerRedis().TriggeredRedisCaches = %#v", got.TriggeredRedisCaches)
 	}
 }

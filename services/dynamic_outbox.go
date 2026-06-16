@@ -100,12 +100,6 @@ func dispatchDynamicOutboxEvent(ctx context.Context, repository *repositories.Dy
 	}
 
 	for _, schemaName := range uniqueSchemaNames(event.Payload.InvalidateSchemas) {
-		if err := utils.IncrementSchemaCacheVersion(ctx, event.TenantID, event.ProjectID, schemaName); err != nil {
-			return err
-		}
-	}
-
-	for _, schemaName := range uniqueSchemaNames(event.Payload.InvalidateSchemas) {
 		events.EmitInvalidate(schemaName, event.Payload.UserID, event.TenantID, event.ProjectID, event.ID.Hex())
 	}
 
@@ -114,8 +108,10 @@ func dispatchDynamicOutboxEvent(ctx context.Context, repository *repositories.Dy
 
 func (s *DynamicService) insertDynamicPostWrite(ctx context.Context, tenantID, projectID, schemaName, operation, userID string, container *models.ContainerModel, auditLog *models.AuditLog) error {
 	event := buildDynamicPostWriteEvent(tenantID, projectID, schemaName, operation, userID, container, auditLog)
-	_, err := s.repository.InsertOutboxEvent(ctx, event)
-	return err
+	if _, err := s.repository.InsertOutboxEvent(ctx, event); err != nil {
+		return err
+	}
+	return utils.InvalidateSchemaAndTriggeredCaches(ctx, tenantID, projectID, schemaName, event.Payload.InvalidateSchemas)
 }
 
 func buildDynamicPostWriteEvent(tenantID, projectID, schemaName, operation, userID string, container *models.ContainerModel, auditLog *models.AuditLog) models.DynamicOutboxEvent {

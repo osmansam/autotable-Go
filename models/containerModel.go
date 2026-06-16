@@ -3,8 +3,8 @@ package models
 import "go.mongodb.org/mongo-driver/bson/primitive"
 
 type RowClassConfig struct {
-	Condition string `bson:"condition"`
-	ClassName string `bson:"className"`
+	Condition string `bson:"condition" json:"condition"`
+	ClassName string `bson:"className" json:"className"`
 }
 
 type Frontend struct {

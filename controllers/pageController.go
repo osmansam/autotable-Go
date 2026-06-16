@@ -57,6 +57,10 @@ func CreatePage(c *fiber.Ctx) error {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
+	if validationErr := models.ValidatePageTableConfig(&page); validationErr != nil {
+		log.Printf("Table config validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
+	}
 
 	// Get project-specific pages collection
 	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
@@ -159,7 +163,7 @@ func GetAllPagesPublic(c *fiber.Ctx) error {
 	// Get user role from context (may be empty if not authenticated)
 	userRole, _ := c.Locals("userRole").(string)
 	userID, _ := c.Locals("userID").(string)
-	
+
 	for results.Next(ctx) {
 		var singlePage models.PageModel
 		if err = results.Decode(&singlePage); err != nil {
@@ -277,6 +281,10 @@ func UpdatePage(c *fiber.Ctx) error {
 	if validationErr := utils.ValidateStruct(updatedPage); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
+	}
+	if validationErr := models.ValidatePageTableConfig(&updatedPage); validationErr != nil {
+		log.Printf("Table config validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
 	}
 
 	updateIdStr := c.Params("id")
