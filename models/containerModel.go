@@ -20,7 +20,7 @@ type Frontend struct {
 
 type ActionFieldConfig struct {
 	Field             string      `bson:"field,omitempty" json:"field,omitempty"`
-	Name              string      `bson:"name" json:"name"`
+	Name              string      `bson:"name,omitempty" json:"name,omitempty"`
 	Required          *bool       `bson:"required,omitempty" json:"required,omitempty"`
 	Disabled          *bool       `bson:"disabled,omitempty" json:"disabled,omitempty"`
 	Hidden            *bool       `bson:"hidden,omitempty" json:"hidden,omitempty"`
@@ -69,33 +69,33 @@ type ActionSubmitConfig struct {
 }
 
 type ActionConfig struct {
-	ID                 string             `bson:"id,omitempty" json:"id,omitempty"`
-	Key                string             `bson:"key" json:"key"`
-	Name               string             `bson:"name,omitempty" json:"name,omitempty"`
-	Label              string             `bson:"label,omitempty" json:"label,omitempty"`
-	Kind               string             `bson:"kind" json:"kind"` // edit | delete | update | link
-	Icon               string             `bson:"icon,omitempty" json:"icon,omitempty"`
-	ClassName          string             `bson:"className,omitempty" json:"className,omitempty"`
-	ButtonClassName    string             `bson:"buttonClassName,omitempty" json:"buttonClassName,omitempty"`
-	Order              int                `bson:"order,omitempty" json:"order,omitempty"`
-	Enabled            *bool              `bson:"enabled,omitempty" json:"enabled,omitempty"`
-	IsModal            *bool              `bson:"isModal,omitempty" json:"isModal,omitempty"`
-	IsButton           *bool              `bson:"isButton,omitempty" json:"isButton,omitempty"`
-	ModalType          string             `bson:"modalType,omitempty" json:"modalType,omitempty"` // form | confirmation
-	ConfirmTitle       string             `bson:"confirmTitle,omitempty" json:"confirmTitle,omitempty"`
-	ConfirmText        string             `bson:"confirmText,omitempty" json:"confirmText,omitempty"`
-	Path               string             `bson:"path,omitempty" json:"path,omitempty"`
-	LinkTemplate       string             `bson:"linkTemplate,omitempty" json:"linkTemplate,omitempty"`
-	LinkType           string             `bson:"linkType,omitempty" json:"linkType,omitempty"`
-	DisabledCondition  string             `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
-	HiddenCondition    string             `bson:"hiddenCondition,omitempty" json:"hiddenCondition,omitempty"`
-	RequiredCondition  string             `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
-	DisabledConditions []string           `bson:"disabledConditions,omitempty" json:"disabledConditions,omitempty"`
-	RequiredConditions []string           `bson:"requiredConditions,omitempty" json:"requiredConditions,omitempty"`
+	ID                 string                   `bson:"id,omitempty" json:"id,omitempty"`
+	Key                string                   `bson:"key" json:"key"`
+	Name               string                   `bson:"name,omitempty" json:"name,omitempty"`
+	Label              string                   `bson:"label,omitempty" json:"label,omitempty"`
+	Kind               string                   `bson:"kind" json:"kind"` // edit | delete | update | link
+	Icon               string                   `bson:"icon,omitempty" json:"icon,omitempty"`
+	ClassName          string                   `bson:"className,omitempty" json:"className,omitempty"`
+	ButtonClassName    string                   `bson:"buttonClassName,omitempty" json:"buttonClassName,omitempty"`
+	Order              int                      `bson:"order,omitempty" json:"order,omitempty"`
+	Enabled            *bool                    `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	IsModal            *bool                    `bson:"isModal,omitempty" json:"isModal,omitempty"`
+	IsButton           *bool                    `bson:"isButton,omitempty" json:"isButton,omitempty"`
+	ModalType          string                   `bson:"modalType,omitempty" json:"modalType,omitempty"` // form | confirmation
+	ConfirmTitle       string                   `bson:"confirmTitle,omitempty" json:"confirmTitle,omitempty"`
+	ConfirmText        string                   `bson:"confirmText,omitempty" json:"confirmText,omitempty"`
+	Path               string                   `bson:"path,omitempty" json:"path,omitempty"`
+	LinkTemplate       string                   `bson:"linkTemplate,omitempty" json:"linkTemplate,omitempty"`
+	LinkType           string                   `bson:"linkType,omitempty" json:"linkType,omitempty"`
+	DisabledCondition  string                   `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+	HiddenCondition    string                   `bson:"hiddenCondition,omitempty" json:"hiddenCondition,omitempty"`
+	RequiredCondition  string                   `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
+	DisabledConditions []string                 `bson:"disabledConditions,omitempty" json:"disabledConditions,omitempty"`
+	RequiredConditions []string                 `bson:"requiredConditions,omitempty" json:"requiredConditions,omitempty"`
 	FormFields         *[]ActionFormFieldConfig `bson:"formFields,omitempty" json:"formFields,omitempty"`
-	FieldOverrides     []ActionFieldConfig     `bson:"fieldOverrides,omitempty" json:"fieldOverrides,omitempty"`
-	ConstantValues     map[string]interface{}  `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
-	Submit             ActionSubmitConfig `bson:"submit,omitempty" json:"submit,omitempty"`
+	FieldOverrides     []ActionFieldConfig      `bson:"fieldOverrides,omitempty" json:"fieldOverrides,omitempty"`
+	ConstantValues     map[string]interface{}   `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	Submit             ActionSubmitConfig       `bson:"submit,omitempty" json:"submit,omitempty"`
 }
 
 type Field struct {

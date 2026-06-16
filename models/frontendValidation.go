@@ -23,7 +23,9 @@ var ValidActionKinds = []string{
 
 var ValidActionModalTypes = []string{
 	"",
+	"none",
 	"form",
+	"confirm",
 	"confirmation",
 }
 
@@ -111,7 +113,7 @@ func validateActionModalType(modalType string) error {
 	}
 
 	return fmt.Errorf(
-		"invalid action modalType '%s': must be one of [form, confirmation]",
+		"invalid action modalType '%s': must be one of [none, form, confirm, confirmation]",
 		modalType,
 	)
 }
@@ -123,7 +125,7 @@ func ValidateActionConfig(action ActionConfig) error {
 	if err := validateActionModalType(action.ModalType); err != nil {
 		return err
 	}
-	if action.Kind == "link" && action.Path == "" {
+	if action.Kind == "link" && action.Path == "" && action.LinkTemplate == "" {
 		return fmt.Errorf("link action '%s' requires path", action.Key)
 	}
 	return nil
