@@ -28,32 +28,64 @@ type GroupBy struct {
 	GroupByField    string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`       // Field name to display from grouped object (e.g., "name")
 }
 
+// TableLinkConfig defines link rendering for a table column.
+type TableLinkConfig struct {
+	Template   string `bson:"template,omitempty" json:"template,omitempty"`
+	LabelField string `bson:"labelField,omitempty" json:"labelField,omitempty"`
+	Type       string `bson:"type,omitempty" json:"type,omitempty"` // external | internal | email | phone | file
+}
+
+// TableColumnConfig defines display and cell behavior for one table column.
+type TableColumnConfig struct {
+	Field         string           `bson:"field" json:"field"`
+	DisplayName   string           `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	CellClassName []RowClassConfig `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
+	Link          *TableLinkConfig `bson:"link,omitempty" json:"link,omitempty"`
+}
+
+// TableRowsConfig defines row-level table behavior.
+type TableRowsConfig struct {
+	ClassName []RowClassConfig `bson:"className,omitempty" json:"className,omitempty"`
+}
+
+// TableCacheConfig defines cache invalidation behavior for table mutations.
+type TableCacheConfig struct {
+	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
+}
+
+// TableComponentConfig keeps table-specific configuration on page table components.
+type TableComponentConfig struct {
+	Columns []TableColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
+	Rows    *TableRowsConfig    `bson:"rows,omitempty" json:"rows,omitempty"`
+	Cache   *TableCacheConfig   `bson:"cache,omitempty" json:"cache,omitempty"`
+}
+
 // ComponentType defines the type of component
 type ComponentType string
 
 const (
-	ComponentTypeTable            ComponentType = "table"
-	ComponentTypeTabPanel         ComponentType = "tabPanel" // tabPanel with embedded tabs
-	ComponentTypeForm             ComponentType = "form"
-	ComponentTypeText             ComponentType = "text"
-	ComponentTypeCustom           ComponentType = "custom"
-	
+	ComponentTypeTable    ComponentType = "table"
+	ComponentTypeTabPanel ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeForm     ComponentType = "form"
+	ComponentTypeText     ComponentType = "text"
+	ComponentTypeCustom   ComponentType = "custom"
+
 	// Chart Types - Specific chart components
-	ComponentTypeBarChart         ComponentType = "barChart"         // Bar Chart
-	ComponentTypeLineChart        ComponentType = "lineChart"        // Line Chart
-	ComponentTypePieChart         ComponentType = "pieChart"         // Pie Chart
-	ComponentTypeAreaChart        ComponentType = "areaChart"        // Area Chart
-	ComponentTypeRadarChart       ComponentType = "radarChart"       // Radar Chart
-	ComponentTypeHeatmapChart     ComponentType = "heatmapChart"     // Heat Map
-	ComponentTypeScatterChart     ComponentType = "scatterChart"     // Scatter Plot
-	ComponentTypeFunnelChart      ComponentType = "funnelChart"      // Funnel Chart
-	ComponentTypeSankeyChart      ComponentType = "sankeyChart"      // Sankey Diagram
-	ComponentTypeSunburstChart    ComponentType = "sunburstChart"    // Sunburst Chart
-	ComponentTypeTreemapChart     ComponentType = "treemapChart"     // Tree Map
-	ComponentTypeCalendarChart    ComponentType = "calendarChart"    // Calendar Chart
-	ComponentTypeBumpChart        ComponentType = "bumpChart"        // Bump Chart
-	ComponentTypeStreamChart      ComponentType = "streamChart"      // Stream Chart
-	ComponentTypeWaffleChart      ComponentType = "waffleChart"      // Waffle Chart
+	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
+	ComponentTypeLineChart          ComponentType = "lineChart"          // Line Chart
+	ComponentTypePieChart           ComponentType = "pieChart"           // Pie Chart
+	ComponentTypeAreaChart          ComponentType = "areaChart"          // Area Chart
+	ComponentTypeRadarChart         ComponentType = "radarChart"         // Radar Chart
+	ComponentTypeHeatmapChart       ComponentType = "heatmapChart"       // Heat Map
+	ComponentTypeScatterChart       ComponentType = "scatterChart"       // Scatter Plot
+	ComponentTypeFunnelChart        ComponentType = "funnelChart"        // Funnel Chart
+	ComponentTypeSankeyChart        ComponentType = "sankeyChart"        // Sankey Diagram
+	ComponentTypeSunburstChart      ComponentType = "sunburstChart"      // Sunburst Chart
+	ComponentTypeTreemapChart       ComponentType = "treemapChart"       // Tree Map
+	ComponentTypeCalendarChart      ComponentType = "calendarChart"      // Calendar Chart
+	ComponentTypeBumpChart          ComponentType = "bumpChart"          // Bump Chart
+	ComponentTypeStreamChart        ComponentType = "streamChart"        // Stream Chart
+	ComponentTypeWaffleChart        ComponentType = "waffleChart"        // Waffle Chart
 	ComponentTypeCirclePackingChart ComponentType = "circlePackingChart" // Circle Packing
 )
 
@@ -71,11 +103,12 @@ type ComponentBlock struct {
 	Title         string                 `bson:"title,omitempty" json:"title,omitempty"`
 	Order         int                    `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
 	DataBinding   *DataBinding           `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
-	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`           // Grouping configuration for table components
-	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"` // Component-level auth (optional)
+	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
+	Table         *TableComponentConfig  `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
+	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
 	AuthorizeRole []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
-	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`               // Free-form config (columns, chart type, etc.)
-	Tabs          []TabPanelTab          `bson:"tabs,omitempty" json:"tabs,omitempty"`                 // For tabPanel type components
+	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
+	Tabs          []TabPanelTab          `bson:"tabs,omitempty" json:"tabs,omitempty"`                   // For tabPanel type components
 }
 
 // GridCell represents a cell in a grid layout
@@ -121,19 +154,19 @@ const (
 // Section represents a layout section (grid, tabs, or single component)
 // Supports both nested structure (Grid/Tabs/Component) and flat structure (direct grid properties)
 type Section struct {
-	ID        string           `bson:"id,omitempty" json:"id,omitempty"`     // for frontend references
-	Type      SectionType      `bson:"type,omitempty" json:"type,omitempty"` // "grid" | "tabs" | "component"
-	Order     int              `bson:"order,omitempty" json:"order,omitempty"`
-	
+	ID    string      `bson:"id,omitempty" json:"id,omitempty"`     // for frontend references
+	Type  SectionType `bson:"type,omitempty" json:"type,omitempty"` // "grid" | "tabs" | "component"
+	Order int         `bson:"order,omitempty" json:"order,omitempty"`
+
 	// Nested structure (preferred)
-	Grid      *GridSection     `bson:"grid,omitempty" json:"grid,omitempty"`
-	Tabs      *TabsSection     `bson:"tabs,omitempty" json:"tabs,omitempty"`
-	Component *ComponentBlock  `bson:"component,omitempty" json:"component,omitempty"`
-	
+	Grid      *GridSection    `bson:"grid,omitempty" json:"grid,omitempty"`
+	Tabs      *TabsSection    `bson:"tabs,omitempty" json:"tabs,omitempty"`
+	Component *ComponentBlock `bson:"component,omitempty" json:"component,omitempty"`
+
 	// Flat structure (for backward compatibility) - acts as implicit grid
-	Columns   int              `bson:"columns,omitempty" json:"columns,omitempty"`
-	Gap       int              `bson:"gap,omitempty" json:"gap,omitempty"`
-	Cells     []GridCell       `bson:"cells,omitempty" json:"cells,omitempty"`
+	Columns int        `bson:"columns,omitempty" json:"columns,omitempty"`
+	Gap     int        `bson:"gap,omitempty" json:"gap,omitempty"`
+	Cells   []GridCell `bson:"cells,omitempty" json:"cells,omitempty"`
 }
 
 // PageModel represents a page with hierarchical structure, auth, and layout
@@ -143,11 +176,11 @@ type PageModel struct {
 	Icon            string              `bson:"icon,omitempty" json:"icon,omitempty"`
 	Slug            string              `bson:"slug,omitempty" json:"slug,omitempty"` // e.g. "rewards", "rewards/members"
 	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
-	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                                   // order in sidebar under same parent
-	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`   // If true → used as parent group in sidebar, but no direct route
-	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`               // Page-level authentication
-	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                     // Page-level authorization
+	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
+	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`     // If true → used as parent group in sidebar, but no direct route
+	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
+	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
 	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
-	Sections        []Section           `bson:"sections,omitempty" json:"sections,omitempty"`                             // Layout: list of top-level sections
-	SubPage         *PageModel          `bson:"subPage,omitempty" json:"subPage,omitempty"`           // Nested subpage (alternative to ParentPageID)
+	Sections        []Section           `bson:"sections,omitempty" json:"sections,omitempty"`           // Layout: list of top-level sections
+	SubPage         *PageModel          `bson:"subPage,omitempty" json:"subPage,omitempty"`             // Nested subpage (alternative to ParentPageID)
 }

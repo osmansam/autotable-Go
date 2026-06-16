@@ -103,6 +103,47 @@ func TestValidateAndCreateOrUpdateContainer(t *testing.T) {
 	}
 }
 
+func TestValidatePageTableConfig(t *testing.T) {
+	valid := &PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field: "email",
+					Link: &TableLinkConfig{
+						Template: "mailto:{{value}}",
+						Type:     "email",
+					},
+				}}},
+			},
+		}},
+	}
+	if err := ValidatePageTableConfig(valid); err != nil {
+		t.Fatalf("ValidatePageTableConfig() error = %v", err)
+	}
+
+	invalid := &PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field: "website",
+					Link:  &TableLinkConfig{Type: "javascript"},
+				}}},
+			},
+		}},
+	}
+	if err := ValidatePageTableConfig(invalid); err == nil || !strings.Contains(err.Error(), "component 'orders-table': table column 'website': invalid linkType 'javascript'") {
+		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid table link type", err)
+	}
+}
+
 func TestFrontendLinkExamplesAreValid(t *testing.T) {
 	fields := []Field{
 		ExampleExternalLink(),
