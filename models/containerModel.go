@@ -66,6 +66,8 @@ type ActionSubmitConfig struct {
 	IncludeFields  []string               `bson:"includeFields,omitempty" json:"includeFields,omitempty"`
 	ExcludeFields  []string               `bson:"excludeFields,omitempty" json:"excludeFields,omitempty"`
 	ConstantValues map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	WorkflowName   string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+	WorkflowSchema string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
 }
 
 type ActionConfig struct {
