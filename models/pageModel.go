@@ -8,6 +8,7 @@ type BindingKind string
 const (
 	BindingKindSchema   BindingKind = "schema"
 	BindingKindPipeline BindingKind = "pipeline"
+	BindingKindWorkflow BindingKind = "workflow"
 	BindingKindApi      BindingKind = "api"
 	BindingKindFunction BindingKind = "function"
 )
@@ -17,6 +18,7 @@ type DataBinding struct {
 	Kind         BindingKind            `bson:"kind" json:"kind"` // "schema" | "pipeline" | "api" | "function"
 	SchemaName   string                 `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
 	PipelineName string                 `bson:"pipelineName,omitempty" json:"pipelineName,omitempty"`
+	WorkflowName string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	ApiName      string                 `bson:"apiName,omitempty" json:"apiName,omitempty"`
 	FunctionName string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
 	Params       map[string]interface{} `bson:"params,omitempty" json:"params,omitempty"` // Optional extra info (e.g., default filters, params)

@@ -79,6 +79,7 @@ type Redis struct {
 type PipelineStage struct {
 	Name            string   `bson:"name"`
 	PipelineJSON    string   `bson:"pipelineJson"`
+	OutputFields    []string `bson:"outputFields,omitempty" json:"outputFields,omitempty"`
 	IsAuthenticated bool     `bson:"isAuthenticated"`
 	IsAuthorized    bool     `bson:"isAuthorized"`
 	AuthorizeRole   []string `bson:"authorizeRole"`

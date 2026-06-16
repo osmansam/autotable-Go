@@ -205,6 +205,27 @@ type GetPaginatedDynamicItemsInput struct {
 	Container   *models.ContainerModel
 }
 
+type GetTableSourceInput struct {
+	TenantID     string
+	ProjectID    string
+	SourceType   string
+	Schema       string
+	PipelineName string
+	WorkflowName string
+	QueryString  string
+	Filter       bson.M
+	SearchKey    string
+	UserID       string
+	UserRole     string
+	Sort         bson.D
+	Pager        utils.Pager
+	Fields       []string
+	Params       map[string]interface{}
+	Container    *models.ContainerModel
+	PrepareStage func(string) string
+	AuditUser    *models.AuditUser
+}
+
 type GetPipelineInput struct {
 	TenantID     string
 	ProjectID    string
@@ -1576,6 +1597,210 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 	}
 
 	return resultItems, nil
+}
+
+func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourceInput) (fiber.Map, error) {
+	sourceType := strings.TrimSpace(input.SourceType)
+	if sourceType == "" {
+		sourceType = string(models.BindingKindSchema)
+	}
+
+	switch models.BindingKind(sourceType) {
+	case models.BindingKindSchema:
+		result, err := s.GetAllDynamicItemsWithPagination(ctx, GetPaginatedDynamicItemsInput{
+			TenantID:    input.TenantID,
+			ProjectID:   input.ProjectID,
+			Schema:      input.Schema,
+			QueryString: input.QueryString,
+			Filter:      input.Filter,
+			SearchKey:   input.SearchKey,
+			UserID:      input.UserID,
+			UserRole:    input.UserRole,
+			Sort:        input.Sort,
+			Pager:       input.Pager,
+			Container:   input.Container,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return projectTableSourceResponse(normalizeTableSourceResponse(result, input.Pager), input.Fields), nil
+	case models.BindingKindPipeline:
+		items, err := s.GetPipeline(ctx, GetPipelineInput{
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			Schema:       input.Schema,
+			PipelineName: input.PipelineName,
+			CurrentQuery: input.QueryString,
+			Container:    input.Container,
+			PrepareStage: input.PrepareStage,
+		})
+		if err != nil {
+			return nil, err
+		}
+		items = projectTableSourceItems(items, input.Fields)
+		return paginateTableSourceItems(items, input.Pager), nil
+	case models.BindingKindWorkflow:
+		result, err := s.ExecuteWorkflow(ctx, ExecuteWorkflowInput{
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			Schema:       input.Schema,
+			WorkflowName: input.WorkflowName,
+			Record:       input.Params,
+			StepOutputs:  map[string]interface{}{},
+			UserID:       input.UserID,
+			AuditUser:    input.AuditUser,
+			Container:    input.Container,
+		})
+		if err != nil {
+			return nil, err
+		}
+		items, ok := tableSourceRows(result.Data)
+		if !ok {
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: "Workflow table source must return an array of objects",
+				Data:    nil,
+			}
+		}
+		items = projectTableSourceItems(items, input.Fields)
+		return paginateTableSourceItems(items, input.Pager), nil
+	default:
+		return nil, &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "sourceType must be one of schema, pipeline, workflow",
+			Data:    nil,
+		}
+	}
+}
+
+func projectTableSourceResponse(response fiber.Map, fields []string) fiber.Map {
+	if len(fields) == 0 {
+		return response
+	}
+	if items, ok := tableSourceRows(response["items"]); ok {
+		response["items"] = projectTableSourceItems(items, fields)
+	}
+	return response
+}
+
+func projectTableSourceItems(items []map[string]interface{}, fields []string) []map[string]interface{} {
+	if len(fields) == 0 {
+		return items
+	}
+
+	allowed := make(map[string]struct{}, len(fields)+1)
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		allowed[field] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return items
+	}
+	allowed["_id"] = struct{}{}
+
+	projected := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		next := make(map[string]interface{}, len(allowed))
+		for key, value := range item {
+			if _, ok := allowed[key]; ok {
+				next[key] = value
+			}
+		}
+		projected = append(projected, next)
+	}
+	return projected
+}
+
+func normalizeTableSourceResponse(result interface{}, pager utils.Pager) fiber.Map {
+	switch response := result.(type) {
+	case fiber.Map:
+		return response
+	case map[string]interface{}:
+		return fiber.Map(response)
+	default:
+		items, _ := tableSourceRows(result)
+		return paginateTableSourceItems(items, pager)
+	}
+}
+
+func paginateTableSourceItems(items []map[string]interface{}, pager utils.Pager) fiber.Map {
+	totalItems := int64(len(items))
+	totalPages := 1
+	currentPage := 1
+
+	if pager.Enabled {
+		currentPage = pager.Page
+		if pager.Limit > 0 {
+			totalPages = int((totalItems + int64(pager.Limit) - 1) / int64(pager.Limit))
+		}
+		start := int(pager.Skip)
+		if start > len(items) {
+			start = len(items)
+		}
+		end := start + pager.Limit
+		if end > len(items) {
+			end = len(items)
+		}
+		items = items[start:end]
+	}
+
+	if totalItems == 0 {
+		totalPages = 0
+	}
+
+	return fiber.Map{
+		"items":       items,
+		"totalItems":  totalItems,
+		"totalPages":  totalPages,
+		"currentPage": currentPage,
+	}
+}
+
+func tableSourceRows(value interface{}) ([]map[string]interface{}, bool) {
+	switch rows := value.(type) {
+	case nil:
+		return []map[string]interface{}{}, true
+	case fiber.Map:
+		return tableSourceRows(rows["items"])
+	case map[string]interface{}:
+		return tableSourceRows(rows["items"])
+	case bson.M:
+		return tableSourceRows(rows["items"])
+	case []map[string]interface{}:
+		return rows, true
+	case []bson.M:
+		items := make([]map[string]interface{}, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, map[string]interface{}(row))
+		}
+		return items, true
+	case []interface{}:
+		items := make([]map[string]interface{}, 0, len(rows))
+		for _, row := range rows {
+			item, ok := tableSourceRow(row)
+			if !ok {
+				return nil, false
+			}
+			items = append(items, item)
+		}
+		return items, true
+	default:
+		return nil, false
+	}
+}
+
+func tableSourceRow(value interface{}) (map[string]interface{}, bool) {
+	switch row := value.(type) {
+	case map[string]interface{}:
+		return row, true
+	case bson.M:
+		return map[string]interface{}(row), true
+	default:
+		return nil, false
+	}
 }
 
 func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDynamicCodeInput) (DynamicExecutionResult, error) {
