@@ -14,6 +14,19 @@ var ValidLinkTypes = []string{
 	"file",
 }
 
+var ValidActionKinds = []string{
+	"edit",
+	"delete",
+	"update",
+	"link",
+}
+
+var ValidActionModalTypes = []string{
+	"",
+	"form",
+	"confirmation",
+}
+
 // ValidateFrontendLinkConfig validates the link configuration in a Frontend struct
 // Returns an error if LinkType is invalid or configuration is inconsistent
 func ValidateFrontendLinkConfig(f *Frontend) error {
@@ -72,6 +85,59 @@ func validateLinkType(linkType string) error {
 	)
 }
 
+func validateActionKind(kind string) error {
+	if kind == "" {
+		return fmt.Errorf("action kind is required")
+	}
+
+	for _, validKind := range ValidActionKinds {
+		if kind == validKind {
+			return nil
+		}
+	}
+
+	return fmt.Errorf(
+		"invalid action kind '%s': must be one of [%s]",
+		kind,
+		strings.Join(ValidActionKinds, ", "),
+	)
+}
+
+func validateActionModalType(modalType string) error {
+	for _, validType := range ValidActionModalTypes {
+		if modalType == validType {
+			return nil
+		}
+	}
+
+	return fmt.Errorf(
+		"invalid action modalType '%s': must be one of [form, confirmation]",
+		modalType,
+	)
+}
+
+func ValidateActionConfig(action ActionConfig) error {
+	if err := validateActionKind(action.Kind); err != nil {
+		return err
+	}
+	if err := validateActionModalType(action.ModalType); err != nil {
+		return err
+	}
+	if action.Kind == "link" && action.Path == "" {
+		return fmt.Errorf("link action '%s' requires path", action.Key)
+	}
+	return nil
+}
+
+func ValidateActionConfigs(actions []ActionConfig) error {
+	for _, action := range actions {
+		if err := ValidateActionConfig(action); err != nil {
+			return fmt.Errorf("action '%s': %w", action.Key, err)
+		}
+	}
+	return nil
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
@@ -84,6 +150,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 		if err := validateLinkType(column.Link.Type); err != nil {
 			return fmt.Errorf("table column '%s': %w", column.Field, err)
 		}
+	}
+	if err := ValidateActionConfigs(table.Actions); err != nil {
+		return fmt.Errorf("table actions: %w", err)
 	}
 
 	return nil
@@ -177,6 +246,9 @@ func ValidateFieldFrontendConfig(field *Field) error {
 		if err := ValidateFrontendLinkConfig(field.Frontend); err != nil {
 			return fmt.Errorf("field '%s': %w", field.Name, err)
 		}
+		if err := ValidateActionConfigs(field.Frontend.Actions); err != nil {
+			return fmt.Errorf("field '%s': frontend actions: %w", field.Name, err)
+		}
 	}
 
 	// Recursively validate children fields
@@ -199,6 +271,11 @@ func ValidateContainerFrontendConfig(container *ContainerModel) error {
 	for i := range container.Fields {
 		if err := ValidateFieldFrontendConfig(&container.Fields[i]); err != nil {
 			return fmt.Errorf("container '%s': %w", container.SchemaName, err)
+		}
+	}
+	if container.Frontend != nil {
+		if err := ValidateActionConfigs(container.Frontend.Actions); err != nil {
+			return fmt.Errorf("container '%s': frontend actions: %w", container.SchemaName, err)
 		}
 	}
 

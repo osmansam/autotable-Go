@@ -60,6 +60,7 @@ type TableComponentConfig struct {
 	Columns []TableColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
 	Rows    *TableRowsConfig    `bson:"rows,omitempty" json:"rows,omitempty"`
 	Cache   *TableCacheConfig   `bson:"cache,omitempty" json:"cache,omitempty"`
+	Actions []ActionConfig      `bson:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // ComponentType defines the type of component
