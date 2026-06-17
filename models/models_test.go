@@ -1,8 +1,11 @@
 package models
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func TestContainerModelSortFieldsByOrder(t *testing.T) {
@@ -141,6 +144,62 @@ func TestValidatePageTableConfig(t *testing.T) {
 	}
 	if err := ValidatePageTableConfig(invalid); err == nil || !strings.Contains(err.Error(), "component 'orders-table': table column 'website': invalid linkType 'javascript'") {
 		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid table link type", err)
+	}
+}
+
+func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
+	isNumberButtonsActive := true
+	isDisabled := true
+	formFields := []ActionFormFieldConfig{{
+		FormKey:               "location",
+		Type:                  "number",
+		InvalidateKeys:        []string{"product", "variant"},
+		IsNumberButtonsActive: &isNumberButtonsActive,
+		IsDisabled:            &isDisabled,
+	}}
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					Actions: []ActionConfig{{
+						Kind:       "update",
+						ButtonName: "Save stock",
+						FormFields: &formFields,
+					}},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	gotFields := got.Sections[0].Component.Table.Actions[0].FormFields
+	if gotFields == nil {
+		t.Fatal("FormFields = nil, want persisted form fields")
+	}
+	if !reflect.DeepEqual((*gotFields)[0].InvalidateKeys, []string{"product", "variant"}) {
+		t.Fatalf("InvalidateKeys = %#v, want %#v", (*gotFields)[0].InvalidateKeys, []string{"product", "variant"})
+	}
+	if (*gotFields)[0].IsNumberButtonsActive == nil || !*(*gotFields)[0].IsNumberButtonsActive {
+		t.Fatalf("IsNumberButtonsActive = %#v, want true", (*gotFields)[0].IsNumberButtonsActive)
+	}
+	if (*gotFields)[0].IsDisabled == nil || !*(*gotFields)[0].IsDisabled {
+		t.Fatalf("IsDisabled = %#v, want true", (*gotFields)[0].IsDisabled)
+	}
+	if gotButtonName := got.Sections[0].Component.Table.Actions[0].ButtonName; gotButtonName != "Save stock" {
+		t.Fatalf("ButtonName = %q, want %q", gotButtonName, "Save stock")
 	}
 }
 

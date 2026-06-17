@@ -44,7 +44,9 @@ type ActionFormFieldConfig struct {
 	Required              *bool                    `bson:"required,omitempty" json:"required,omitempty"`
 	RequiredCondition     string                   `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
 	DisabledCondition     string                   `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+	IsDisabled            *bool                    `bson:"isDisabled,omitempty" json:"isDisabled,omitempty"`
 	IsMultiple            *bool                    `bson:"isMultiple,omitempty" json:"isMultiple,omitempty"`
+	IsNumberButtonsActive *bool                    `bson:"isNumberButtonsActive,omitempty" json:"isNumberButtonsActive,omitempty"`
 	OptionsSource         string                   `bson:"optionsSource,omitempty" json:"optionsSource,omitempty"`
 	StaticOptions         []ActionFormOptionConfig `bson:"staticOptions,omitempty" json:"staticOptions,omitempty"`
 	StaticOptionsJson     string                   `bson:"staticOptionsJson,omitempty" json:"staticOptionsJson,omitempty"`
@@ -52,6 +54,7 @@ type ActionFormFieldConfig struct {
 	SourceValueField      string                   `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`
 	SourceLabelField      string                   `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`
 	SourceFilterCondition string                   `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
+	InvalidateKeys        []string                 `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 	DefaultValue          interface{}              `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
 	Min                   interface{}              `bson:"min,omitempty" json:"min,omitempty"`
 	Max                   interface{}              `bson:"max,omitempty" json:"max,omitempty"`
@@ -75,6 +78,7 @@ type ActionConfig struct {
 	Key                string                   `bson:"key" json:"key"`
 	Name               string                   `bson:"name,omitempty" json:"name,omitempty"`
 	Label              string                   `bson:"label,omitempty" json:"label,omitempty"`
+	ButtonName         string                   `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
 	Kind               string                   `bson:"kind" json:"kind"` // edit | delete | update | link
 	Icon               string                   `bson:"icon,omitempty" json:"icon,omitempty"`
 	ClassName          string                   `bson:"className,omitempty" json:"className,omitempty"`

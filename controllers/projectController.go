@@ -349,6 +349,24 @@ func CreateProject(c *fiber.Ctx) error {
 		log.Printf("Warning: Failed to create notification indexes: %v", err)
 	}
 
+	email, _ := c.Locals("email").(string)
+	tokens, err := utils.GenerateTenantTokens(
+		userID,
+		email,
+		tenantID,
+		newProject.ID.Hex(),
+		projectMembership.Roles,
+		string(models.RoleScopeProject),
+	)
+	if err != nil {
+		log.Printf("Failed to generate project tokens after project creation: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Project created, but failed to generate project tokens",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
 		Message: "Project created successfully",
@@ -356,6 +374,8 @@ func CreateProject(c *fiber.Ctx) error {
 			"project":              newProject,
 			"membership":           projectMembership,
 			"containersCollection": containersCollectionName,
+			"accessToken":          tokens.AccessToken,
+			"refreshToken":         tokens.RefreshToken,
 		},
 	})
 }

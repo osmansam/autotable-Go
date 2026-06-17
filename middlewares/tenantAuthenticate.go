@@ -54,7 +54,7 @@ func TenantAuthorize(requiredRoles []string) fiber.Handler {
 		userRoles, ok := c.Locals("roles").([]string)
 		if !ok || len(userRoles) == 0 {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "No roles found",
+				"error": "No project roles found. Switch to a project and use the returned project access token.",
 			})
 		}
 

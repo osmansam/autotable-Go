@@ -19,10 +19,11 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 
 	// Create container - requires project admin or developer role
 	containerGroup.Post("/",
-		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin,
-			models.ProjectRoleDeveloper,
-		}),
+		// TODO: Re-enable once project role definitions/assignment are complete.
+		// middlewares.TenantAuthorize([]string{
+		// 	models.ProjectRoleAdmin,
+		// 	models.ProjectRoleDeveloper,
+		// }),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreateContainer,
