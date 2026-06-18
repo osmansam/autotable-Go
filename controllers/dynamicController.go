@@ -257,15 +257,17 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
+	valueField := c.Query("valueField")
 
 	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
 	items, err := dynamicService.GetItemsForSelection(ctx, services.GetItemsForSelectionInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		FieldName: fieldName,
-		UserRole:  userRole,
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		Schema:     schemaName,
+		FieldName:  fieldName,
+		ValueField: valueField,
+		UserRole:   userRole,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch items")

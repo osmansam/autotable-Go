@@ -310,7 +310,7 @@ func (r *DynamicRepository) Query(ctx context.Context, tenantID, projectID, sche
 	return result, err
 }
 
-func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string) ([]map[string]interface{}, error) {
+func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string, extraFields ...string) ([]map[string]interface{}, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_for_selection", schemaName)...)
 	status := "success"
 	var spanErr error
@@ -318,6 +318,12 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 	projection := bson.M{
 		"_id":     1,
 		fieldName: 1,
+	}
+	for _, extraField := range extraFields {
+		if extraField == "" || extraField == "_id" {
+			continue
+		}
+		projection[extraField] = 1
 	}
 
 	cursor, err := r.GetCollection(tenantID, projectID, schemaName).Find(ctx, bson.M{}, options.Find().SetProjection(projection))

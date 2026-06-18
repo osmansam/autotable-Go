@@ -145,11 +145,12 @@ type GetAllDynamicItemsInput struct {
 }
 
 type GetItemsForSelectionInput struct {
-	TenantID  string
-	ProjectID string
-	Schema    string
-	FieldName string
-	UserRole  string
+	TenantID   string
+	ProjectID  string
+	Schema     string
+	FieldName  string
+	ValueField string
+	UserRole   string
 }
 
 type GetDynamicItemInput struct {
@@ -1015,6 +1016,50 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 	return items, nil
 }
 
+func validateSelectionFields(container *models.ContainerModel, fieldNames []string, userRole string) error {
+	requestedFields := map[string]struct{}{}
+	for _, fieldName := range fieldNames {
+		if fieldName == "" || fieldName == "_id" {
+			continue
+		}
+		requestedFields[fieldName] = struct{}{}
+	}
+
+	for _, field := range container.Fields {
+		if _, ok := requestedFields[field.Name]; !ok {
+			continue
+		}
+
+		if len(field.AuthorizeRole) > 0 {
+			authorized := false
+			for _, role := range field.AuthorizeRole {
+				if role == userRole {
+					authorized = true
+					break
+				}
+			}
+			if !authorized {
+				return &ServiceError{
+					Status:  http.StatusForbidden,
+					Message: "Access to this field is restricted",
+					Data:    nil,
+				}
+			}
+		}
+
+		if field.IsHashed {
+			log.Printf("Attempted to access hashed field %s in schema %s", field.Name, container.SchemaName)
+			return &ServiceError{
+				Status:  http.StatusForbidden,
+				Message: "Cannot access hashed fields",
+				Data:    nil,
+			}
+		}
+	}
+
+	return nil
+}
+
 func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItemsForSelectionInput) ([]map[string]interface{}, error) {
 	if input.Schema == "" || input.FieldName == "" {
 		return nil, &ServiceError{
@@ -1034,8 +1079,15 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
+	requestedFields := map[string]struct{}{
+		input.FieldName: {},
+	}
+	if input.ValueField != "" && input.ValueField != "_id" {
+		requestedFields[input.ValueField] = struct{}{}
+	}
+
 	for _, field := range container.Fields {
-		if field.Name != input.FieldName {
+		if _, ok := requestedFields[field.Name]; !ok {
 			continue
 		}
 
@@ -1057,7 +1109,7 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 
 		if field.IsHashed {
-			log.Printf("Attempted to access hashed field %s in schema %s", input.FieldName, input.Schema)
+			log.Printf("Attempted to access hashed field %s in schema %s", field.Name, input.Schema)
 			return nil, &ServiceError{
 				Status:  http.StatusForbidden,
 				Message: "Cannot access hashed fields",
@@ -1066,7 +1118,7 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName)
+	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.ValueField)
 	if err != nil {
 		log.Printf("Failed to query collection %s: %v", input.Schema, err)
 		return nil, &ServiceError{

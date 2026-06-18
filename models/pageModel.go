@@ -26,8 +26,14 @@ type DataBinding struct {
 
 // GroupBy defines grouping configuration for table components
 type GroupBy struct {
-	GroupByObjectId string `bson:"groupByObjectId,omitempty" json:"groupByObjectId,omitempty"` // Schema name to group by (e.g., "can")
-	GroupByField    string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`       // Field name to display from grouped object (e.g., "name")
+	GroupByObjectId   string `bson:"groupByObjectId,omitempty" json:"groupByObjectId,omitempty"`     // Legacy source schema / filter field.
+	GroupByField      string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`           // Legacy label field / filter field.
+	GroupedSchemaName string `bson:"groupedSchemaName,omitempty" json:"groupedSchemaName,omitempty"` // Schema/table being grouped.
+	GroupedField      string `bson:"groupedField,omitempty" json:"groupedField,omitempty"`           // Field on grouped schema used for filtering.
+	SourceSchemaName  string `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`   // Schema used to build grouped tabs.
+	SourceValueField  string `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`   // Value field from source items.
+	SourceLabelField  string `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`   // Label field from source items.
+	FilterField       string `bson:"filterField,omitempty" json:"filterField,omitempty"`             // Legacy table field filtered by each source value.
 }
 
 // TableLinkConfig defines link rendering for a table column.
