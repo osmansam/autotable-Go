@@ -140,6 +140,23 @@ func ValidateActionConfigs(actions []ActionConfig) error {
 	return nil
 }
 
+func ValidateFilterPanelConfig(filterPanel *TableFilterPanelConfig) error {
+	if filterPanel == nil || filterPanel.Inputs == nil {
+		return nil
+	}
+
+	for index, input := range *filterPanel.Inputs {
+		if input.FormKey == "" {
+			return fmt.Errorf("filter input %d requires formKey", index)
+		}
+		if input.Type == "" {
+			return fmt.Errorf("filter input '%s' requires type", input.FormKey)
+		}
+	}
+
+	return nil
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
@@ -155,6 +172,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	}
 	if err := ValidateActionConfigs(table.Actions); err != nil {
 		return fmt.Errorf("table actions: %w", err)
+	}
+	if err := ValidateFilterPanelConfig(table.FilterPanel); err != nil {
+		return fmt.Errorf("table filterPanel: %w", err)
 	}
 
 	return nil

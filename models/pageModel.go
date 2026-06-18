@@ -55,12 +55,18 @@ type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 }
 
+// TableFilterPanelConfig defines editable filter inputs for a table component.
+type TableFilterPanelConfig struct {
+	Inputs *[]ActionFormFieldConfig `bson:"inputs,omitempty" json:"inputs,omitempty"`
+}
+
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	Columns []TableColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows    *TableRowsConfig    `bson:"rows,omitempty" json:"rows,omitempty"`
-	Cache   *TableCacheConfig   `bson:"cache,omitempty" json:"cache,omitempty"`
-	Actions []ActionConfig      `bson:"actions,omitempty" json:"actions,omitempty"`
+	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
+	Rows        *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
+	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
+	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
+	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
 
 // ComponentType defines the type of component

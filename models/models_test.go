@@ -203,6 +203,59 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableFilterPanelInputsRoundTrip(t *testing.T) {
+	isMultiple := true
+	inputs := []ActionFormFieldConfig{{
+		FormKey:           "status",
+		Type:              "select",
+		FormKeyType:       "stringArray",
+		Label:             "Status",
+		Placeholder:       "Status",
+		IsMultiple:        &isMultiple,
+		OptionsSource:     "static",
+		StaticOptionsJson: `[{"value":"active","label":"Active"}]`,
+	}}
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					FilterPanel: &TableFilterPanelConfig{
+						Inputs: &inputs,
+					},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	gotInputs := got.Sections[0].Component.Table.FilterPanel.Inputs
+	if gotInputs == nil {
+		t.Fatal("FilterPanel.Inputs = nil, want persisted filter inputs")
+	}
+	if (*gotInputs)[0].FormKey != "status" {
+		t.Fatalf("FormKey = %q, want status", (*gotInputs)[0].FormKey)
+	}
+	if (*gotInputs)[0].IsMultiple == nil || !*(*gotInputs)[0].IsMultiple {
+		t.Fatalf("IsMultiple = %#v, want true", (*gotInputs)[0].IsMultiple)
+	}
+	if (*gotInputs)[0].StaticOptionsJson == "" {
+		t.Fatal("StaticOptionsJson = empty, want persisted static options")
+	}
+}
+
 func TestFrontendLinkExamplesAreValid(t *testing.T) {
 	fields := []Field{
 		ExampleExternalLink(),
