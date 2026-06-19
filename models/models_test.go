@@ -256,6 +256,56 @@ func TestPageTableFilterPanelInputsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageRouteParamSlugAndBindingParamsRoundTrip(t *testing.T) {
+	isOnSidebar := false
+	page := PageModel{
+		Name:        "Count Detail",
+		Slug:        "count/:id",
+		IsOnSidebar: &isOnSidebar,
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:    "count-summary",
+				Type:  ComponentTypeBarChart,
+				Title: "Count Summary",
+				DataBinding: &DataBinding{
+					Kind:         BindingKindPipeline,
+					SchemaName:   "account_counts",
+					PipelineName: "count_summary",
+					Params: map[string]interface{}{
+						"countList": "{{route.id}}",
+					},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	if got.Slug != "count/:id" {
+		t.Fatalf("Slug = %q, want %q", got.Slug, "count/:id")
+	}
+	if got.IsOnSidebar == nil || *got.IsOnSidebar {
+		t.Fatalf("IsOnSidebar = %#v, want false", got.IsOnSidebar)
+	}
+
+	gotBinding := got.Sections[0].Component.DataBinding
+	if gotBinding == nil {
+		t.Fatal("DataBinding = nil, want persisted binding")
+	}
+	if gotBinding.Params["countList"] != "{{route.id}}" {
+		t.Fatalf("Params[countList] = %#v, want {{route.id}}", gotBinding.Params["countList"])
+	}
+}
+
 func TestFrontendLinkExamplesAreValid(t *testing.T) {
 	fields := []Field{
 		ExampleExternalLink(),

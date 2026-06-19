@@ -193,6 +193,7 @@ type PageModel struct {
 	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
 	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
 	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`     // If true → used as parent group in sidebar, but no direct route
+	IsOnSidebar     *bool               `bson:"isOnSidebar,omitempty" json:"isOnSidebar,omitempty"`     // If false → route exists but is hidden from sidebar navigation
 	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
 	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
 	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
