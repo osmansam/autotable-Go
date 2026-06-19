@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,6 +22,83 @@ func TestContainerModelSortFieldsByOrder(t *testing.T) {
 		if got := container.Fields[i].Name; got != want {
 			t.Fatalf("Fields[%d].Name = %q, want %q", i, got, want)
 		}
+	}
+}
+
+func TestInfoBlocksComponentPreservesBindingAndBlockConfig(t *testing.T) {
+	page := PageModel{
+		Name: "Inventory",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:    "stock-summary",
+				Type:  ComponentTypeInfoBlocks,
+				Title: "Stock summary",
+				DataBinding: &DataBinding{
+					Kind:         BindingKindWorkflow,
+					SchemaName:   "products",
+					WorkflowName: "stockSummary",
+				},
+				Props: map[string]interface{}{
+					"infoBlocks": InfoBlocksConfig{
+						Source: "workflow",
+						Items: []InfoBlockItemConfig{{
+							Title:  "Critical",
+							Value:  "{{quantity}}",
+							Footer: "urun",
+							Color:  "#ef4444",
+							TitleColorRules: []InfoBlockColorRule{{
+								Condition: "{{quantity}} > 4",
+								Color:     "#16a34a",
+							}},
+							FooterColorRules: []InfoBlockColorRule{{
+								Condition: "default",
+								Color:     "#dc2626",
+							}},
+						}},
+					},
+				},
+			},
+		}},
+	}
+
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal(PageModel) error = %v", err)
+	}
+
+	var got PageModel
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("json.Unmarshal(PageModel) error = %v", err)
+	}
+
+	component := got.Sections[0].Component
+	if component.Type != ComponentTypeInfoBlocks {
+		t.Fatalf("component.Type = %q, want %q", component.Type, ComponentTypeInfoBlocks)
+	}
+	if component.DataBinding == nil || component.DataBinding.WorkflowName != "stockSummary" {
+		t.Fatalf("DataBinding = %#v, want workflowName stockSummary", component.DataBinding)
+	}
+	config, ok := component.Props["infoBlocks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("infoBlocks config type = %T, want map[string]interface{}", component.Props["infoBlocks"])
+	}
+	if config["source"] != "workflow" {
+		t.Fatalf("infoBlocks.source = %v, want workflow", config["source"])
+	}
+	items, ok := config["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("infoBlocks.items = %#v, want one item", config["items"])
+	}
+	item, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("infoBlocks.items[0] = %T, want map[string]interface{}", items[0])
+	}
+	if _, ok := item["titleColorRules"].([]interface{}); !ok {
+		t.Fatalf("titleColorRules = %#v, want serialized color rules", item["titleColorRules"])
+	}
+	if _, ok := item["footerColorRules"].([]interface{}); !ok {
+		t.Fatalf("footerColorRules = %#v, want serialized color rules", item["footerColorRules"])
 	}
 }
 
@@ -144,6 +222,111 @@ func TestValidatePageTableConfig(t *testing.T) {
 	}
 	if err := ValidatePageTableConfig(invalid); err == nil || !strings.Contains(err.Error(), "component 'orders-table': table column 'website': invalid linkType 'javascript'") {
 		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid table link type", err)
+	}
+}
+
+func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Inventory",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "inventory-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field:         "stockLevel",
+					Type:          "computedLabel",
+					DisplayName:   "Stock Level",
+					FallbackValue: "unknown",
+					ComputedLabelRules: []TableComputedLabelRule{
+						{Condition: "stock == 1", Value: "critical"},
+						{Condition: "stock > 1 && stock < 4", Value: "low"},
+						{Condition: "stock > 3", Value: "enough"},
+					},
+				}}},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	column := got.Sections[0].Component.Table.Columns[0]
+	if column.Type != "computedLabel" {
+		t.Fatalf("Type = %q, want computedLabel", column.Type)
+	}
+	if column.FallbackValue != "unknown" {
+		t.Fatalf("FallbackValue = %q, want unknown", column.FallbackValue)
+	}
+	if len(column.ComputedLabelRules) != 3 {
+		t.Fatalf("ComputedLabelRules length = %d, want 3", len(column.ComputedLabelRules))
+	}
+	if column.ComputedLabelRules[0].Condition != "stock == 1" || column.ComputedLabelRules[0].Value != "critical" {
+		t.Fatalf("ComputedLabelRules[0] = %#v, want critical stock rule", column.ComputedLabelRules[0])
+	}
+}
+
+func TestPageTableProgressBarColumnRoundTrip(t *testing.T) {
+	showValue := true
+	page := PageModel{
+		Name: "Inventory",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "inventory-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field:       "stockProgress",
+					Type:        "progressBar",
+					DisplayName: "Stock",
+					ProgressBar: &TableProgressBarConfig{
+						SourceField: "stock",
+						Max:         8,
+						Color:       "#4d9f24",
+						TrackColor:  "#e7e5df",
+						Height:      12,
+						Width:       260,
+						ShowValue:   &showValue,
+						ColorRules: []TableProgressBarColorRule{
+							{Condition: "stock < 2", Color: "#ef4444"},
+							{Condition: "stock > 1 && stock < 4", Color: "#f59e0b"},
+							{Condition: "stock > 3", Color: "#4d9f24"},
+						},
+					},
+				}}},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	progressBar := got.Sections[0].Component.Table.Columns[0].ProgressBar
+	if progressBar == nil {
+		t.Fatal("ProgressBar = nil, want persisted config")
+	}
+	if progressBar.SourceField != "stock" || progressBar.Max != 8 {
+		t.Fatalf("ProgressBar = %#v, want stock source with max 8", progressBar)
+	}
+	if progressBar.ShowValue == nil || !*progressBar.ShowValue {
+		t.Fatalf("ShowValue = %#v, want true", progressBar.ShowValue)
+	}
+	if len(progressBar.ColorRules) != 3 {
+		t.Fatalf("ColorRules length = %d, want 3", len(progressBar.ColorRules))
 	}
 }
 

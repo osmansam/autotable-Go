@@ -45,10 +45,39 @@ type TableLinkConfig struct {
 
 // TableColumnConfig defines display and cell behavior for one table column.
 type TableColumnConfig struct {
-	Field         string           `bson:"field" json:"field"`
-	DisplayName   string           `bson:"displayName,omitempty" json:"displayName,omitempty"`
-	CellClassName []RowClassConfig `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
-	Link          *TableLinkConfig `bson:"link,omitempty" json:"link,omitempty"`
+	Field              string                   `bson:"field" json:"field"`
+	Type               string                   `bson:"type,omitempty" json:"type,omitempty"`
+	DisplayName        string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	ComputedLabelRules []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
+	FallbackValue      string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
+	ProgressBar        *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
+	CellClassName      []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
+	Link               *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+}
+
+// TableComputedLabelRule defines one frontend-computed table label rule.
+type TableComputedLabelRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Value     string `bson:"value,omitempty" json:"value,omitempty"`
+}
+
+// TableProgressBarConfig defines frontend progress-bar rendering for a column.
+type TableProgressBarConfig struct {
+	SourceField string                      `bson:"sourceField,omitempty" json:"sourceField,omitempty"`
+	Max         float64                     `bson:"max,omitempty" json:"max,omitempty"`
+	MaxField    string                      `bson:"maxField,omitempty" json:"maxField,omitempty"`
+	Color       string                      `bson:"color,omitempty" json:"color,omitempty"`
+	TrackColor  string                      `bson:"trackColor,omitempty" json:"trackColor,omitempty"`
+	Height      float64                     `bson:"height,omitempty" json:"height,omitempty"`
+	Width       float64                     `bson:"width,omitempty" json:"width,omitempty"`
+	ShowValue   *bool                       `bson:"showValue,omitempty" json:"showValue,omitempty"`
+	ColorRules  []TableProgressBarColorRule `bson:"colorRules,omitempty" json:"colorRules,omitempty"`
+}
+
+// TableProgressBarColorRule defines one conditional bar color rule.
+type TableProgressBarColorRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Color     string `bson:"color,omitempty" json:"color,omitempty"`
 }
 
 // TableRowsConfig defines row-level table behavior.
@@ -79,11 +108,12 @@ type TableComponentConfig struct {
 type ComponentType string
 
 const (
-	ComponentTypeTable    ComponentType = "table"
-	ComponentTypeTabPanel ComponentType = "tabPanel" // tabPanel with embedded tabs
-	ComponentTypeForm     ComponentType = "form"
-	ComponentTypeText     ComponentType = "text"
-	ComponentTypeCustom   ComponentType = "custom"
+	ComponentTypeTable      ComponentType = "table"
+	ComponentTypeTabPanel   ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeForm       ComponentType = "form"
+	ComponentTypeText       ComponentType = "text"
+	ComponentTypeCustom     ComponentType = "custom"
+	ComponentTypeInfoBlocks ComponentType = "infoBlocks"
 
 	// Chart Types - Specific chart components
 	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
@@ -103,6 +133,28 @@ const (
 	ComponentTypeWaffleChart        ComponentType = "waffleChart"        // Waffle Chart
 	ComponentTypeCirclePackingChart ComponentType = "circlePackingChart" // Circle Packing
 )
+
+// InfoBlocksConfig defines the card group configuration stored in component props.
+type InfoBlocksConfig struct {
+	Source string                `bson:"source,omitempty" json:"source,omitempty"`
+	Items  []InfoBlockItemConfig `bson:"items,omitempty" json:"items,omitempty"`
+}
+
+// InfoBlockItemConfig defines one information card in an infoBlocks component.
+type InfoBlockItemConfig struct {
+	Title            string               `bson:"title,omitempty" json:"title,omitempty"`
+	Value            string               `bson:"value,omitempty" json:"value,omitempty"`
+	Footer           string               `bson:"footer,omitempty" json:"footer,omitempty"`
+	Color            string               `bson:"color,omitempty" json:"color,omitempty"`
+	TitleColorRules  []InfoBlockColorRule `bson:"titleColorRules,omitempty" json:"titleColorRules,omitempty"`
+	FooterColorRules []InfoBlockColorRule `bson:"footerColorRules,omitempty" json:"footerColorRules,omitempty"`
+}
+
+// InfoBlockColorRule defines conditional text color behavior for an info block.
+type InfoBlockColorRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Color     string `bson:"color,omitempty" json:"color,omitempty"`
+}
 
 // TabPanelTab represents a tab inside a tabPanel component
 type TabPanelTab struct {
