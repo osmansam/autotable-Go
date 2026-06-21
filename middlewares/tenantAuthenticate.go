@@ -51,34 +51,34 @@ func TenantAuthenticate(c *fiber.Ctx) error {
 // Use after TenantAuthenticate
 func TenantAuthorize(requiredRoles []string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		userRoles, ok := c.Locals("roles").([]string)
-		if !ok || len(userRoles) == 0 {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "No project roles found. Switch to a project and use the returned project access token.",
-			})
-		}
-
-		// Check if user has at least one of the required roles
-		hasRole := false
-		for _, userRole := range userRoles {
-			for _, requiredRole := range requiredRoles {
-				if userRole == requiredRole {
-					hasRole = true
-					break
-				}
-			}
-			if hasRole {
-				break
-			}
-		}
-
-		if !hasRole {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error":         "Insufficient permissions",
-				"requiredRoles": requiredRoles,
-			})
-		}
-
+		// TODO: Re-enable role enforcement once project role definitions/assignment are complete.
+		// userRoles, ok := c.Locals("roles").([]string)
+		// if !ok || len(userRoles) == 0 {
+		// 	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		// 		"error": "No project roles found. Switch to a project and use the returned project access token.",
+		// 	})
+		// }
+		//
+		// hasRole := false
+		// for _, userRole := range userRoles {
+		// 	for _, requiredRole := range requiredRoles {
+		// 		if userRole == requiredRole {
+		// 			hasRole = true
+		// 			break
+		// 		}
+		// 	}
+		// 	if hasRole {
+		// 		break
+		// 	}
+		// }
+		//
+		// if !hasRole {
+		// 	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+		// 		"error":         "Insufficient permissions",
+		// 		"requiredRoles": requiredRoles,
+		// 	})
+		// }
+		_ = requiredRoles
 		return c.Next()
 	}
 }

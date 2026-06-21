@@ -124,10 +124,14 @@ func sendDynamicError(c *fiber.Ctx, err error, genericMessage string) error {
 	}
 
 	if serviceErr, ok := err.(*services.ServiceError); ok {
+		data := serviceErr.Data
+		if data == nil && serviceErr.Err != nil {
+			data = fiber.Map{"error": serviceErr.Err.Error()}
+		}
 		return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
 			Status:  serviceErr.Status,
 			Message: serviceErr.Message,
-			Data:    serviceErr.Data,
+			Data:    data,
 		})
 	}
 
@@ -608,7 +612,8 @@ func GetPipeline(c *fiber.Ctx) error {
 		CurrentQuery: params.CurrentQuery,
 		Container:    container,
 		PrepareStage: func(pipelineJSON string) string {
-			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
 	})
 	if err != nil {
@@ -719,7 +724,8 @@ func GetTableSource(c *fiber.Ctx) error {
 		Params:       tableSourceParams(c),
 		Container:    container,
 		PrepareStage: func(pipelineJSON string) string {
-			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
 		AuditUser: utils.GetUserFromContext(c),
 	})
@@ -839,7 +845,8 @@ func TestPipeline(c *fiber.Ctx) error {
 		UserRole:      userRole,
 		PipelineStage: requestBody.PipelineStage,
 		PrepareStage: func(pipelineJSON string) string {
-			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
 	})
 	if err != nil {

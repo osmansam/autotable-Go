@@ -42,6 +42,18 @@ func TestReplacePlaceholdersWithQueryParams(t *testing.T) {
 	}
 }
 
+func TestReplacePlaceholdersWithProjectContext(t *testing.T) {
+	got := ReplacePlaceholdersWithProjectContext(
+		`[{"$lookup":{"from":"{{projectCollection:product}}"}},{"$match":{"tenant":"{{tenantID}}","project":"{{projectID}}"}}]`,
+		"tenant1",
+		"project1",
+	)
+	want := `[{"$lookup":{"from":"tenant_tenant1_project_project1_product"}},{"$match":{"tenant":"tenant1","project":"project1"}}]`
+	if got != want {
+		t.Fatalf("ReplacePlaceholdersWithProjectContext() = %q, want %q", got, want)
+	}
+}
+
 func TestBuildFilterFromQuery(t *testing.T) {
 	container := &models.ContainerModel{Fields: []models.Field{
 		{Name: "age", Type: "int"},

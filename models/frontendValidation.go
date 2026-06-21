@@ -15,6 +15,7 @@ var ValidLinkTypes = []string{
 }
 
 var ValidActionKinds = []string{
+	"create",
 	"edit",
 	"delete",
 	"update",
@@ -172,6 +173,11 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	}
 	if err := ValidateActionConfigs(table.Actions); err != nil {
 		return fmt.Errorf("table actions: %w", err)
+	}
+	if table.AddButton != nil {
+		if err := ValidateActionConfig(*table.AddButton); err != nil {
+			return fmt.Errorf("table addButton: %w", err)
+		}
 	}
 	if err := ValidateFilterPanelConfig(table.FilterPanel); err != nil {
 		return fmt.Errorf("table filterPanel: %w", err)

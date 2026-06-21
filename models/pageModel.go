@@ -100,6 +100,7 @@ type TableComponentConfig struct {
 	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
 	Rows        *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
 	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
+	AddButton   *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
 	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
 	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
@@ -108,12 +109,13 @@ type TableComponentConfig struct {
 type ComponentType string
 
 const (
-	ComponentTypeTable      ComponentType = "table"
-	ComponentTypeTabPanel   ComponentType = "tabPanel" // tabPanel with embedded tabs
-	ComponentTypeForm       ComponentType = "form"
-	ComponentTypeText       ComponentType = "text"
-	ComponentTypeCustom     ComponentType = "custom"
-	ComponentTypeInfoBlocks ComponentType = "infoBlocks"
+	ComponentTypeTable              ComponentType = "table"
+	ComponentTypeTabPanel           ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeForm               ComponentType = "form"
+	ComponentTypeText               ComponentType = "text"
+	ComponentTypeCustom             ComponentType = "custom"
+	ComponentTypeInfoBlocks         ComponentType = "infoBlocks"
+	ComponentTypeDistributionBlocks ComponentType = "distributionBlocks"
 
 	// Chart Types - Specific chart components
 	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
@@ -154,6 +156,20 @@ type InfoBlockItemConfig struct {
 type InfoBlockColorRule struct {
 	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
 	Color     string `bson:"color,omitempty" json:"color,omitempty"`
+}
+
+// DistributionBlocksConfig defines metric tiles with progress rows stored in component props.
+type DistributionBlocksConfig struct {
+	Source string                        `bson:"source,omitempty" json:"source,omitempty"`
+	Items  []DistributionBlockItemConfig `bson:"items,omitempty" json:"items,omitempty"`
+}
+
+// DistributionBlockItemConfig defines one metric/progress item in a distributionBlocks component.
+type DistributionBlockItemConfig struct {
+	Label   string `bson:"label,omitempty" json:"label,omitempty"`
+	Value   string `bson:"value,omitempty" json:"value,omitempty"`
+	Percent string `bson:"percent,omitempty" json:"percent,omitempty"`
+	Color   string `bson:"color,omitempty" json:"color,omitempty"`
 }
 
 // TabPanelTab represents a tab inside a tabPanel component

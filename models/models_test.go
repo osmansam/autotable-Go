@@ -102,6 +102,72 @@ func TestInfoBlocksComponentPreservesBindingAndBlockConfig(t *testing.T) {
 	}
 }
 
+func TestDistributionBlocksComponentPreservesBindingAndConfig(t *testing.T) {
+	page := PageModel{
+		Name: "Categories",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:    "category-distribution",
+				Type:  ComponentTypeDistributionBlocks,
+				Title: `{{total > 0 ? "Kategori Dağılımı (adet)" : "Kategori yok"}}`,
+				DataBinding: &DataBinding{
+					Kind:         BindingKindWorkflow,
+					SchemaName:   "products",
+					WorkflowName: "categorySummary",
+				},
+				Props: map[string]interface{}{
+					"distributionBlocks": DistributionBlocksConfig{
+						Source: "workflow",
+						Items: []DistributionBlockItemConfig{{
+							Label:   `{{strategy > 10 ? "↑ Strateji" : "Strateji"}}`,
+							Value:   "{{strategy}}",
+							Percent: "{{strategyPercent}}",
+							Color:   "#4f46e5",
+						}},
+					},
+				},
+			},
+		}},
+	}
+
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal(PageModel) error = %v", err)
+	}
+
+	var got PageModel
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("json.Unmarshal(PageModel) error = %v", err)
+	}
+
+	component := got.Sections[0].Component
+	if component.Type != ComponentTypeDistributionBlocks {
+		t.Fatalf("component.Type = %q, want %q", component.Type, ComponentTypeDistributionBlocks)
+	}
+	if component.DataBinding == nil || component.DataBinding.WorkflowName != "categorySummary" {
+		t.Fatalf("DataBinding = %#v, want workflowName categorySummary", component.DataBinding)
+	}
+	config, ok := component.Props["distributionBlocks"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("distributionBlocks config type = %T, want map[string]interface{}", component.Props["distributionBlocks"])
+	}
+	if config["source"] != "workflow" {
+		t.Fatalf("distributionBlocks.source = %v, want workflow", config["source"])
+	}
+	items, ok := config["items"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("distributionBlocks.items = %#v, want one item", config["items"])
+	}
+	item, ok := items[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("distributionBlocks.items[0] = %T, want map[string]interface{}", items[0])
+	}
+	if item["percent"] != "{{strategyPercent}}" {
+		t.Fatalf("distributionBlocks.items[0].percent = %v, want template", item["percent"])
+	}
+}
+
 func TestValidateFrontendLinkConfig(t *testing.T) {
 	tests := []struct {
 		name     string

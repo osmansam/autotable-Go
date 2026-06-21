@@ -1637,6 +1637,7 @@ func (s *DynamicService) GetPipeline(ctx context.Context, input GetPipelineInput
 	resultItems, err := s.repository.ExecutePipeline(ctx, input.TenantID, input.ProjectID, input.Schema, pipelineStage)
 	if err != nil {
 		status = "error"
+		log.Printf("Error executing dynamic pipeline %q for schema %q: %v; pipelineJson=%s", input.PipelineName, input.Schema, err, pipelineStage.PipelineJSON)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
 			Message: "Failed to execute dynamic pipeline",
