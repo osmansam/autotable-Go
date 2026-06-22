@@ -158,6 +158,125 @@ func ValidateFilterPanelConfig(filterPanel *TableFilterPanelConfig) error {
 	return nil
 }
 
+func ValidateFormComponentConfig(form *FormComponentConfig) error {
+	if form == nil {
+		return nil
+	}
+	if form.SchemaName == "" {
+		return fmt.Errorf("form requires schemaName")
+	}
+	for index, field := range form.Fields {
+		if field.FormKey == "" {
+			return fmt.Errorf("form field %d requires formKey", index)
+		}
+		if field.Type == "" {
+			return fmt.Errorf("form field '%s' requires type", field.FormKey)
+		}
+	}
+
+	objectListKeys := map[string]bool{}
+	for index, objectList := range form.ObjectLists {
+		if objectList.Key == "" {
+			return fmt.Errorf("object list %d requires key", index)
+		}
+		objectListKeys[objectList.Key] = true
+		for actionIndex, action := range objectList.Actions {
+			if err := validateFormObjectActionConfig(action); err != nil {
+				return fmt.Errorf("object list '%s' action %d: %w", objectList.Key, actionIndex, err)
+			}
+		}
+	}
+	for _, objectList := range form.ObjectLists {
+		if objectList.AddAction != nil {
+			if err := validateFormActionConfig(*objectList.AddAction, objectListKeys); err != nil {
+				return fmt.Errorf("object list '%s' addAction: %w", objectList.Key, err)
+			}
+		}
+	}
+
+	for index, action := range form.Actions {
+		if err := validateFormActionConfig(action, objectListKeys); err != nil {
+			return fmt.Errorf("form action %d: %w", index, err)
+		}
+	}
+	if err := validateFormSubmitConfig(form.Submit, objectListKeys); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateFormSubmitConfig(submit *FormSubmitConfig, objectListKeys map[string]bool) error {
+	if submit == nil || submit.Mode == "" || submit.Mode == "create" {
+		return nil
+	}
+	switch submit.Mode {
+	case "createMany":
+		if submit.BulkObjectListKey == "" {
+			return fmt.Errorf("createMany submit requires bulkObjectListKey")
+		}
+		if !objectListKeys[submit.BulkObjectListKey] {
+			return fmt.Errorf("bulkObjectListKey '%s' does not match a configured object list", submit.BulkObjectListKey)
+		}
+		return nil
+	case "workflow":
+		if submit.WorkflowSchema == "" {
+			return fmt.Errorf("workflow submit requires workflowSchema")
+		}
+		if submit.WorkflowName == "" {
+			return fmt.Errorf("workflow submit requires workflowName")
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid form submit mode '%s'", submit.Mode)
+	}
+}
+
+func validateFormObjectActionConfig(action FormObjectActionConfig) error {
+	if action.Position != "" && action.Position != "start" && action.Position != "end" {
+		return fmt.Errorf("invalid object action position '%s'", action.Position)
+	}
+	switch action.Kind {
+	case "editObject", "removeObject":
+		return nil
+	case "increment", "decrement":
+		if action.Field == "" {
+			return fmt.Errorf("%s action requires field", action.Kind)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid object action kind '%s'", action.Kind)
+	}
+}
+
+func validateFormActionConfig(action FormActionConfig, objectListKeys map[string]bool) error {
+	if err := validateFormArea(action.Area); err != nil {
+		return err
+	}
+	switch action.Kind {
+	case "submit":
+		return nil
+	case "addObject":
+		if action.TargetObjectList == "" {
+			return fmt.Errorf("addObject action requires targetObjectList")
+		}
+		if !objectListKeys[action.TargetObjectList] {
+			return fmt.Errorf("addObject targetObjectList '%s' does not match a configured object list", action.TargetObjectList)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid form action kind '%s'", action.Kind)
+	}
+}
+
+func validateFormArea(area string) error {
+	switch area {
+	case "", "top", "main", "bottom", "left", "right":
+		return nil
+	default:
+		return fmt.Errorf("invalid form area '%s'", area)
+	}
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
@@ -193,6 +312,11 @@ func ValidateComponentTableConfig(component *ComponentBlock) error {
 
 	if component.Type == ComponentTypeTable {
 		if err := ValidateTableComponentConfig(component.Table); err != nil {
+			return fmt.Errorf("component '%s': %w", component.ID, err)
+		}
+	}
+	if component.Type == ComponentTypeForm {
+		if err := ValidateFormComponentConfig(component.Form); err != nil {
 			return fmt.Errorf("component '%s': %w", component.ID, err)
 		}
 	}

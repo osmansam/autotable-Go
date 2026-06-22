@@ -452,6 +452,139 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormComponentConfigRoundTrip(t *testing.T) {
+	minimum := 1.0
+	page := PageModel{Name: "Sales", Sections: []Section{{
+		Type: SectionTypeComponent,
+		Component: &ComponentBlock{ID: "sales-form", Type: ComponentTypeForm, Form: &FormComponentConfig{
+			Title: "Sales Details", SchemaName: "sales",
+			Fields: []FormFieldConfig{{ActionFormFieldConfig: ActionFormFieldConfig{
+				FormKey: "saleDate", Type: "date", FormKeyType: "date", Label: "Sale Date",
+			}, Area: "main", Order: 1, Width: "full"}},
+			ObjectLists: []FormObjectListConfig{{
+				Key: "items", Title: "Cart", Area: "right", Source: "embedded",
+				ItemFields: []string{"product", "quantity", "note"},
+				Display:    &FormObjectListDisplayConfig{PrimaryField: "product", SecondaryTemplate: "{{quantity}} items"},
+				Actions:    []FormObjectActionConfig{{Kind: "editObject", Position: "start"}, {Kind: "decrement", Field: "quantity", Min: &minimum, Step: 1, Position: "end"}},
+			}},
+			Actions: []FormActionConfig{{Kind: "addObject", Area: "bottom", TargetObjectList: "items", SourceFields: []string{"product", "quantity", "note"}}, {Kind: "submit", Area: "bottom", ButtonName: "Save Sale"}},
+			Submit:  &FormSubmitConfig{Mode: "workflow", WorkflowSchema: "sales", WorkflowName: "submitSale"},
+		}},
+	}}}
+
+	encoded, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal(PageModel) error = %v", err)
+	}
+	var got PageModel
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("json.Unmarshal(PageModel) error = %v", err)
+	}
+	form := got.Sections[0].Component.Form
+	if form == nil || form.SchemaName != "sales" {
+		t.Fatalf("Component.Form = %#v, want sales form config", form)
+	}
+	if gotList := form.ObjectLists[0]; gotList.Key != "items" || gotList.Display.SecondaryTemplate != "{{quantity}} items" {
+		t.Fatalf("form.ObjectLists[0] = %#v, want configured items list", gotList)
+	}
+	if form.Actions[0].Area != "bottom" || form.ObjectLists[0].Actions[0].Position != "start" {
+		t.Fatalf("action placement was not preserved: %#v %#v", form.Actions[0], form.ObjectLists[0].Actions[0])
+	}
+	if form.Submit == nil || form.Submit.Mode != "workflow" || form.Submit.WorkflowName != "submitSale" {
+		t.Fatalf("form.Submit = %#v, want workflow submit config", form.Submit)
+	}
+
+	bsonBytes, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal(PageModel) error = %v", err)
+	}
+	var bsonGot PageModel
+	if err := bson.Unmarshal(bsonBytes, &bsonGot); err != nil {
+		t.Fatalf("bson.Unmarshal(PageModel) error = %v", err)
+	}
+	if bsonGot.Sections[0].Component.Form == nil {
+		t.Fatal("BSON Component.Form = nil, want form config")
+	}
+}
+
+func TestValidateFormComponentConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		form    *FormComponentConfig
+		wantErr string
+	}{
+		{name: "nil form"},
+		{name: "valid form", form: &FormComponentConfig{
+			SchemaName:  "sales",
+			Fields:      []FormFieldConfig{{ActionFormFieldConfig: ActionFormFieldConfig{FormKey: "saleDate", Type: "date"}}},
+			ObjectLists: []FormObjectListConfig{{Key: "items", Actions: []FormObjectActionConfig{{Kind: "editObject"}, {Kind: "increment", Field: "quantity"}}}},
+			Actions:     []FormActionConfig{{Kind: "addObject", TargetObjectList: "items"}, {Kind: "submit"}},
+		}},
+		{name: "valid create submit", form: &FormComponentConfig{SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "create"}}},
+		{name: "valid create many submit", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items"}}, Submit: &FormSubmitConfig{Mode: "createMany", BulkObjectListKey: "items"},
+		}},
+		{name: "valid workflow submit", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "workflow", WorkflowSchema: "sales", WorkflowName: "submitSale"},
+		}},
+		{name: "invalid submit mode", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "archive"},
+		}, wantErr: "invalid form submit mode 'archive'"},
+		{name: "create many missing list", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "createMany"},
+		}, wantErr: "createMany submit requires bulkObjectListKey"},
+		{name: "create many unknown list", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items"}}, Submit: &FormSubmitConfig{Mode: "createMany", BulkObjectListKey: "lines"},
+		}, wantErr: "bulkObjectListKey 'lines' does not match"},
+		{name: "workflow missing schema", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "workflow", WorkflowName: "submitSale"},
+		}, wantErr: "workflow submit requires workflowSchema"},
+		{name: "workflow missing name", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "workflow", WorkflowSchema: "sales"},
+		}, wantErr: "workflow submit requires workflowName"},
+		{name: "missing schema", form: &FormComponentConfig{}, wantErr: "form requires schemaName"},
+		{name: "missing field key", form: &FormComponentConfig{
+			SchemaName: "sales", Fields: []FormFieldConfig{{ActionFormFieldConfig: ActionFormFieldConfig{Type: "text"}}},
+		}, wantErr: "form field 0 requires formKey"},
+		{name: "missing list key", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Source: "embedded"}},
+		}, wantErr: "object list 0 requires key"},
+		{name: "invalid item action", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items", Actions: []FormObjectActionConfig{{Kind: "archive"}}}},
+		}, wantErr: "invalid object action kind 'archive'"},
+		{name: "increment missing field", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items", Actions: []FormObjectActionConfig{{Kind: "increment"}}}},
+		}, wantErr: "increment action requires field"},
+		{name: "add object missing target", form: &FormComponentConfig{
+			SchemaName: "sales", Actions: []FormActionConfig{{Kind: "addObject"}},
+		}, wantErr: "addObject action requires targetObjectList"},
+		{name: "add object unknown target", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items"}}, Actions: []FormActionConfig{{Kind: "addObject", TargetObjectList: "lines"}},
+		}, wantErr: "does not match a configured object list"},
+		{name: "nested add action missing target", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items", AddAction: &FormActionConfig{Kind: "addObject"}}},
+		}, wantErr: "addObject action requires targetObjectList"},
+		{name: "invalid form action area", form: &FormComponentConfig{
+			SchemaName: "sales", Actions: []FormActionConfig{{Kind: "submit", Area: "center"}},
+		}, wantErr: "invalid form area 'center'"},
+		{name: "invalid item action position", form: &FormComponentConfig{
+			SchemaName: "sales", ObjectLists: []FormObjectListConfig{{Key: "items", Actions: []FormObjectActionConfig{{Kind: "editObject", Position: "middle"}}}},
+		}, wantErr: "invalid object action position 'middle'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateFormComponentConfig(tt.form)
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("ValidateFormComponentConfig() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("ValidateFormComponentConfig() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestPageTableFilterPanelInputsRoundTrip(t *testing.T) {
 	isMultiple := true
 	inputs := []ActionFormFieldConfig{{

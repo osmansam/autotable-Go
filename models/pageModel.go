@@ -105,6 +105,97 @@ type TableComponentConfig struct {
 	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
 
+// FormLayoutConfig controls the layout shell for form components.
+type FormLayoutConfig struct {
+	Variant string           `bson:"variant,omitempty" json:"variant,omitempty"`
+	Columns int              `bson:"columns,omitempty" json:"columns,omitempty"`
+	Areas   []FormAreaConfig `bson:"areas,omitempty" json:"areas,omitempty"`
+}
+
+// FormAreaConfig defines one named area inside a form layout.
+type FormAreaConfig struct {
+	Key       string `bson:"key" json:"key"`
+	Title     string `bson:"title,omitempty" json:"title,omitempty"`
+	Order     int    `bson:"order,omitempty" json:"order,omitempty"`
+	ClassName string `bson:"className,omitempty" json:"className,omitempty"`
+}
+
+// FormFieldConfig reuses action form field metadata and adds layout placement.
+type FormFieldConfig struct {
+	ActionFormFieldConfig `bson:",inline"`
+	Area                  string `bson:"area,omitempty" json:"area,omitempty"`
+	Order                 int    `bson:"order,omitempty" json:"order,omitempty"`
+	Width                 string `bson:"width,omitempty" json:"width,omitempty"`
+}
+
+// FormObjectListDisplayConfig controls how embedded list items are displayed.
+type FormObjectListDisplayConfig struct {
+	PrimaryField      string `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
+	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
+	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
+	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
+}
+
+// FormObjectActionConfig defines a local action for an embedded object list item.
+type FormObjectActionConfig struct {
+	Kind     string   `bson:"kind" json:"kind"`
+	Label    string   `bson:"label,omitempty" json:"label,omitempty"`
+	Icon     string   `bson:"icon,omitempty" json:"icon,omitempty"`
+	Position string   `bson:"position,omitempty" json:"position,omitempty"`
+	Field    string   `bson:"field,omitempty" json:"field,omitempty"`
+	Min      *float64 `bson:"min,omitempty" json:"min,omitempty"`
+	Max      *float64 `bson:"max,omitempty" json:"max,omitempty"`
+	Step     float64  `bson:"step,omitempty" json:"step,omitempty"`
+}
+
+// FormActionConfig defines an action attached to the form itself.
+type FormActionConfig struct {
+	Kind                 string   `bson:"kind" json:"kind"`
+	Label                string   `bson:"label,omitempty" json:"label,omitempty"`
+	ButtonName           string   `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
+	Area                 string   `bson:"area,omitempty" json:"area,omitempty"`
+	TargetObjectList     string   `bson:"targetObjectList,omitempty" json:"targetObjectList,omitempty"`
+	SourceFields         []string `bson:"sourceFields,omitempty" json:"sourceFields,omitempty"`
+	ClearSourceFields    []string `bson:"clearSourceFields,omitempty" json:"clearSourceFields,omitempty"`
+	PreserveSourceFields []string `bson:"preserveSourceFields,omitempty" json:"preserveSourceFields,omitempty"`
+	Enabled              *bool    `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Order                int      `bson:"order,omitempty" json:"order,omitempty"`
+}
+
+// FormObjectListConfig describes an embedded object array rendered inside a form.
+type FormObjectListConfig struct {
+	Key        string                       `bson:"key" json:"key"`
+	Title      string                       `bson:"title,omitempty" json:"title,omitempty"`
+	Area       string                       `bson:"area,omitempty" json:"area,omitempty"`
+	Source     string                       `bson:"source,omitempty" json:"source,omitempty"`
+	ItemFields []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
+	AddAction  *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`
+	Display    *FormObjectListDisplayConfig `bson:"display,omitempty" json:"display,omitempty"`
+	Actions    []FormObjectActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
+}
+
+// FormSubmitConfig controls final form submission.
+type FormSubmitConfig struct {
+	Mode              string                 `bson:"mode,omitempty" json:"mode,omitempty"`
+	ButtonName        string                 `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
+	ConstantValues    map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	BulkObjectListKey string                 `bson:"bulkObjectListKey,omitempty" json:"bulkObjectListKey,omitempty"`
+	WorkflowSchema    string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
+	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+}
+
+// FormComponentConfig keeps form-specific configuration on page form components.
+type FormComponentConfig struct {
+	Title       string                 `bson:"title,omitempty" json:"title,omitempty"`
+	SchemaName  string                 `bson:"schemaName" json:"schemaName"`
+	Layout      *FormLayoutConfig      `bson:"layout,omitempty" json:"layout,omitempty"`
+	Fields      []FormFieldConfig      `bson:"fields,omitempty" json:"fields,omitempty"`
+	ObjectLists []FormObjectListConfig `bson:"objectLists,omitempty" json:"objectLists,omitempty"`
+	Actions     []FormActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
+	Submit      *FormSubmitConfig      `bson:"submit,omitempty" json:"submit,omitempty"`
+}
+
 // ComponentType defines the type of component
 type ComponentType string
 
@@ -188,6 +279,7 @@ type ComponentBlock struct {
 	DataBinding   *DataBinding           `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
 	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
 	Table         *TableComponentConfig  `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
+	Form          *FormComponentConfig   `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
 	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
 	AuthorizeRole []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
 	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
