@@ -15,6 +15,93 @@ type Frontend struct {
 	LinkTemplate    string           `bson:"linkTemplate,omitempty" json:"linkTemplate,omitempty"`
 	LinkLabelField  string           `bson:"linkLabelField,omitempty" json:"linkLabelField,omitempty"`
 	LinkType        string           `bson:"linkType,omitempty" json:"linkType,omitempty"`
+	Actions         []ActionConfig   `bson:"actions,omitempty" json:"actions,omitempty"`
+}
+
+type ActionFieldConfig struct {
+	Field             string      `bson:"field,omitempty" json:"field,omitempty"`
+	Name              string      `bson:"name,omitempty" json:"name,omitempty"`
+	Required          *bool       `bson:"required,omitempty" json:"required,omitempty"`
+	Disabled          *bool       `bson:"disabled,omitempty" json:"disabled,omitempty"`
+	Hidden            *bool       `bson:"hidden,omitempty" json:"hidden,omitempty"`
+	ConstantValue     interface{} `bson:"constantValue,omitempty" json:"constantValue,omitempty"`
+	DefaultValue      interface{} `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
+	RequiredCondition string      `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
+	DisabledCondition string      `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+}
+
+type ActionFormOptionConfig struct {
+	Value interface{} `bson:"value" json:"value"`
+	Label string      `bson:"label" json:"label"`
+}
+
+type ActionFormFieldConfig struct {
+	FormKey               string                   `bson:"formKey" json:"formKey"`
+	Type                  string                   `bson:"type" json:"type"`
+	FormKeyType           string                   `bson:"formKeyType,omitempty" json:"formKeyType,omitempty"`
+	Label                 string                   `bson:"label,omitempty" json:"label,omitempty"`
+	Placeholder           string                   `bson:"placeholder,omitempty" json:"placeholder,omitempty"`
+	Required              *bool                    `bson:"required,omitempty" json:"required,omitempty"`
+	RequiredCondition     string                   `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
+	DisabledCondition     string                   `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+	IsDisabled            *bool                    `bson:"isDisabled,omitempty" json:"isDisabled,omitempty"`
+	IsMultiple            *bool                    `bson:"isMultiple,omitempty" json:"isMultiple,omitempty"`
+	IsNumberButtonsActive *bool                    `bson:"isNumberButtonsActive,omitempty" json:"isNumberButtonsActive,omitempty"`
+	OptionsSource         string                   `bson:"optionsSource,omitempty" json:"optionsSource,omitempty"`
+	StaticOptions         []ActionFormOptionConfig `bson:"staticOptions,omitempty" json:"staticOptions,omitempty"`
+	StaticOptionsJson     string                   `bson:"staticOptionsJson,omitempty" json:"staticOptionsJson,omitempty"`
+	SourceSchemaName      string                   `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`
+	SourceValueField      string                   `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`
+	SourceLabelField      string                   `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`
+	SourceFilterCondition string                   `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
+	InvalidateKeys        []string                 `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
+	DefaultValue          interface{}              `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
+	Min                   interface{}              `bson:"min,omitempty" json:"min,omitempty"`
+	Max                   interface{}              `bson:"max,omitempty" json:"max,omitempty"`
+	MinLength             interface{}              `bson:"minLength,omitempty" json:"minLength,omitempty"`
+	MaxLength             interface{}              `bson:"maxLength,omitempty" json:"maxLength,omitempty"`
+	Pattern               string                   `bson:"pattern,omitempty" json:"pattern,omitempty"`
+	ValidationMessage     string                   `bson:"validationMessage,omitempty" json:"validationMessage,omitempty"`
+}
+
+type ActionSubmitConfig struct {
+	Fields         []ActionFieldConfig    `bson:"fields,omitempty" json:"fields,omitempty"`
+	IncludeFields  []string               `bson:"includeFields,omitempty" json:"includeFields,omitempty"`
+	ExcludeFields  []string               `bson:"excludeFields,omitempty" json:"excludeFields,omitempty"`
+	ConstantValues map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	WorkflowName   string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+	WorkflowSchema string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
+}
+
+type ActionConfig struct {
+	ID                 string                   `bson:"id,omitempty" json:"id,omitempty"`
+	Key                string                   `bson:"key" json:"key"`
+	Name               string                   `bson:"name,omitempty" json:"name,omitempty"`
+	Label              string                   `bson:"label,omitempty" json:"label,omitempty"`
+	ButtonName         string                   `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
+	Kind               string                   `bson:"kind" json:"kind"` // edit | delete | update | link
+	Icon               string                   `bson:"icon,omitempty" json:"icon,omitempty"`
+	ClassName          string                   `bson:"className,omitempty" json:"className,omitempty"`
+	ButtonClassName    string                   `bson:"buttonClassName,omitempty" json:"buttonClassName,omitempty"`
+	Order              int                      `bson:"order,omitempty" json:"order,omitempty"`
+	Enabled            *bool                    `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	IsModal            *bool                    `bson:"isModal,omitempty" json:"isModal,omitempty"`
+	IsButton           *bool                    `bson:"isButton,omitempty" json:"isButton,omitempty"`
+	ModalType          string                   `bson:"modalType,omitempty" json:"modalType,omitempty"` // form | confirmation
+	ConfirmTitle       string                   `bson:"confirmTitle,omitempty" json:"confirmTitle,omitempty"`
+	ConfirmText        string                   `bson:"confirmText,omitempty" json:"confirmText,omitempty"`
+	Path               string                   `bson:"path,omitempty" json:"path,omitempty"`
+	LinkTemplate       string                   `bson:"linkTemplate,omitempty" json:"linkTemplate,omitempty"`
+	LinkType           string                   `bson:"linkType,omitempty" json:"linkType,omitempty"`
+	DisabledCondition  string                   `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+	HiddenCondition    string                   `bson:"hiddenCondition,omitempty" json:"hiddenCondition,omitempty"`
+	RequiredCondition  string                   `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
+	DisabledConditions []string                 `bson:"disabledConditions,omitempty" json:"disabledConditions,omitempty"`
+	RequiredConditions []string                 `bson:"requiredConditions,omitempty" json:"requiredConditions,omitempty"`
+	FormFields         *[]ActionFormFieldConfig `bson:"formFields,omitempty" json:"formFields,omitempty"`
+	FieldOverrides     []ActionFieldConfig      `bson:"fieldOverrides,omitempty" json:"fieldOverrides,omitempty"`
+	ConstantValues     map[string]interface{}   `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	Submit             ActionSubmitConfig       `bson:"submit,omitempty" json:"submit,omitempty"`
 }
 
 type Field struct {
@@ -79,6 +166,7 @@ type Redis struct {
 type PipelineStage struct {
 	Name            string   `bson:"name"`
 	PipelineJSON    string   `bson:"pipelineJson"`
+	OutputFields    []string `bson:"outputFields,omitempty" json:"outputFields,omitempty"`
 	IsAuthenticated bool     `bson:"isAuthenticated"`
 	IsAuthorized    bool     `bson:"isAuthorized"`
 	AuthorizeRole   []string `bson:"authorizeRole"`
@@ -140,6 +228,7 @@ type ContainerModel struct {
 	PopulatedRoutes  []string           `bson:"populatedRoutes"`
 	Indexes          []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
 	RowAccess        *RowAccessRule     `bson:"rowAccess,omitempty"`
+	Frontend         *Frontend          `bson:"frontend,omitempty" json:"frontend,omitempty"`
 
 	// Multi-tenancy fields
 	TenantID       *primitive.ObjectID `bson:"tenantId,omitempty" json:"tenantId,omitempty"`             // Project-scoped containers

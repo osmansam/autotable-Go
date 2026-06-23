@@ -8,6 +8,7 @@ type BindingKind string
 const (
 	BindingKindSchema   BindingKind = "schema"
 	BindingKindPipeline BindingKind = "pipeline"
+	BindingKindWorkflow BindingKind = "workflow"
 	BindingKindApi      BindingKind = "api"
 	BindingKindFunction BindingKind = "function"
 )
@@ -17,6 +18,7 @@ type DataBinding struct {
 	Kind         BindingKind            `bson:"kind" json:"kind"` // "schema" | "pipeline" | "api" | "function"
 	SchemaName   string                 `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
 	PipelineName string                 `bson:"pipelineName,omitempty" json:"pipelineName,omitempty"`
+	WorkflowName string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	ApiName      string                 `bson:"apiName,omitempty" json:"apiName,omitempty"`
 	FunctionName string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
 	Params       map[string]interface{} `bson:"params,omitempty" json:"params,omitempty"` // Optional extra info (e.g., default filters, params)
@@ -24,8 +26,14 @@ type DataBinding struct {
 
 // GroupBy defines grouping configuration for table components
 type GroupBy struct {
-	GroupByObjectId string `bson:"groupByObjectId,omitempty" json:"groupByObjectId,omitempty"` // Schema name to group by (e.g., "can")
-	GroupByField    string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`       // Field name to display from grouped object (e.g., "name")
+	GroupByObjectId   string `bson:"groupByObjectId,omitempty" json:"groupByObjectId,omitempty"`     // Legacy source schema / filter field.
+	GroupByField      string `bson:"groupByField,omitempty" json:"groupByField,omitempty"`           // Legacy label field / filter field.
+	GroupedSchemaName string `bson:"groupedSchemaName,omitempty" json:"groupedSchemaName,omitempty"` // Schema/table being grouped.
+	GroupedField      string `bson:"groupedField,omitempty" json:"groupedField,omitempty"`           // Field on grouped schema used for filtering.
+	SourceSchemaName  string `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`   // Schema used to build grouped tabs.
+	SourceValueField  string `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`   // Value field from source items.
+	SourceLabelField  string `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`   // Label field from source items.
+	FilterField       string `bson:"filterField,omitempty" json:"filterField,omitempty"`             // Legacy table field filtered by each source value.
 }
 
 // TableLinkConfig defines link rendering for a table column.
@@ -37,10 +45,39 @@ type TableLinkConfig struct {
 
 // TableColumnConfig defines display and cell behavior for one table column.
 type TableColumnConfig struct {
-	Field         string           `bson:"field" json:"field"`
-	DisplayName   string           `bson:"displayName,omitempty" json:"displayName,omitempty"`
-	CellClassName []RowClassConfig `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
-	Link          *TableLinkConfig `bson:"link,omitempty" json:"link,omitempty"`
+	Field              string                   `bson:"field" json:"field"`
+	Type               string                   `bson:"type,omitempty" json:"type,omitempty"`
+	DisplayName        string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	ComputedLabelRules []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
+	FallbackValue      string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
+	ProgressBar        *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
+	CellClassName      []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
+	Link               *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+}
+
+// TableComputedLabelRule defines one frontend-computed table label rule.
+type TableComputedLabelRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Value     string `bson:"value,omitempty" json:"value,omitempty"`
+}
+
+// TableProgressBarConfig defines frontend progress-bar rendering for a column.
+type TableProgressBarConfig struct {
+	SourceField string                      `bson:"sourceField,omitempty" json:"sourceField,omitempty"`
+	Max         float64                     `bson:"max,omitempty" json:"max,omitempty"`
+	MaxField    string                      `bson:"maxField,omitempty" json:"maxField,omitempty"`
+	Color       string                      `bson:"color,omitempty" json:"color,omitempty"`
+	TrackColor  string                      `bson:"trackColor,omitempty" json:"trackColor,omitempty"`
+	Height      float64                     `bson:"height,omitempty" json:"height,omitempty"`
+	Width       float64                     `bson:"width,omitempty" json:"width,omitempty"`
+	ShowValue   *bool                       `bson:"showValue,omitempty" json:"showValue,omitempty"`
+	ColorRules  []TableProgressBarColorRule `bson:"colorRules,omitempty" json:"colorRules,omitempty"`
+}
+
+// TableProgressBarColorRule defines one conditional bar color rule.
+type TableProgressBarColorRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Color     string `bson:"color,omitempty" json:"color,omitempty"`
 }
 
 // TableRowsConfig defines row-level table behavior.
@@ -53,22 +90,123 @@ type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 }
 
+// TableFilterPanelConfig defines editable filter inputs for a table component.
+type TableFilterPanelConfig struct {
+	Inputs *[]ActionFormFieldConfig `bson:"inputs,omitempty" json:"inputs,omitempty"`
+}
+
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	Columns []TableColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows    *TableRowsConfig    `bson:"rows,omitempty" json:"rows,omitempty"`
-	Cache   *TableCacheConfig   `bson:"cache,omitempty" json:"cache,omitempty"`
+	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
+	Rows        *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
+	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
+	AddButton   *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
+	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
+	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+}
+
+// FormLayoutConfig controls the layout shell for form components.
+type FormLayoutConfig struct {
+	Variant string           `bson:"variant,omitempty" json:"variant,omitempty"`
+	Columns int              `bson:"columns,omitempty" json:"columns,omitempty"`
+	Areas   []FormAreaConfig `bson:"areas,omitempty" json:"areas,omitempty"`
+}
+
+// FormAreaConfig defines one named area inside a form layout.
+type FormAreaConfig struct {
+	Key       string `bson:"key" json:"key"`
+	Title     string `bson:"title,omitempty" json:"title,omitempty"`
+	Order     int    `bson:"order,omitempty" json:"order,omitempty"`
+	ClassName string `bson:"className,omitempty" json:"className,omitempty"`
+}
+
+// FormFieldConfig reuses action form field metadata and adds layout placement.
+type FormFieldConfig struct {
+	ActionFormFieldConfig `bson:",inline"`
+	Area                  string `bson:"area,omitempty" json:"area,omitempty"`
+	Order                 int    `bson:"order,omitempty" json:"order,omitempty"`
+	Width                 string `bson:"width,omitempty" json:"width,omitempty"`
+}
+
+// FormObjectListDisplayConfig controls how embedded list items are displayed.
+type FormObjectListDisplayConfig struct {
+	PrimaryField      string `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
+	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
+	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
+	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
+}
+
+// FormObjectActionConfig defines a local action for an embedded object list item.
+type FormObjectActionConfig struct {
+	Kind     string   `bson:"kind" json:"kind"`
+	Label    string   `bson:"label,omitempty" json:"label,omitempty"`
+	Icon     string   `bson:"icon,omitempty" json:"icon,omitempty"`
+	Position string   `bson:"position,omitempty" json:"position,omitempty"`
+	Field    string   `bson:"field,omitempty" json:"field,omitempty"`
+	Min      *float64 `bson:"min,omitempty" json:"min,omitempty"`
+	Max      *float64 `bson:"max,omitempty" json:"max,omitempty"`
+	Step     float64  `bson:"step,omitempty" json:"step,omitempty"`
+}
+
+// FormActionConfig defines an action attached to the form itself.
+type FormActionConfig struct {
+	Kind                 string   `bson:"kind" json:"kind"`
+	Label                string   `bson:"label,omitempty" json:"label,omitempty"`
+	ButtonName           string   `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
+	Area                 string   `bson:"area,omitempty" json:"area,omitempty"`
+	TargetObjectList     string   `bson:"targetObjectList,omitempty" json:"targetObjectList,omitempty"`
+	SourceFields         []string `bson:"sourceFields,omitempty" json:"sourceFields,omitempty"`
+	ClearSourceFields    []string `bson:"clearSourceFields,omitempty" json:"clearSourceFields,omitempty"`
+	PreserveSourceFields []string `bson:"preserveSourceFields,omitempty" json:"preserveSourceFields,omitempty"`
+	Enabled              *bool    `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Order                int      `bson:"order,omitempty" json:"order,omitempty"`
+}
+
+// FormObjectListConfig describes an embedded object array rendered inside a form.
+type FormObjectListConfig struct {
+	Key        string                       `bson:"key" json:"key"`
+	Title      string                       `bson:"title,omitempty" json:"title,omitempty"`
+	Area       string                       `bson:"area,omitempty" json:"area,omitempty"`
+	Source     string                       `bson:"source,omitempty" json:"source,omitempty"`
+	ItemFields []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
+	AddAction  *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`
+	Display    *FormObjectListDisplayConfig `bson:"display,omitempty" json:"display,omitempty"`
+	Actions    []FormObjectActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
+}
+
+// FormSubmitConfig controls final form submission.
+type FormSubmitConfig struct {
+	Mode              string                 `bson:"mode,omitempty" json:"mode,omitempty"`
+	ButtonName        string                 `bson:"buttonName,omitempty" json:"buttonName,omitempty"`
+	ConstantValues    map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
+	BulkObjectListKey string                 `bson:"bulkObjectListKey,omitempty" json:"bulkObjectListKey,omitempty"`
+	WorkflowSchema    string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
+	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+}
+
+// FormComponentConfig keeps form-specific configuration on page form components.
+type FormComponentConfig struct {
+	Title       string                 `bson:"title,omitempty" json:"title,omitempty"`
+	SchemaName  string                 `bson:"schemaName" json:"schemaName"`
+	Layout      *FormLayoutConfig      `bson:"layout,omitempty" json:"layout,omitempty"`
+	Fields      []FormFieldConfig      `bson:"fields,omitempty" json:"fields,omitempty"`
+	ObjectLists []FormObjectListConfig `bson:"objectLists,omitempty" json:"objectLists,omitempty"`
+	Actions     []FormActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
+	Submit      *FormSubmitConfig      `bson:"submit,omitempty" json:"submit,omitempty"`
 }
 
 // ComponentType defines the type of component
 type ComponentType string
 
 const (
-	ComponentTypeTable    ComponentType = "table"
-	ComponentTypeTabPanel ComponentType = "tabPanel" // tabPanel with embedded tabs
-	ComponentTypeForm     ComponentType = "form"
-	ComponentTypeText     ComponentType = "text"
-	ComponentTypeCustom   ComponentType = "custom"
+	ComponentTypeTable              ComponentType = "table"
+	ComponentTypeTabPanel           ComponentType = "tabPanel" // tabPanel with embedded tabs
+	ComponentTypeForm               ComponentType = "form"
+	ComponentTypeText               ComponentType = "text"
+	ComponentTypeCustom             ComponentType = "custom"
+	ComponentTypeInfoBlocks         ComponentType = "infoBlocks"
+	ComponentTypeDistributionBlocks ComponentType = "distributionBlocks"
 
 	// Chart Types - Specific chart components
 	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
@@ -89,6 +227,42 @@ const (
 	ComponentTypeCirclePackingChart ComponentType = "circlePackingChart" // Circle Packing
 )
 
+// InfoBlocksConfig defines the card group configuration stored in component props.
+type InfoBlocksConfig struct {
+	Source string                `bson:"source,omitempty" json:"source,omitempty"`
+	Items  []InfoBlockItemConfig `bson:"items,omitempty" json:"items,omitempty"`
+}
+
+// InfoBlockItemConfig defines one information card in an infoBlocks component.
+type InfoBlockItemConfig struct {
+	Title            string               `bson:"title,omitempty" json:"title,omitempty"`
+	Value            string               `bson:"value,omitempty" json:"value,omitempty"`
+	Footer           string               `bson:"footer,omitempty" json:"footer,omitempty"`
+	Color            string               `bson:"color,omitempty" json:"color,omitempty"`
+	TitleColorRules  []InfoBlockColorRule `bson:"titleColorRules,omitempty" json:"titleColorRules,omitempty"`
+	FooterColorRules []InfoBlockColorRule `bson:"footerColorRules,omitempty" json:"footerColorRules,omitempty"`
+}
+
+// InfoBlockColorRule defines conditional text color behavior for an info block.
+type InfoBlockColorRule struct {
+	Condition string `bson:"condition,omitempty" json:"condition,omitempty"`
+	Color     string `bson:"color,omitempty" json:"color,omitempty"`
+}
+
+// DistributionBlocksConfig defines metric tiles with progress rows stored in component props.
+type DistributionBlocksConfig struct {
+	Source string                        `bson:"source,omitempty" json:"source,omitempty"`
+	Items  []DistributionBlockItemConfig `bson:"items,omitempty" json:"items,omitempty"`
+}
+
+// DistributionBlockItemConfig defines one metric/progress item in a distributionBlocks component.
+type DistributionBlockItemConfig struct {
+	Label   string `bson:"label,omitempty" json:"label,omitempty"`
+	Value   string `bson:"value,omitempty" json:"value,omitempty"`
+	Percent string `bson:"percent,omitempty" json:"percent,omitempty"`
+	Color   string `bson:"color,omitempty" json:"color,omitempty"`
+}
+
 // TabPanelTab represents a tab inside a tabPanel component
 type TabPanelTab struct {
 	Title      string           `bson:"title" json:"title"`
@@ -105,6 +279,7 @@ type ComponentBlock struct {
 	DataBinding   *DataBinding           `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
 	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
 	Table         *TableComponentConfig  `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
+	Form          *FormComponentConfig   `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
 	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
 	AuthorizeRole []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
 	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
@@ -178,6 +353,7 @@ type PageModel struct {
 	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
 	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
 	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`     // If true → used as parent group in sidebar, but no direct route
+	IsOnSidebar     *bool               `bson:"isOnSidebar,omitempty" json:"isOnSidebar,omitempty"`     // If false → route exists but is hidden from sidebar navigation
 	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
 	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
 	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles

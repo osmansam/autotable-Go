@@ -96,6 +96,7 @@ type DynamicWorkflow struct {
 	StopOnError      bool                   `bson:"stopOnError" json:"stopOnError"`
 	TimeoutSec       int                    `bson:"timeoutSec,omitempty" json:"timeoutSec,omitempty"`
 	ReturnStep       string                 `bson:"returnStep,omitempty" json:"returnStep,omitempty"`
+	OutputFields     []string               `bson:"outputFields,omitempty" json:"outputFields,omitempty"`
 	RunInTransaction bool                   `bson:"runInTransaction,omitempty" json:"runInTransaction,omitempty"`
 }
 

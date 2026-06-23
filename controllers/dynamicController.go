@@ -124,10 +124,14 @@ func sendDynamicError(c *fiber.Ctx, err error, genericMessage string) error {
 	}
 
 	if serviceErr, ok := err.(*services.ServiceError); ok {
+		data := serviceErr.Data
+		if data == nil && serviceErr.Err != nil {
+			data = fiber.Map{"error": serviceErr.Err.Error()}
+		}
 		return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
 			Status:  serviceErr.Status,
 			Message: serviceErr.Message,
-			Data:    serviceErr.Data,
+			Data:    data,
 		})
 	}
 
@@ -257,15 +261,17 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
+	valueField := c.Query("valueField")
 
 	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
 	items, err := dynamicService.GetItemsForSelection(ctx, services.GetItemsForSelectionInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		FieldName: fieldName,
-		UserRole:  userRole,
+		TenantID:   tenantID,
+		ProjectID:  projectID,
+		Schema:     schemaName,
+		FieldName:  fieldName,
+		ValueField: valueField,
+		UserRole:   userRole,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch items")
@@ -606,7 +612,8 @@ func GetPipeline(c *fiber.Ctx) error {
 		CurrentQuery: params.CurrentQuery,
 		Container:    container,
 		PrepareStage: func(pipelineJSON string) string {
-			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
 	})
 	if err != nil {
@@ -666,6 +673,114 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(result)
+}
+
+func GetTableSource(c *fiber.Ctx) error {
+	ctx, cancel := utils.RequestContextWithTimeout(c, 30*time.Second)
+	defer cancel()
+
+	tenantID, projectID, err := getProjectContext(c)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+
+	container, err := utils.FetchContainerModel(c)
+	if err != nil {
+		if err == utils.ErrNoSchemaName {
+			return utils.SendResponse(c, fiber.StatusBadRequest, err.Error(), nil)
+		}
+		return utils.SendErrorResponse(c, err, "Failed to load container model")
+	}
+
+	dynamicService := services.NewDynamicService()
+	params, err := dynamicService.ParsePaginatedItemsParams(c, container)
+	if err != nil {
+		if strings.HasPrefix(err.Error(), "invalid filter parameter") {
+			return utils.SendErrorResponse(c, err, "Invalid filter parameter")
+		}
+		if strings.HasPrefix(err.Error(), "invalid sort parameters") {
+			return utils.SendErrorResponse(c, err, "Invalid sort parameters")
+		}
+		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
+	}
+
+	userRole, _ := c.Locals("userRole").(string)
+	userID, _ := c.Locals("userID").(string)
+	result, err := dynamicService.GetTableSource(ctx, services.GetTableSourceInput{
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		SourceType:   c.Query("sourceType", string(models.BindingKindSchema)),
+		Schema:       container.SchemaName,
+		PipelineName: c.Query("pipelineName"),
+		WorkflowName: c.Query("workflowName"),
+		QueryString:  params.QueryString,
+		Filter:       params.Filter,
+		SearchKey:    params.SearchKey,
+		UserID:       userID,
+		UserRole:     userRole,
+		Sort:         params.Sort,
+		Pager:        params.Pager,
+		Fields:       tableSourceFields(c),
+		Params:       tableSourceParams(c),
+		Container:    container,
+		PrepareStage: func(pipelineJSON string) string {
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
+		},
+		AuditUser: utils.GetUserFromContext(c),
+	})
+	if err != nil {
+		return sendDynamicError(c, err, "Failed to fetch table source")
+	}
+
+	return c.JSON(result)
+}
+
+func tableSourceParams(c *fiber.Ctx) map[string]interface{} {
+	skip := map[string]struct{}{
+		"schemaName":   {},
+		"sourceType":   {},
+		"pipelineName": {},
+		"workflowName": {},
+		"page":         {},
+		"limit":        {},
+		"sort":         {},
+		"asc":          {},
+		"search":       {},
+		"fields":       {},
+	}
+
+	params := map[string]interface{}{}
+	for key, value := range c.Queries() {
+		if _, ok := skip[key]; ok {
+			continue
+		}
+		params[key] = value
+	}
+	return params
+}
+
+func tableSourceFields(c *fiber.Ctx) []string {
+	raw := c.Query("fields")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	fields := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		field := strings.TrimSpace(part)
+		if field == "" {
+			continue
+		}
+		if _, ok := seen[field]; ok {
+			continue
+		}
+		seen[field] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
 }
 
 // executeDynamicCode executes dynamic code from a request.
@@ -730,7 +845,8 @@ func TestPipeline(c *fiber.Ctx) error {
 		UserRole:      userRole,
 		PipelineStage: requestBody.PipelineStage,
 		PrepareStage: func(pipelineJSON string) string {
-			return utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
+			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
 	})
 	if err != nil {

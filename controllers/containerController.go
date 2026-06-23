@@ -323,6 +323,10 @@ func CreateContainer(c *fiber.Ctx) error {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
+	if validationErr := models.ValidateContainerFrontendConfig(&container); validationErr != nil {
+		log.Printf("Frontend config validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
+	}
 
 	// Check if the schema name is in the restricted schema names list
 	for _, restrictedName := range models.RestrictedSchemaNames {
@@ -611,6 +615,10 @@ func UpdateContainer(c *fiber.Ctx) error {
 	if validationErr := validate.Struct(&updatedContainer); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
+	}
+	if validationErr := models.ValidateContainerFrontendConfig(&updatedContainer); validationErr != nil {
+		log.Printf("Frontend config validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
 	}
 
 	updateIdStr := c.Params("id")
