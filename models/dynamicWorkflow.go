@@ -38,6 +38,8 @@ const (
 	WorkflowStepTypeSetVariable        = "set_variable"
 	WorkflowStepTypeExecuteWorkflow    = "execute_workflow"
 	WorkflowStepTypeExecuteDynamicAPI  = "execute_dynamic_api"
+	WorkflowStepTypeQueryDynamicAPI    = "query_dynamic_api"
+	WorkflowStepTypeJoinArrays         = "join_arrays"
 	WorkflowStepTypeFail               = "fail"
 	WorkflowStepTypeSetRecord          = "set_record"
 	WorkflowStepTypeTransform          = "transform"

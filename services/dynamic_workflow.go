@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -51,6 +52,12 @@ type workflowExecutionPayload struct {
 	OutboxEvents    *int
 	ReturnValue     interface{}
 	HasReturn       bool
+	Pagination      *workflowTableSourcePagination
+}
+
+type workflowTableSourcePagination struct {
+	Pager   utils.Pager
+	Applied bool
 }
 
 const (
@@ -341,6 +348,10 @@ func (s *DynamicService) processWorkflowStep(ctx context.Context, step models.Dy
 		return s.workflowExecuteWorkflow(ctx, step, *payload)
 	case models.WorkflowStepTypeExecuteDynamicAPI:
 		return s.workflowExecuteDynamicAPI(ctx, step, *payload)
+	case models.WorkflowStepTypeQueryDynamicAPI:
+		return s.workflowQueryDynamicAPI(ctx, step, *payload)
+	case models.WorkflowStepTypeJoinArrays:
+		return workflowJoinArrays(step, *payload)
 	case models.WorkflowStepTypeFail:
 		return nil, workflowFail(step, *payload)
 	case models.WorkflowStepTypeSetRecord:
@@ -568,11 +579,6 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 	}
 	normalizeWorkflowIDs(filter)
 
-	limit := workflowIntConfig(step.Config, "limit", 50)
-	if limit <= 0 || limit > maxWorkflowQueryLimit {
-		return nil, fmt.Errorf("find_records limit must be between 1 and %d", maxWorkflowQueryLimit)
-	}
-
 	searchKey := workflowStringConfig(step.Config, "search", "")
 	if searchKey == "" {
 		searchKey = workflowStringConfig(step.Config, "searchKey", "")
@@ -605,7 +611,25 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 		}
 	}
 
-	findOptions := options.Find().SetLimit(int64(limit)).SetMaxTime(10 * time.Second)
+	limit, skip, err := workflowFindRecordsWindow(step.Config, payload.Pagination)
+	if err != nil {
+		return nil, err
+	}
+	if payload.Pagination != nil && payload.Pagination.Pager.Enabled {
+		totalItems, err := s.repository.Count(ctx, payload.TenantID, payload.ProjectID, targetSchema, filter)
+		if err != nil {
+			return nil, err
+		}
+		totalPages := 0
+		if totalItems > 0 {
+			totalPages = int((totalItems + int64(limit) - 1) / int64(limit))
+		}
+		payload.Pagination.Pager.TotalItems = totalItems
+		payload.Pagination.Pager.TotalPages = totalPages
+		payload.Pagination.Applied = true
+	}
+
+	findOptions := options.Find().SetLimit(int64(limit)).SetSkip(skip).SetMaxTime(10 * time.Second)
 	if sortConfig, ok := resolveWorkflowTemplates(step.Config["sort"], payload).(map[string]interface{}); ok && len(sortConfig) > 0 {
 		findOptions.SetSort(bson.M(sortConfig))
 	}
@@ -629,6 +653,22 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 		"items": items,
 		"count": len(items),
 	}, nil
+}
+
+func workflowFindRecordsWindow(config map[string]interface{}, pagination *workflowTableSourcePagination) (int, int64, error) {
+	limit := workflowIntConfig(config, "limit", 50)
+	skip := int64(0)
+	if pagination != nil && pagination.Pager.Enabled {
+		limit = pagination.Pager.Limit
+		skip = pagination.Pager.Skip
+	}
+	if limit <= 0 || limit > maxWorkflowQueryLimit {
+		return 0, 0, fmt.Errorf("find_records limit must be between 1 and %d", maxWorkflowQueryLimit)
+	}
+	if skip < 0 {
+		return 0, 0, fmt.Errorf("find_records skip must be non-negative")
+	}
+	return limit, skip, nil
 }
 
 func (s *DynamicService) workflowCountRecords(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
@@ -1134,6 +1174,166 @@ func (s *DynamicService) workflowExecuteDynamicAPI(ctx context.Context, step mod
 		"data":    result.Data,
 		"source":  result.Source,
 	}, nil
+}
+
+func (s *DynamicService) workflowQueryDynamicAPI(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	targetSchema := workflowTargetSchema(step, payload.SchemaName)
+	apiName := workflowStringConfig(step.Config, "apiName", "")
+	if apiName == "" {
+		return nil, fmt.Errorf("query_dynamic_api step requires apiName config")
+	}
+
+	targetContainer, err := s.workflowTargetContainer(ctx, payload, targetSchema)
+	if err != nil {
+		return nil, err
+	}
+	dynamicAPI, found := findDynamicAPI(targetContainer, apiName)
+	if !found {
+		return nil, fmt.Errorf("query_dynamic_api API not found: %s", apiName)
+	}
+	if !dynamicAPI.IsActive {
+		return nil, fmt.Errorf("query_dynamic_api API is disabled: %s", apiName)
+	}
+	if !strings.EqualFold(strings.TrimSpace(dynamicAPI.Method), http.MethodGet) {
+		return nil, fmt.Errorf("query_dynamic_api API %s must use GET", apiName)
+	}
+
+	return s.workflowExecuteDynamicAPI(ctx, step, payload)
+}
+
+func workflowJoinArrays(step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
+	items, ok := workflowSlice(resolveWorkflowTemplates(step.Config["items"], payload))
+	if !ok {
+		return nil, fmt.Errorf("join_arrays items must resolve to an array")
+	}
+	lookupItems, ok := workflowSlice(resolveWorkflowTemplates(step.Config["lookupItems"], payload))
+	if !ok {
+		return nil, fmt.Errorf("join_arrays lookupItems must resolve to an array")
+	}
+
+	localField := workflowStringConfig(step.Config, "localField", "")
+	lookupField := workflowStringConfig(step.Config, "lookupField", "")
+	mappings, ok := workflowObjectConfig(step.Config, "mappings")
+	if localField == "" || lookupField == "" || !ok || len(mappings) == 0 {
+		return nil, fmt.Errorf("join_arrays requires localField, lookupField, and mappings")
+	}
+	fallbacks, _ := resolveWorkflowTemplates(step.Config["fallbacks"], payload).(map[string]interface{})
+
+	lookupByKey := make(map[string]map[string]interface{}, len(lookupItems))
+	for index, rawItem := range lookupItems {
+		item, ok := workflowJoinObject(rawItem)
+		if !ok {
+			return nil, fmt.Errorf("join_arrays lookupItems[%d] must be an object", index)
+		}
+		value, exists := workflowPathValue(item, lookupField)
+		key, valid := workflowJoinKey(value)
+		if !exists || !valid {
+			continue
+		}
+		if _, duplicate := lookupByKey[key]; !duplicate {
+			lookupByKey[key] = item
+		}
+	}
+
+	enriched := make([]map[string]interface{}, 0, len(items))
+	for index, rawItem := range items {
+		item, ok := workflowJoinObject(rawItem)
+		if !ok {
+			return nil, fmt.Errorf("join_arrays items[%d] must be an object", index)
+		}
+		next := workflowCloneJoinValue(item).(map[string]interface{})
+
+		var matched map[string]interface{}
+		if value, exists := workflowPathValue(item, localField); exists {
+			if key, valid := workflowJoinKey(value); valid {
+				matched = lookupByKey[key]
+			}
+		}
+
+		for destination, rawSource := range mappings {
+			source, ok := rawSource.(string)
+			if !ok || strings.TrimSpace(source) == "" {
+				return nil, fmt.Errorf("join_arrays mapping %s must reference a source field", destination)
+			}
+			value := interface{}(nil)
+			found := false
+			if matched != nil {
+				value, found = workflowPathValue(matched, source)
+			}
+			if !found {
+				value = fallbacks[destination]
+			}
+			if err := workflowSetPath(next, destination, workflowCloneJoinValue(value)); err != nil {
+				return nil, fmt.Errorf("join_arrays destination %s: %w", destination, err)
+			}
+		}
+		enriched = append(enriched, next)
+	}
+
+	return map[string]interface{}{"items": enriched, "count": len(enriched)}, nil
+}
+
+func workflowJoinObject(value interface{}) (map[string]interface{}, bool) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed, true
+	case bson.M:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func workflowJoinKey(value interface{}) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return "string:" + typed, true
+	case bool:
+		return "bool:" + strconv.FormatBool(typed), true
+	case primitive.ObjectID:
+		return "objectId:" + typed.Hex(), true
+	}
+	if number, ok := workflowNumber(value); ok {
+		return "number:" + strconv.FormatFloat(number, 'g', -1, 64), true
+	}
+	return "", false
+}
+
+func workflowCloneJoinValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			cloned[key] = workflowCloneJoinValue(item)
+		}
+		return cloned
+	case bson.M:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			cloned[key] = workflowCloneJoinValue(item)
+		}
+		return cloned
+	case []interface{}:
+		cloned := make([]interface{}, len(typed))
+		for index, item := range typed {
+			cloned[index] = workflowCloneJoinValue(item)
+		}
+		return cloned
+	case []map[string]interface{}:
+		cloned := make([]map[string]interface{}, len(typed))
+		for index, item := range typed {
+			cloned[index] = workflowCloneJoinValue(item).(map[string]interface{})
+		}
+		return cloned
+	case []bson.M:
+		cloned := make([]map[string]interface{}, len(typed))
+		for index, item := range typed {
+			cloned[index] = workflowCloneJoinValue(item).(map[string]interface{})
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 func (s *DynamicService) workflowAuditLog(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {

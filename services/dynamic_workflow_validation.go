@@ -34,6 +34,8 @@ var workflowStepTypes = map[string]bool{
 	models.WorkflowStepTypeSetVariable:        true,
 	models.WorkflowStepTypeExecuteWorkflow:    true,
 	models.WorkflowStepTypeExecuteDynamicAPI:  true,
+	models.WorkflowStepTypeQueryDynamicAPI:    true,
+	models.WorkflowStepTypeJoinArrays:         true,
 	models.WorkflowStepTypeFail:               true,
 	models.WorkflowStepTypeSetRecord:          true,
 	models.WorkflowStepTypeTransform:          true,
@@ -126,6 +128,16 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 				return fmt.Errorf("workflow %s step %s call_api url is required", workflow.Name, step.Name)
 			}
 		}
+		if step.Type == models.WorkflowStepTypeQueryDynamicAPI {
+			if workflowStringConfig(step.Config, "apiName", "") == "" {
+				return fmt.Errorf("workflow %s step %s query_dynamic_api apiName is required", workflow.Name, step.Name)
+			}
+		}
+		if step.Type == models.WorkflowStepTypeJoinArrays {
+			if err := validateJoinArraysStep(step); err != nil {
+				return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
+			}
+		}
 		if step.Type == models.WorkflowStepTypeUpdateRecord {
 			if update, ok := workflowObjectConfig(step.Config, "update"); ok && workflowHasUpdateOperator(update) {
 				if err := validateWorkflowUpdateOperatorNames(update); err != nil {
@@ -184,6 +196,30 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 			if err := validateWorkflowSteps(workflow, branch.Steps); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func validateJoinArraysStep(step models.DynamicWorkflowStep) error {
+	for _, key := range []string{"items", "lookupItems"} {
+		if _, ok := step.Config[key]; !ok {
+			return fmt.Errorf("join_arrays %s is required", key)
+		}
+	}
+	for _, key := range []string{"localField", "lookupField"} {
+		if workflowStringConfig(step.Config, key, "") == "" {
+			return fmt.Errorf("join_arrays %s is required", key)
+		}
+	}
+	mappings, ok := workflowObjectConfig(step.Config, "mappings")
+	if !ok || len(mappings) == 0 {
+		return fmt.Errorf("join_arrays mappings must be a non-empty object")
+	}
+	for destination, source := range mappings {
+		sourceField, isString := source.(string)
+		if strings.TrimSpace(destination) == "" || !isString || strings.TrimSpace(sourceField) == "" {
+			return fmt.Errorf("join_arrays mappings must use non-empty destination and string source fields")
 		}
 	}
 	return nil

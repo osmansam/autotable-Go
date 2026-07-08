@@ -13,15 +13,118 @@ const (
 	BindingKindFunction BindingKind = "function"
 )
 
+type RuntimeValueType string
+
+const (
+	RuntimeValueTypeString      RuntimeValueType = "string"
+	RuntimeValueTypeNumber      RuntimeValueType = "number"
+	RuntimeValueTypeBoolean     RuntimeValueType = "boolean"
+	RuntimeValueTypeDate        RuntimeValueType = "date"
+	RuntimeValueTypeDateRange   RuntimeValueType = "dateRange"
+	RuntimeValueTypeStringArray RuntimeValueType = "stringArray"
+	RuntimeValueTypeNumberArray RuntimeValueType = "numberArray"
+)
+
+type PageVariableDefinition struct {
+	ID           string           `bson:"id" json:"id"`
+	Key          string           `bson:"key" json:"key"`
+	Type         RuntimeValueType `bson:"type" json:"type"`
+	InitialValue interface{}      `bson:"initialValue,omitempty" json:"initialValue,omitempty"`
+}
+
+type PageFilterPlacementKind string
+
+const (
+	PageFilterPlacementNavbar PageFilterPlacementKind = "navbar"
+	PageFilterPlacementCell   PageFilterPlacementKind = "cell"
+)
+
+type PageFilterPlacement struct {
+	Kind   PageFilterPlacementKind `bson:"kind" json:"kind"`
+	CellID string                  `bson:"cellId,omitempty" json:"cellId,omitempty"`
+}
+
+type PageFilterArraySerialization string
+
+const (
+	PageFilterArraySerializationComma  PageFilterArraySerialization = "comma"
+	PageFilterArraySerializationRepeat PageFilterArraySerialization = "repeat"
+)
+
+type PageFilterDefaultPreset string
+
+const (
+	PageFilterDefaultPresetToday     PageFilterDefaultPreset = "today"
+	PageFilterDefaultPresetYesterday PageFilterDefaultPreset = "yesterday"
+	PageFilterDefaultPresetTomorrow  PageFilterDefaultPreset = "tomorrow"
+	PageFilterDefaultPresetThisWeek  PageFilterDefaultPreset = "thisWeek"
+	PageFilterDefaultPresetLastWeek  PageFilterDefaultPreset = "lastWeek"
+	PageFilterDefaultPresetThisMonth PageFilterDefaultPreset = "thisMonth"
+	PageFilterDefaultPresetLastMonth PageFilterDefaultPreset = "lastMonth"
+	PageFilterDefaultPresetThisYear  PageFilterDefaultPreset = "thisYear"
+	PageFilterDefaultPresetLastYear  PageFilterDefaultPreset = "lastYear"
+)
+
+type PageFilterDefinition struct {
+	ID                 string                       `bson:"id" json:"id"`
+	Key                string                       `bson:"key" json:"key"`
+	Label              string                       `bson:"label" json:"label"`
+	Type               RuntimeValueType             `bson:"type" json:"type"`
+	DefaultValue       interface{}                  `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
+	DefaultPreset      PageFilterDefaultPreset      `bson:"defaultPreset,omitempty" json:"defaultPreset,omitempty"`
+	ArraySerialization PageFilterArraySerialization `bson:"arraySerialization,omitempty" json:"arraySerialization,omitempty"`
+	Placement          PageFilterPlacement          `bson:"placement" json:"placement"`
+}
+
+type ComponentOutputSource struct {
+	Kind     string `bson:"kind" json:"kind"`
+	FilterID string `bson:"filterId,omitempty" json:"filterId,omitempty"`
+}
+
+const (
+	ComponentOutputSourceTableFilter      = "tableFilter"
+	ComponentOutputSourceTableSelectedIDs = "tableSelectedIds"
+	ComponentOutputSourceTableSearch      = "tableSearch"
+)
+
+type ComponentOutputDefinition struct {
+	ID     string                `bson:"id" json:"id"`
+	Key    string                `bson:"key" json:"key"`
+	Type   RuntimeValueType      `bson:"type" json:"type"`
+	Source ComponentOutputSource `bson:"source" json:"source"`
+}
+
+type ParameterBinding struct {
+	Source      string            `bson:"source" json:"source"`
+	Value       interface{}       `bson:"value,omitempty" json:"value,omitempty"`
+	FilterID    string            `bson:"filterId,omitempty" json:"filterId,omitempty"`
+	VariableID  string            `bson:"variableId,omitempty" json:"variableId,omitempty"`
+	ComponentID string            `bson:"componentId,omitempty" json:"componentId,omitempty"`
+	OutputID    string            `bson:"outputId,omitempty" json:"outputId,omitempty"`
+	Field       string            `bson:"field,omitempty" json:"field,omitempty"`
+	Transform   string            `bson:"transform,omitempty" json:"transform,omitempty"`
+	Input       *ParameterBinding `bson:"input,omitempty" json:"input,omitempty"`
+}
+
+const (
+	ParameterBindingSourceStatic          = "static"
+	ParameterBindingSourcePageFilter      = "pageFilter"
+	ParameterBindingSourcePageVariable    = "pageVariable"
+	ParameterBindingSourceComponentOutput = "componentOutput"
+	ParameterBindingSourceSystem          = "system"
+	ParameterBindingSourceDerived         = "derived"
+)
+
 // DataBinding defines how a component binds to data sources
 type DataBinding struct {
-	Kind         BindingKind            `bson:"kind" json:"kind"` // "schema" | "pipeline" | "api" | "function"
-	SchemaName   string                 `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
-	PipelineName string                 `bson:"pipelineName,omitempty" json:"pipelineName,omitempty"`
-	WorkflowName string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
-	ApiName      string                 `bson:"apiName,omitempty" json:"apiName,omitempty"`
-	FunctionName string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
-	Params       map[string]interface{} `bson:"params,omitempty" json:"params,omitempty"` // Optional extra info (e.g., default filters, params)
+	Kind         BindingKind                 `bson:"kind" json:"kind"` // "schema" | "pipeline" | "api" | "function"
+	SchemaName   string                      `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
+	PipelineName string                      `bson:"pipelineName,omitempty" json:"pipelineName,omitempty"`
+	WorkflowName string                      `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
+	ApiName      string                      `bson:"apiName,omitempty" json:"apiName,omitempty"`
+	FunctionName string                      `bson:"functionName,omitempty" json:"functionName,omitempty"`
+	Params       map[string]interface{}      `bson:"params,omitempty" json:"params,omitempty"` // Optional extra info (e.g., default filters, params)
+	Parameters   map[string]ParameterBinding `bson:"parameters,omitempty" json:"parameters,omitempty"`
 }
 
 // GroupBy defines grouping configuration for table components
@@ -272,18 +375,20 @@ type TabPanelTab struct {
 
 // ComponentBlock represents a single component with its data binding and configuration
 type ComponentBlock struct {
-	ID            string                 `bson:"id" json:"id"`
-	Type          ComponentType          `bson:"type" json:"type"`
-	Title         string                 `bson:"title,omitempty" json:"title,omitempty"`
-	Order         int                    `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
-	DataBinding   *DataBinding           `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
-	GroupBy       *GroupBy               `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
-	Table         *TableComponentConfig  `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
-	Form          *FormComponentConfig   `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
-	IsAuthorized  bool                   `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
-	AuthorizeRole []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
-	Props         map[string]interface{} `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
-	Tabs          []TabPanelTab          `bson:"tabs,omitempty" json:"tabs,omitempty"`                   // For tabPanel type components
+	ID            string                      `bson:"id" json:"id"`
+	StateKey      string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
+	Type          ComponentType               `bson:"type" json:"type"`
+	Title         string                      `bson:"title,omitempty" json:"title,omitempty"`
+	Order         int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
+	DataBinding   *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
+	Outputs       []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
+	GroupBy       *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
+	Table         *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
+	Form          *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
+	IsAuthorized  bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
+	AuthorizeRole []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
+	Props         map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
+	Tabs          []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                   // For tabPanel type components
 }
 
 // GridCell represents a cell in a grid layout
@@ -346,17 +451,19 @@ type Section struct {
 
 // PageModel represents a page with hierarchical structure, auth, and layout
 type PageModel struct {
-	ID              primitive.ObjectID  `bson:"_id,omitempty" json:"id,omitempty"`
-	Name            string              `bson:"name" json:"name" validate:"required"`
-	Icon            string              `bson:"icon,omitempty" json:"icon,omitempty"`
-	Slug            string              `bson:"slug,omitempty" json:"slug,omitempty"` // e.g. "rewards", "rewards/members"
-	ParentPageID    *primitive.ObjectID `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
-	Order           int                 `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
-	IsGroupOnly     bool                `bson:"isGroupOnly,omitempty" json:"isGroupOnly,omitempty"`     // If true → used as parent group in sidebar, but no direct route
-	IsOnSidebar     *bool               `bson:"isOnSidebar,omitempty" json:"isOnSidebar,omitempty"`     // If false → route exists but is hidden from sidebar navigation
-	IsAuthenticated bool                `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
-	IsAuthorized    bool                `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
-	AuthorizeRole   []string            `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
-	Sections        []Section           `bson:"sections,omitempty" json:"sections,omitempty"`           // Layout: list of top-level sections
-	SubPage         *PageModel          `bson:"subPage,omitempty" json:"subPage,omitempty"`             // Nested subpage (alternative to ParentPageID)
+	ID              primitive.ObjectID       `bson:"_id,omitempty" json:"id,omitempty"`
+	Name            string                   `bson:"name" json:"name" validate:"required"`
+	Icon            string                   `bson:"icon,omitempty" json:"icon,omitempty"`
+	Slug            string                   `bson:"slug,omitempty" json:"slug,omitempty"` // e.g. "rewards", "rewards/members"
+	ParentPageID    *primitive.ObjectID      `bson:"parentPageId,omitempty" json:"parentPageId,omitempty"`
+	Order           int                      `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
+	IsGroupOnly     bool                     `bson:"isGroupOnly" json:"isGroupOnly"`                         // If true → used as parent group in sidebar, but no direct route
+	IsOnSidebar     *bool                    `bson:"isOnSidebar,omitempty" json:"isOnSidebar,omitempty"`     // If false → route exists but is hidden from sidebar navigation
+	IsAuthenticated bool                     `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
+	IsAuthorized    bool                     `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
+	AuthorizeRole   []string                 `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
+	Variables       []PageVariableDefinition `bson:"variables,omitempty" json:"variables,omitempty"`
+	Filters         []PageFilterDefinition   `bson:"filters,omitempty" json:"filters,omitempty"`
+	Sections        []Section                `bson:"sections,omitempty" json:"sections,omitempty"` // Layout: list of top-level sections
+	SubPage         *PageModel               `bson:"subPage,omitempty" json:"subPage,omitempty"`   // Nested subpage (alternative to ParentPageID)
 }

@@ -111,9 +111,9 @@ const (
 	MaxPageLimit                      = 100
 	MaxUnboundedReadLimit             = 5000
 	MaxExportLimit                    = 50000
-	MaxBulkWriteLimit                 = 1000
-	MaxBulkUpdateLimit                = 1000
-	MaxBulkDeleteLimit                = 1000
+	MaxBulkWriteLimit                 = 3000
+	MaxBulkUpdateLimit                = 3000
+	MaxBulkDeleteLimit                = 3000
 	DefaultCacheTTLMinutes            = 10
 	CacheFillLockTTLSeconds           = 15
 	CacheFillWaitTimeoutMilliseconds  = 800

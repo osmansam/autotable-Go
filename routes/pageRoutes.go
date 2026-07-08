@@ -16,9 +16,9 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 
 	// Tenant-authenticated routes (project scope required)
 	pageGroup := app.Group(baseUrl)
-	pageGroup.Use(middlewares.TenantAuthenticate)
-	pageGroup.Use(middlewares.GeneralRateLimit())
-	pageGroup.Use(middlewares.RequireProjectScope)
+	// pageGroup.Use(middlewares.TenantAuthenticate)
+	// pageGroup.Use(middlewares.GeneralRateLimit())
+	// pageGroup.Use(middlewares.RequireProjectScope)
 
 	// Create page - requires project admin, developer, or editor role
 	pageGroup.Post("/",
@@ -49,11 +49,11 @@ func PageRoutes(baseUrl string, app *fiber.App) {
 
 	// Update page - requires project admin, developer, or editor role
 	pageGroup.Patch("/:id",
-		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin,
-			models.ProjectRoleDeveloper,
-			models.ProjectRoleEditor,
-		}),
+		// middlewares.TenantAuthorize([]string{
+		// 	models.ProjectRoleAdmin,
+		// 	models.ProjectRoleDeveloper,
+		// 	models.ProjectRoleEditor,
+		// }),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdatePage,

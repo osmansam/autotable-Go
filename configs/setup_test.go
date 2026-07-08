@@ -13,6 +13,29 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+func TestBulkOperationLimitDefaults(t *testing.T) {
+	if MaxBulkWriteLimit != 3000 {
+		t.Fatalf("MaxBulkWriteLimit = %d, want 3000", MaxBulkWriteLimit)
+	}
+	if MaxBulkUpdateLimit != 3000 {
+		t.Fatalf("MaxBulkUpdateLimit = %d, want 3000", MaxBulkUpdateLimit)
+	}
+	if MaxBulkDeleteLimit != 3000 {
+		t.Fatalf("MaxBulkDeleteLimit = %d, want 3000", MaxBulkDeleteLimit)
+	}
+
+	overrideAppConfigForTest(t, &Config{})
+	if got := GetMaxBulkWriteLimit(); got != 3000 {
+		t.Fatalf("GetMaxBulkWriteLimit() = %d, want 3000", got)
+	}
+	if got := GetMaxBulkUpdateLimit(); got != 3000 {
+		t.Fatalf("GetMaxBulkUpdateLimit() = %d, want 3000", got)
+	}
+	if got := GetMaxBulkDeleteLimit(); got != 3000 {
+		t.Fatalf("GetMaxBulkDeleteLimit() = %d, want 3000", got)
+	}
+}
+
 func TestConfigGettersDefaultsAndOverrides(t *testing.T) {
 	tests := []struct {
 		name string
