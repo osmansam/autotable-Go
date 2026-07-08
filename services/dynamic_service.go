@@ -248,9 +248,10 @@ type ExecuteDynamicCodeInput struct {
 }
 
 type DynamicExecutionResult struct {
-	Message string
-	Data    interface{}
-	Source  string
+	Message    string
+	Data       interface{}
+	Source     string
+	pagination *workflowTableSourcePagination
 }
 
 type TestPipelineInput struct {
@@ -283,6 +284,7 @@ type ExecuteWorkflowInput struct {
 	UserID       string
 	AuditUser    *models.AuditUser
 	Container    *models.ContainerModel
+	Pager        *utils.Pager
 }
 
 type ExportDynamicItemsInput struct {
@@ -1703,6 +1705,7 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 			UserID:       input.UserID,
 			AuditUser:    input.AuditUser,
 			Container:    input.Container,
+			Pager:        &input.Pager,
 		})
 		if err != nil {
 			return nil, err
@@ -1716,7 +1719,7 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 			}
 		}
 		items = projectTableSourceItems(items, input.Fields)
-		return paginateTableSourceItems(items, input.Pager), nil
+		return workflowTableSourceResponse(items, input.Pager, result.pagination), nil
 	default:
 		return nil, &ServiceError{
 			Status:  http.StatusBadRequest,
@@ -1809,6 +1812,18 @@ func paginateTableSourceItems(items []map[string]interface{}, pager utils.Pager)
 		"totalItems":  totalItems,
 		"totalPages":  totalPages,
 		"currentPage": currentPage,
+	}
+}
+
+func workflowTableSourceResponse(items []map[string]interface{}, pager utils.Pager, pagination *workflowTableSourcePagination) fiber.Map {
+	if pagination == nil || !pagination.Applied {
+		return paginateTableSourceItems(items, pager)
+	}
+	return fiber.Map{
+		"items":       items,
+		"totalItems":  pagination.Pager.TotalItems,
+		"totalPages":  pagination.Pager.TotalPages,
+		"currentPage": pagination.Pager.Page,
 	}
 }
 
@@ -2051,6 +2066,10 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusForbidden, Message: "Workflow is disabled", Data: nil}
 	}
 
+	var pagination *workflowTableSourcePagination
+	if input.Pager != nil && input.Pager.Enabled {
+		pagination = &workflowTableSourcePagination{Pager: *input.Pager}
+	}
 	payload := workflowExecutionPayload{
 		TenantID:     input.TenantID,
 		ProjectID:    input.ProjectID,
@@ -2062,6 +2081,7 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		UserID:       input.UserID,
 		AuditUser:    input.AuditUser,
 		Container:    container,
+		Pagination:   pagination,
 	}
 	if payload.Record == nil {
 		payload.Record = map[string]interface{}{}
@@ -2087,7 +2107,12 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Failed to execute workflow")
 	}
 
-	return DynamicExecutionResult{Message: "Workflow executed successfully", Data: workflowExecutionReturnValue(workflow, &payload), Source: "workflow"}, nil
+	return DynamicExecutionResult{
+		Message:    "Workflow executed successfully",
+		Data:       workflowExecutionReturnValue(workflow, &payload),
+		Source:     "workflow",
+		pagination: pagination,
+	}, nil
 }
 
 func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDynamicItemsInput) (ExportDynamicItemsResult, error) {

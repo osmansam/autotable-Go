@@ -102,6 +102,168 @@ func TestInfoBlocksComponentPreservesBindingAndBlockConfig(t *testing.T) {
 	}
 }
 
+func TestPageRuntimeBindingRoundTrip(t *testing.T) {
+	filterID := "tfl_created_at"
+	page := PageModel{
+		Name: "Sales",
+		Variables: []PageVariableDefinition{{
+			ID: "var_branch", Key: "selectedBranch",
+			Type: RuntimeValueTypeString, InitialValue: "all",
+		}},
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID: "cmp_products", StateKey: "productTable", Type: ComponentTypeTable,
+				Table: &TableComponentConfig{FilterPanel: &TableFilterPanelConfig{
+					Inputs: &[]ActionFormFieldConfig{{
+						ID: filterID, FormKey: "createdAt", Type: "date",
+					}},
+				}},
+				Outputs: []ComponentOutputDefinition{{
+					ID: "out_created_at", Key: "createdAtFilter",
+					Type: RuntimeValueTypeString,
+					Source: ComponentOutputSource{
+						Kind: ComponentOutputSourceTableFilter, FilterID: filterID,
+					},
+				}},
+			},
+		}, {
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID: "cmp_summary", StateKey: "salesSummary",
+				Type: ComponentTypeInfoBlocks,
+				DataBinding: &DataBinding{
+					Kind: BindingKindPipeline, SchemaName: "sales",
+					PipelineName: "sales_summary",
+					Parameters: map[string]ParameterBinding{
+						"after": {
+							Source:      ParameterBindingSourceComponentOutput,
+							ComponentID: "cmp_products",
+							OutputID:    "out_created_at",
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	roundTrips := []struct {
+		name string
+		run  func(PageModel) (PageModel, error)
+	}{
+		{
+			name: "json",
+			run: func(page PageModel) (PageModel, error) {
+				data, err := json.Marshal(page)
+				if err != nil {
+					return PageModel{}, err
+				}
+				var got PageModel
+				err = json.Unmarshal(data, &got)
+				return got, err
+			},
+		},
+		{
+			name: "bson",
+			run: func(page PageModel) (PageModel, error) {
+				data, err := bson.Marshal(page)
+				if err != nil {
+					return PageModel{}, err
+				}
+				var got PageModel
+				err = bson.Unmarshal(data, &got)
+				return got, err
+			},
+		},
+	}
+
+	for _, roundTrip := range roundTrips {
+		t.Run(roundTrip.name, func(t *testing.T) {
+			got, err := roundTrip.run(page)
+			if err != nil {
+				t.Fatalf("round trip error = %v", err)
+			}
+
+			if got.Variables[0].ID != "var_branch" || got.Variables[0].InitialValue != "all" {
+				t.Fatalf("Variables[0] = %#v, want preserved ID and initial value", got.Variables[0])
+			}
+
+			productComponent := got.Sections[0].Component
+			if productComponent.ID != "cmp_products" || productComponent.StateKey != "productTable" {
+				t.Fatalf("product component = %#v, want preserved IDs", productComponent)
+			}
+			if (*productComponent.Table.FilterPanel.Inputs)[0].ID != filterID {
+				t.Fatalf("filter ID = %q, want %q", (*productComponent.Table.FilterPanel.Inputs)[0].ID, filterID)
+			}
+			if productComponent.Outputs[0].ID != "out_created_at" ||
+				productComponent.Outputs[0].Source.Kind != ComponentOutputSourceTableFilter {
+				t.Fatalf("Outputs[0] = %#v, want preserved ID and source kind", productComponent.Outputs[0])
+			}
+
+			summaryComponent := got.Sections[1].Component
+			if summaryComponent.ID != "cmp_summary" || summaryComponent.StateKey != "salesSummary" {
+				t.Fatalf("summary component = %#v, want preserved IDs", summaryComponent)
+			}
+			after := summaryComponent.DataBinding.Parameters["after"]
+			if after.Source != ParameterBindingSourceComponentOutput ||
+				after.ComponentID != "cmp_products" ||
+				after.OutputID != "out_created_at" {
+				t.Fatalf("Parameters[after] = %#v, want preserved component output binding", after)
+			}
+		})
+	}
+}
+
+func TestPageFiltersRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Orders",
+		Filters: []PageFilterDefinition{{
+			ID:                 "pfl_status",
+			Key:                "status",
+			Label:              "Status",
+			Type:               RuntimeValueTypeNumberArray,
+			DefaultValue:       []interface{}{float64(10), float64(23)},
+			DefaultPreset:      PageFilterDefaultPresetToday,
+			ArraySerialization: PageFilterArraySerializationComma,
+			Placement:          PageFilterPlacement{Kind: PageFilterPlacementCell, CellID: "cell-main"},
+		}},
+		Sections: []Section{{
+			Type: SectionTypeGrid,
+			Grid: &GridSection{Columns: 1, Cells: []GridCell{{
+				ID: "cell-main",
+				Components: []ComponentBlock{{
+					ID:   "cmp_orders",
+					Type: ComponentTypeTable,
+					DataBinding: &DataBinding{Kind: BindingKindPipeline, Parameters: map[string]ParameterBinding{
+						"status": {Source: ParameterBindingSourcePageFilter, FilterID: "pfl_status"},
+					}},
+				}},
+			}}},
+		}},
+	}
+
+	data, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal(PageModel) error = %v", err)
+	}
+	var got PageModel
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal(PageModel) error = %v", err)
+	}
+	if got.Filters[0].ID != "pfl_status" || got.Filters[0].Placement.CellID != "cell-main" {
+		t.Fatalf("Filters[0] = %#v, want persisted page filter", got.Filters[0])
+	}
+	if got.Filters[0].ArraySerialization != PageFilterArraySerializationComma {
+		t.Fatalf("Filters[0].ArraySerialization = %q, want comma", got.Filters[0].ArraySerialization)
+	}
+	if got.Filters[0].DefaultPreset != PageFilterDefaultPresetToday {
+		t.Fatalf("Filters[0].DefaultPreset = %q, want today", got.Filters[0].DefaultPreset)
+	}
+	if got.Sections[0].Grid.Cells[0].Components[0].DataBinding.Parameters["status"].FilterID != "pfl_status" {
+		t.Fatalf("pageFilter binding not preserved: %#v", got.Sections[0].Grid.Cells[0].Components[0].DataBinding.Parameters)
+	}
+}
+
 func TestDistributionBlocksComponentPreservesBindingAndConfig(t *testing.T) {
 	page := PageModel{
 		Name: "Categories",
@@ -685,6 +847,39 @@ func TestPageRouteParamSlugAndBindingParamsRoundTrip(t *testing.T) {
 	}
 	if gotBinding.Params["countList"] != "{{route.id}}" {
 		t.Fatalf("Params[countList] = %#v, want {{route.id}}", gotBinding.Params["countList"])
+	}
+}
+
+func TestPageGroupOnlyFalseIsSerialized(t *testing.T) {
+	page := PageModel{
+		Name:        "Product Catalog",
+		IsGroupOnly: false,
+	}
+
+	jsonData, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var jsonDocument map[string]interface{}
+	if err := json.Unmarshal(jsonData, &jsonDocument); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if value, ok := jsonDocument["isGroupOnly"]; !ok || value != false {
+		t.Fatalf("JSON isGroupOnly = %#v, present = %v; want false and present", value, ok)
+	}
+
+	bsonData, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var bsonDocument bson.M
+	if err := bson.Unmarshal(bsonData, &bsonDocument); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if value, ok := bsonDocument["isGroupOnly"]; !ok || value != false {
+		t.Fatalf("BSON isGroupOnly = %#v, present = %v; want false and present", value, ok)
 	}
 }
 

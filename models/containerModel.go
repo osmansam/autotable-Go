@@ -36,6 +36,7 @@ type ActionFormOptionConfig struct {
 }
 
 type ActionFormFieldConfig struct {
+	ID                    string                   `bson:"id,omitempty" json:"id,omitempty"`
 	FormKey               string                   `bson:"formKey" json:"formKey"`
 	Type                  string                   `bson:"type" json:"type"`
 	FormKeyType           string                   `bson:"formKeyType,omitempty" json:"formKeyType,omitempty"`

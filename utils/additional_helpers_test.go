@@ -133,6 +133,15 @@ func TestExecuteAPIRequest(t *testing.T) {
 		t.Fatalf("ExecuteApiRequest() = %q, %v", got, err)
 	}
 
+	multiMegabyteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, 2<<20))
+	}))
+	defer multiMegabyteServer.Close()
+	got, err = ExecuteApiRequest(context.Background(), http.MethodGet, multiMegabyteServer.URL, nil)
+	if err != nil || len(got) != 2<<20 {
+		t.Fatalf("ExecuteApiRequest(2 MiB response) bytes = %d, error = %v", len(got), err)
+	}
+
 	largeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(make([]byte, maxExecuteAPIResponseBytes+1))
 	}))

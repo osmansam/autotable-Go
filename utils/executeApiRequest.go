@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const maxExecuteAPIResponseBytes = 1 << 20
+const maxExecuteAPIResponseBytes = 5 << 20
 
 // ExecuteApiRequest makes an HTTP request based on the provided method, URL, body, and context.
 // It returns the response body as a byte slice and any error encountered.

@@ -49,9 +49,9 @@
     "maxPageLimit": 100,
     "maxUnboundedReadLimit": 5000,
     "maxExportLimit": 50000,
-    "maxBulkWriteLimit": 1000,
-    "maxBulkUpdateLimit": 1000,
-    "maxBulkDeleteLimit": 1000,
+    "maxBulkWriteLimit": 3000,
+    "maxBulkUpdateLimit": 3000,
+    "maxBulkDeleteLimit": 3000,
     "bodySizeLimits": {
       "defaultBodySizeBytes": 1048576,
       "bulkWriteBodySizeBytes": 10485760,

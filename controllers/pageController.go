@@ -61,6 +61,9 @@ func CreatePage(c *fiber.Ctx) error {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
 	}
+	if validationErr := models.ValidatePageRuntimeConfig(&page); validationErr != nil {
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
+	}
 
 	// Get project-specific pages collection
 	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
@@ -285,6 +288,9 @@ func UpdatePage(c *fiber.Ctx) error {
 	if validationErr := models.ValidatePageTableConfig(&updatedPage); validationErr != nil {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
+	}
+	if validationErr := models.ValidatePageRuntimeConfig(&updatedPage); validationErr != nil {
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
 	}
 
 	updateIdStr := c.Params("id")
