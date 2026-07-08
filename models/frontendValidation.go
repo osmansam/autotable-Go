@@ -434,11 +434,30 @@ func ValidateContainerFrontendConfig(container *ContainerModel) error {
 	return nil
 }
 
+// ValidateAuthContainerGoogleLoginConfig validates auth-container requirements that
+// only apply when Google login is enabled.
+func ValidateAuthContainerGoogleLoginConfig(container *ContainerModel) error {
+	if container == nil || !container.IsAuthContainer || !container.IsGoogleLoginActive {
+		return nil
+	}
+
+	for _, field := range container.Fields {
+		if strings.EqualFold(strings.TrimSpace(field.Name), "email") {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("auth container must have an email field when Google login is active")
+}
+
 // Example integration function showing how to use validation during container creation
 func ValidateAndCreateContainer(container *ContainerModel) error {
 	// Validate frontend link configurations
 	if err := ValidateContainerFrontendConfig(container); err != nil {
 		return fmt.Errorf("frontend validation failed: %w", err)
+	}
+	if err := ValidateAuthContainerGoogleLoginConfig(container); err != nil {
+		return err
 	}
 
 	// Additional validation logic would go here
@@ -455,6 +474,9 @@ func ValidateAndUpdateContainer(container *ContainerModel) error {
 	// Validate frontend link configurations
 	if err := ValidateContainerFrontendConfig(container); err != nil {
 		return fmt.Errorf("frontend validation failed: %w", err)
+	}
+	if err := ValidateAuthContainerGoogleLoginConfig(container); err != nil {
+		return err
 	}
 
 	// Additional validation logic would go here

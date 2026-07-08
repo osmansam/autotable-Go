@@ -327,6 +327,10 @@ func CreateContainer(c *fiber.Ctx) error {
 		log.Printf("Frontend config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
 	}
+	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&container); validationErr != nil {
+		log.Printf("Auth container Google login validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
+	}
 
 	// Check if the schema name is in the restricted schema names list
 	for _, restrictedName := range models.RestrictedSchemaNames {
@@ -364,19 +368,6 @@ func CreateContainer(c *fiber.Ctx) error {
 			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
 		}
 
-		// Validate that there's an email field with isLoginCredential true
-		hasValidEmailField := false
-		for _, field := range container.Fields {
-			if field.Name == "email" && field.IsLoginCredential {
-				hasValidEmailField = true
-				break
-			}
-		}
-		if !hasValidEmailField {
-			log.Println("Auth container missing required email field with isLoginCredential")
-			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
-		}
-
 		// Ensure role schema exists when creating an auth container
 		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
@@ -391,16 +382,18 @@ func CreateContainer(c *fiber.Ctx) error {
 	}
 
 	newContainer := models.ContainerModel{
-		SchemaName:       container.SchemaName,
-		Fields:           container.Fields,
-		Routes:           container.Routes,
-		Redis:            defaultContainerRedis(container.SchemaName, nil),
-		Pipelines:        container.Pipelines,
-		IsAuthContainer:  container.IsAuthContainer,
-		PopulatedRoutes:  container.PopulatedRoutes,
-		DynamicApis:      container.DynamicApis,
-		DynamicFunctions: container.DynamicFunctions,
-		Indexes:          container.Indexes,
+		SchemaName:          container.SchemaName,
+		Fields:              container.Fields,
+		Routes:              container.Routes,
+		Redis:               defaultContainerRedis(container.SchemaName, nil),
+		Pipelines:           container.Pipelines,
+		IsAuthContainer:     container.IsAuthContainer,
+		IsRegisterActive:    container.IsRegisterActive,
+		IsGoogleLoginActive: container.IsGoogleLoginActive,
+		PopulatedRoutes:     container.PopulatedRoutes,
+		DynamicApis:         container.DynamicApis,
+		DynamicFunctions:    container.DynamicFunctions,
+		Indexes:             container.Indexes,
 	}
 
 	if err := utils.EnsureIndexes(ctx, &newContainer, tenantID, projectID); err != nil {
@@ -620,6 +613,10 @@ func UpdateContainer(c *fiber.Ctx) error {
 		log.Printf("Frontend config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
 	}
+	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&updatedContainer); validationErr != nil {
+		log.Printf("Auth container Google login validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
+	}
 
 	updateIdStr := c.Params("id")
 	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
@@ -671,19 +668,6 @@ func UpdateContainer(c *fiber.Ctx) error {
 		if authCount > 0 {
 			log.Println("Another auth container already exists")
 			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
-		}
-
-		// Validate that there's an email field with isLoginCredential true
-		hasValidEmailField := false
-		for _, field := range updatedContainer.Fields {
-			if field.Name == "email" && field.IsLoginCredential {
-				hasValidEmailField = true
-				break
-			}
-		}
-		if !hasValidEmailField {
-			log.Println("Auth container missing required email field with isLoginCredential")
-			return utils.SendErrorResponse(c, nil, "Auth container must have a field named 'email' with isLoginCredential set to true.")
 		}
 
 		// Ensure role schema exists when updating to an auth container

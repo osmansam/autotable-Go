@@ -25,6 +25,118 @@ func TestContainerModelSortFieldsByOrder(t *testing.T) {
 	}
 }
 
+func TestAuthContainerGoogleLoginFlagRoundTrip(t *testing.T) {
+	container := ContainerModel{
+		SchemaName:          "auth",
+		IsAuthContainer:     true,
+		IsGoogleLoginActive: true,
+		IsRegisterActive:    true,
+		Fields:              []Field{{Name: "email", Type: "string"}},
+		PopulatedRoutes:     []string{},
+		DynamicFunctions:    []DynamicFunction{},
+		DynamicApis:         []DynamicApiModel{},
+		Workflows:           []DynamicWorkflow{},
+		Pipelines:           []PipelineStage{},
+		Indexes:             []Index{},
+	}
+
+	jsonData, err := json.Marshal(container)
+	if err != nil {
+		t.Fatalf("json.Marshal(ContainerModel) error = %v", err)
+	}
+	var jsonGot ContainerModel
+	if err := json.Unmarshal(jsonData, &jsonGot); err != nil {
+		t.Fatalf("json.Unmarshal(ContainerModel) error = %v", err)
+	}
+	if !jsonGot.IsGoogleLoginActive {
+		t.Fatal("JSON IsGoogleLoginActive = false, want true")
+	}
+
+	bsonData, err := bson.Marshal(container)
+	if err != nil {
+		t.Fatalf("bson.Marshal(ContainerModel) error = %v", err)
+	}
+	var bsonGot ContainerModel
+	if err := bson.Unmarshal(bsonData, &bsonGot); err != nil {
+		t.Fatalf("bson.Unmarshal(ContainerModel) error = %v", err)
+	}
+	if !bsonGot.IsGoogleLoginActive {
+		t.Fatal("BSON IsGoogleLoginActive = false, want true")
+	}
+}
+
+func TestValidateAuthContainerGoogleLoginConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		container ContainerModel
+		wantErr   bool
+	}{
+		{
+			name: "allows auth container without email when google login is disabled",
+			container: ContainerModel{
+				SchemaName:          "auth",
+				IsAuthContainer:     true,
+				IsGoogleLoginActive: false,
+				Fields: []Field{{
+					Name:              "username",
+					Type:              "string",
+					IsLoginCredential: true,
+				}},
+			},
+		},
+		{
+			name: "rejects google login without email field",
+			container: ContainerModel{
+				SchemaName:          "auth",
+				IsAuthContainer:     true,
+				IsGoogleLoginActive: true,
+				Fields: []Field{{
+					Name:              "username",
+					Type:              "string",
+					IsLoginCredential: true,
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "allows google login with email field",
+			container: ContainerModel{
+				SchemaName:          "auth",
+				IsAuthContainer:     true,
+				IsGoogleLoginActive: true,
+				Fields: []Field{{
+					Name: "email",
+					Type: "string",
+				}},
+			},
+		},
+		{
+			name: "ignores non auth containers",
+			container: ContainerModel{
+				SchemaName:          "customer",
+				IsAuthContainer:     false,
+				IsGoogleLoginActive: true,
+				Fields: []Field{{
+					Name: "name",
+					Type: "string",
+				}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAuthContainerGoogleLoginConfig(&tt.container)
+			if tt.wantErr && err == nil {
+				t.Fatal("ValidateAuthContainerGoogleLoginConfig error = nil, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ValidateAuthContainerGoogleLoginConfig error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestInfoBlocksComponentPreservesBindingAndBlockConfig(t *testing.T) {
 	page := PageModel{
 		Name: "Inventory",
@@ -880,6 +992,39 @@ func TestPageGroupOnlyFalseIsSerialized(t *testing.T) {
 	}
 	if value, ok := bsonDocument["isGroupOnly"]; !ok || value != false {
 		t.Fatalf("BSON isGroupOnly = %#v, present = %v; want false and present", value, ok)
+	}
+}
+
+func TestPageMainPageFlagRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name:       "Sales Reports",
+		IsMainPage: true,
+	}
+
+	jsonData, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var jsonGot PageModel
+	if err := json.Unmarshal(jsonData, &jsonGot); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if !jsonGot.IsMainPage {
+		t.Fatal("JSON IsMainPage = false, want true")
+	}
+
+	bsonData, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var bsonGot PageModel
+	if err := bson.Unmarshal(bsonData, &bsonGot); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if !bsonGot.IsMainPage {
+		t.Fatal("BSON IsMainPage = false, want true")
 	}
 }
 

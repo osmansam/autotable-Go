@@ -29,6 +29,16 @@ func getPageProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error)
 	return tenantID, projectID, nil
 }
 
+func clearOtherMainPages(ctx context.Context, pageCollection *mongo.Collection, currentPageID primitive.ObjectID) error {
+	filter := bson.M{"isMainPage": true}
+	if currentPageID != primitive.NilObjectID {
+		filter["_id"] = bson.M{"$ne": currentPageID}
+	}
+
+	_, err := pageCollection.UpdateMany(ctx, filter, bson.M{"$set": bson.M{"isMainPage": false}})
+	return err
+}
+
 // CreatePage creates a new page in project-specific collection
 func CreatePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -64,6 +74,9 @@ func CreatePage(c *fiber.Ctx) error {
 	if validationErr := models.ValidatePageRuntimeConfig(&page); validationErr != nil {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
 	}
+	if page.IsMainPage && page.IsGroupOnly {
+		return utils.SendErrorResponse(c, fmt.Errorf("group-only pages cannot be main pages"), "Validation error. A group-only page cannot be selected as the main page.")
+	}
 
 	// Get project-specific pages collection
 	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
@@ -73,6 +86,15 @@ func CreatePage(c *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("Failed to insert page: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to insert the page into the database. Please try again later.")
+	}
+	if page.IsMainPage {
+		insertedID, ok := result.InsertedID.(primitive.ObjectID)
+		if !ok {
+			return utils.SendErrorResponse(c, fmt.Errorf("inserted page id is not a MongoDB ObjectID"), "Failed to update existing main page selection. Please try again later.")
+		}
+		if err := clearOtherMainPages(ctx, pageCollection, insertedID); err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to update existing main page selection. Please try again later.")
+		}
 	}
 
 	// Emit WebSocket event for page change
@@ -292,6 +314,9 @@ func UpdatePage(c *fiber.Ctx) error {
 	if validationErr := models.ValidatePageRuntimeConfig(&updatedPage); validationErr != nil {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
 	}
+	if updatedPage.IsMainPage && updatedPage.IsGroupOnly {
+		return utils.SendErrorResponse(c, fmt.Errorf("group-only pages cannot be main pages"), "Validation error. A group-only page cannot be selected as the main page.")
+	}
 
 	updateIdStr := c.Params("id")
 	updateId, err := primitive.ObjectIDFromHex(updateIdStr)
@@ -317,6 +342,12 @@ func UpdatePage(c *fiber.Ctx) error {
 			Message: "No page found with the specified ID.",
 			Data:    nil,
 		})
+	}
+
+	if updatedPage.IsMainPage {
+		if err := clearOtherMainPages(ctx, pageCollection, updateId); err != nil {
+			return utils.SendErrorResponse(c, err, "Failed to update existing main page selection. Please try again later.")
+		}
 	}
 
 	// Emit WebSocket event for page change

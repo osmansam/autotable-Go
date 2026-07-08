@@ -459,6 +459,7 @@ type PageModel struct {
 	Order           int                      `bson:"order,omitempty" json:"order,omitempty"`                 // order in sidebar under same parent
 	IsGroupOnly     bool                     `bson:"isGroupOnly" json:"isGroupOnly"`                         // If true → used as parent group in sidebar, but no direct route
 	IsOnSidebar     *bool                    `bson:"isOnSidebar,omitempty" json:"isOnSidebar,omitempty"`     // If false → route exists but is hidden from sidebar navigation
+	IsMainPage      bool                     `bson:"isMainPage,omitempty" json:"isMainPage,omitempty"`       // If true → first page opened after login
 	IsAuthenticated bool                     `bson:"isAuthenticated" json:"isAuthenticated"`                 // Page-level authentication
 	IsAuthorized    bool                     `bson:"isAuthorized" json:"isAuthorized"`                       // Page-level authorization
 	AuthorizeRole   []string                 `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
