@@ -215,21 +215,22 @@ type Index struct {
 }
 
 type ContainerModel struct {
-	ID               primitive.ObjectID `bson:"_id,omitempty"`
-	SchemaName       string             `bson:"schemaName"`
-	Fields           []Field            `bson:"fields"`
-	Routes           Routes             `bson:"routes"`
-	Redis            Redis              `bson:"redis"`
-	Pipelines        []PipelineStage    `bson:"pipelines"`
-	DynamicFunctions []DynamicFunction  `bson:"dynamicFunctions"`
-	DynamicApis      []DynamicApiModel  `bson:"dynamicApis"`
-	Workflows        []DynamicWorkflow  `bson:"workflows,omitempty" json:"workflows,omitempty"`
-	IsAuthContainer  bool               `bson:"isAuthContainer,omitempty"`
-	IsRegisterActive bool               `bson:"isRegisterActive,omitempty"`
-	PopulatedRoutes  []string           `bson:"populatedRoutes"`
-	Indexes          []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
-	RowAccess        *RowAccessRule     `bson:"rowAccess,omitempty"`
-	Frontend         *Frontend          `bson:"frontend,omitempty" json:"frontend,omitempty"`
+	ID                  primitive.ObjectID `bson:"_id,omitempty"`
+	SchemaName          string             `bson:"schemaName"`
+	Fields              []Field            `bson:"fields"`
+	Routes              Routes             `bson:"routes"`
+	Redis               Redis              `bson:"redis"`
+	Pipelines           []PipelineStage    `bson:"pipelines"`
+	DynamicFunctions    []DynamicFunction  `bson:"dynamicFunctions"`
+	DynamicApis         []DynamicApiModel  `bson:"dynamicApis"`
+	Workflows           []DynamicWorkflow  `bson:"workflows,omitempty" json:"workflows,omitempty"`
+	IsAuthContainer     bool               `bson:"isAuthContainer,omitempty"`
+	IsRegisterActive    bool               `bson:"isRegisterActive,omitempty"`
+	IsGoogleLoginActive bool               `bson:"isGoogleLoginActive,omitempty" json:"isGoogleLoginActive,omitempty"`
+	PopulatedRoutes     []string           `bson:"populatedRoutes"`
+	Indexes             []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
+	RowAccess           *RowAccessRule     `bson:"rowAccess,omitempty"`
+	Frontend            *Frontend          `bson:"frontend,omitempty" json:"frontend,omitempty"`
 
 	// Multi-tenancy fields
 	TenantID       *primitive.ObjectID `bson:"tenantId,omitempty" json:"tenantId,omitempty"`             // Project-scoped containers

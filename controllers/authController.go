@@ -22,6 +22,44 @@ import (
 	"golang.org/x/oauth2"
 )
 
+func getProjectAuthContainer(ctx context.Context, tenantID, projectID string) (models.ContainerModel, error) {
+	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+	var container models.ContainerModel
+	if err := containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container); err != nil {
+		return models.ContainerModel{}, err
+	}
+	return container, nil
+}
+
+func ensureGoogleLoginActive(ctx context.Context, tenantID, projectID string) error {
+	container, err := getProjectAuthContainer(ctx, tenantID, projectID)
+	if err != nil {
+		return fmt.Errorf("authentication container not configured")
+	}
+	if !container.IsGoogleLoginActive {
+		return fmt.Errorf("Google login is disabled for this project")
+	}
+	return nil
+}
+
+func resolveAuthRoleName(ctx context.Context, tenantID, projectID string, role interface{}) string {
+	switch typed := role.(type) {
+	case string:
+		return typed
+	case primitive.ObjectID:
+		roleCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, "role")
+		var roleDoc map[string]interface{}
+		if err := roleCollection.FindOne(ctx, bson.M{"_id": typed}).Decode(&roleDoc); err == nil {
+			if name, ok := roleDoc["name"].(string); ok {
+				return name
+			}
+		}
+		return typed.Hex()
+	default:
+		return ""
+	}
+}
+
 // Register a new user dynamically based on container configuration.
 func Register(c *fiber.Ctx) error {
 	log.Println("Dynamic Register endpoint called")
@@ -42,7 +80,6 @@ func Register(c *fiber.Ctx) error {
 			Message: "Missing tenant or project context",
 		})
 	}
-
 	// Assume schemaName is provided as a query parameter
 	schemaName := c.Query("schemaName")
 	if schemaName == "" {
@@ -186,10 +223,7 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// Find the auth container (IsAuthContainer = true) in project-specific containers collection
-	containersCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-	var container models.ContainerModel
-	err = containersCollection.FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
+	container, err := getProjectAuthContainer(ctx, tenantID, projectID)
 	if err != nil {
 		log.Printf("Failed to find auth container: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -289,14 +323,14 @@ func Login(c *fiber.Ctx) error {
 	} else if r, ok := storedUser["roleId"].(string); ok && r != "" {
 		role = r
 	} else if roleOID, ok := storedUser["role"].(primitive.ObjectID); ok {
-		role = roleOID.Hex()
+		role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 	} else if roleOID, ok := storedUser["roleId"].(primitive.ObjectID); ok {
-		role = roleOID.Hex()
+		role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 	} else if roles, ok := storedUser["roles"].([]interface{}); ok && len(roles) > 0 {
 		if roleStr, ok := roles[0].(string); ok {
 			role = roleStr
 		} else if roleOID, ok := roles[0].(primitive.ObjectID); ok {
-			role = roleOID.Hex()
+			role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 		}
 	}
 
@@ -371,6 +405,12 @@ func GoogleLogin(c *fiber.Ctx) error {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Missing tenant or project context",
+		})
+	}
+	if err := ensureGoogleLoginActive(ctx, tenantID, projectID); err != nil {
+		return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+			Status:  http.StatusForbidden,
+			Message: err.Error(),
 		})
 	}
 
@@ -489,6 +529,12 @@ func GoogleCallback(c *fiber.Ctx) error {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Invalid OAuth state: missing tenant or project context",
+		})
+	}
+	if err := ensureGoogleLoginActive(ctx, tenantID, projectID); err != nil {
+		return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+			Status:  http.StatusForbidden,
+			Message: err.Error(),
 		})
 	}
 
@@ -679,7 +725,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 		if r, ok := newUser["role"].(string); ok && r != "" {
 			role = r
 		} else if roleOID, ok := newUser["role"].(primitive.ObjectID); ok {
-			role = roleOID.Hex()
+			role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 		}
 		existingUser = newUser
 		existingUser["_id"] = result.InsertedID
@@ -694,12 +740,12 @@ func GoogleCallback(c *fiber.Ctx) error {
 		if r, ok := existingUser["role"].(string); ok && r != "" {
 			role = r
 		} else if roleOID, ok := existingUser["role"].(primitive.ObjectID); ok {
-			role = roleOID.Hex()
+			role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 		} else if roles, ok := existingUser["roles"].([]interface{}); ok && len(roles) > 0 {
 			if roleStr, ok := roles[0].(string); ok {
 				role = roleStr
 			} else if roleOID, ok := roles[0].(primitive.ObjectID); ok {
-				role = roleOID.Hex()
+				role = resolveAuthRoleName(ctx, tenantID, projectID, roleOID)
 			}
 		}
 	}

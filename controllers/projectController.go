@@ -107,6 +107,11 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		log.Printf("Failed to create role schema: %v", err)
 		return fmt.Errorf("failed to create role schema: %w", err)
 	}
+	roleCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, "role")
+	if _, err := roleCollection.InsertOne(ctx, bson.M{"name": "admin"}); err != nil {
+		log.Printf("Failed to create default admin role: %v", err)
+		return fmt.Errorf("failed to create default admin role: %w", err)
+	}
 	log.Println("Role schema successfully created")
 
 	// 2. Create the 'auth' schema with email and role fields
@@ -154,15 +159,16 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
 			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
 		},
-		Redis:            defaultContainerRedis("auth", nil),
-		IsAuthContainer:  true,
-		IsRegisterActive: true,
-		PopulatedRoutes:  []string{},
-		Pipelines:        []models.PipelineStage{},
-		DynamicFunctions: []models.DynamicFunction{},
-		Workflows:        []models.DynamicWorkflow{},
-		DynamicApis:      []models.DynamicApiModel{},
-		Indexes:          []models.Index{},
+		Redis:               defaultContainerRedis("auth", nil),
+		IsAuthContainer:     true,
+		IsRegisterActive:    true,
+		IsGoogleLoginActive: false,
+		PopulatedRoutes:     []string{},
+		Pipelines:           []models.PipelineStage{},
+		DynamicFunctions:    []models.DynamicFunction{},
+		Workflows:           []models.DynamicWorkflow{},
+		DynamicApis:         []models.DynamicApiModel{},
+		Indexes:             []models.Index{},
 	}
 
 	if err := utils.EnsureIndexes(ctx, &authContainer, tenantID, projectID); err != nil {
