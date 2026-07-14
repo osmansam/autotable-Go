@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -39,6 +40,27 @@ func clearOtherMainPages(ctx context.Context, pageCollection *mongo.Collection, 
 	return err
 }
 
+func pageUpdateDocument(page models.PageModel, body []byte) (bson.M, error) {
+	data, err := bson.Marshal(page)
+	if err != nil {
+		return nil, err
+	}
+
+	var updateSet bson.M
+	if err := bson.Unmarshal(data, &updateSet); err != nil {
+		return nil, err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err == nil {
+		if _, ok := raw["filters"]; ok {
+			updateSet["filters"] = page.Filters
+		}
+	}
+
+	return bson.M{"$set": updateSet}, nil
+}
+
 // CreatePage creates a new page in project-specific collection
 func CreatePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -67,6 +89,7 @@ func CreatePage(c *fiber.Ctx) error {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
+	models.NormalizePageRuntimeConfig(&page)
 	if validationErr := models.ValidatePageTableConfig(&page); validationErr != nil {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
@@ -307,6 +330,7 @@ func UpdatePage(c *fiber.Ctx) error {
 		log.Printf("Validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
+	models.NormalizePageRuntimeConfig(&updatedPage)
 	if validationErr := models.ValidatePageTableConfig(&updatedPage); validationErr != nil {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
@@ -327,9 +351,14 @@ func UpdatePage(c *fiber.Ctx) error {
 
 	// Get project-specific pages collection
 	pageCollection := utils.GetPageCollectionForProject(tenantID, projectID)
+	updateDocument, err := pageUpdateDocument(updatedPage, c.Body())
+	if err != nil {
+		log.Printf("Failed to prepare page update document: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to prepare the page update.")
+	}
 
 	log.Println("Updating page in the database")
-	updateResult, err := pageCollection.UpdateOne(ctx, bson.M{"_id": updateId}, bson.M{"$set": updatedPage})
+	updateResult, err := pageCollection.UpdateOne(ctx, bson.M{"_id": updateId}, updateDocument)
 	if err != nil {
 		log.Printf("Failed to update page: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to update the page in the database. Please try again later.")

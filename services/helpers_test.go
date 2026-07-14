@@ -299,6 +299,65 @@ func TestWorkflowConfigurationHelpers(t *testing.T) {
 	}
 }
 
+func TestWorkflowApplyOutputMappingsFlattensNestedFields(t *testing.T) {
+	items := []map[string]interface{}{
+		{
+			"_id": "stock-1",
+			"product": map[string]interface{}{
+				"_id":   "product-1",
+				"name":  "Arkham Horror",
+				"price": 120,
+			},
+			"quantity": 3,
+		},
+	}
+
+	got := workflowApplyOutputMappings(map[string]interface{}{
+		"outputMappings": map[string]interface{}{
+			"productId":    "product._id",
+			"productName":  "product.name",
+			"productPrice": "product.price",
+		},
+	}, items)
+
+	if got[0]["productId"] != "product-1" || got[0]["productName"] != "Arkham Horror" || got[0]["productPrice"] != 120 {
+		t.Fatalf("workflowApplyOutputMappings() = %#v", got[0])
+	}
+}
+
+func TestWorkflowFindRecordsSearchConfigResolvesQueryValue(t *testing.T) {
+	payload := workflowExecutionPayload{Query: map[string]interface{}{"search": "davinci"}}
+
+	if got := workflowFindRecordsSearchKey(map[string]interface{}{
+		"search": map[string]interface{}{
+			"value":         "{{query.search}}",
+			"fields":        []interface{}{"name", "category"},
+			"mode":          "contains",
+			"caseSensitive": false,
+		},
+	}, payload); got != "davinci" {
+		t.Fatalf("workflowFindRecordsSearchKey(object) = %q", got)
+	}
+
+	if got := workflowFindRecordsSearchKey(map[string]interface{}{"search": "{{query.search}}"}, payload); got != "davinci" {
+		t.Fatalf("workflowFindRecordsSearchKey(string) = %q", got)
+	}
+
+	if got := workflowFindRecordsSearchKey(map[string]interface{}{"searchKey": "{{query.search}}"}, payload); got != "davinci" {
+		t.Fatalf("workflowFindRecordsSearchKey(searchKey) = %q", got)
+	}
+
+	emptyPayload := workflowExecutionPayload{Query: map[string]interface{}{}}
+	if got := workflowFindRecordsSearchKey(map[string]interface{}{
+		"search": map[string]interface{}{"value": "{{query.search}}"},
+	}, emptyPayload); got != "" {
+		t.Fatalf("workflowFindRecordsSearchKey(empty object) = %q, want empty", got)
+	}
+	if got := workflowFindRecordsSearchKey(map[string]interface{}{"search": "{{query.search}}"}, emptyPayload); got != "" {
+		t.Fatalf("workflowFindRecordsSearchKey(empty string) = %q, want empty", got)
+	}
+}
+
 func TestWorkflowConditions(t *testing.T) {
 	payload := workflowExecutionPayload{
 		Record:    map[string]interface{}{"amount": 20, "state": "done", "status": "open", "tags": []interface{}{"a"}, "nested": map[string]interface{}{"value": 3}, "name": "invoice-001", "empty": "", "dueDate": "2026-06-05", "quantity": 3, "unitPrice": 7, "total": 21, "discount": 4, "discountedTotal": 17},
@@ -358,6 +417,7 @@ func TestWorkflowTemplatesAndPaths(t *testing.T) {
 		WorkflowName: "notify",
 		UserID:       "user",
 		Record:       map[string]interface{}{"amount": 3, "nested": map[string]interface{}{"name": "Ada"}},
+		Query:        map[string]interface{}{"search": "coffee", "nested": map[string]interface{}{"term": "tea"}},
 		Variables:    map[string]interface{}{"enabled": true},
 	}
 	if got := resolveWorkflowTemplateString("{{record.amount}}", payload); got != 3 {
@@ -368,6 +428,12 @@ func TestWorkflowTemplatesAndPaths(t *testing.T) {
 	}
 	if got := resolveWorkflowTemplates(map[string]interface{}{"enabled": "{{vars.enabled}}"}, payload); !reflect.DeepEqual(got, map[string]interface{}{"enabled": true}) {
 		t.Fatalf("resolveWorkflowTemplates() = %#v", got)
+	}
+	if got := resolveWorkflowTemplateString("{{query.search}}", payload); got != "coffee" {
+		t.Fatalf("resolved query scalar = %#v", got)
+	}
+	if got := resolveWorkflowTemplateString("{{query.nested.term}}", payload); got != "tea" {
+		t.Fatalf("resolved nested query scalar = %#v", got)
 	}
 	if got := resolveWorkflowTemplateString("{{add(record.amount, 4)}}", payload); got != float64(7) {
 		t.Fatalf("resolved add = %#v", got)

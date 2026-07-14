@@ -298,6 +298,18 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 			return fmt.Errorf("table addButton: %w", err)
 		}
 	}
+	if table.BulkActions != nil {
+		if table.BulkActions.Edit != nil {
+			if err := ValidateActionConfig(*table.BulkActions.Edit); err != nil {
+				return fmt.Errorf("table bulkActions.edit: %w", err)
+			}
+		}
+		if table.BulkActions.Delete != nil {
+			if err := ValidateActionConfig(*table.BulkActions.Delete); err != nil {
+				return fmt.Errorf("table bulkActions.delete: %w", err)
+			}
+		}
+	}
 	if err := ValidateFilterPanelConfig(table.FilterPanel); err != nil {
 		return fmt.Errorf("table filterPanel: %w", err)
 	}

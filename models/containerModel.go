@@ -72,6 +72,7 @@ type ActionSubmitConfig struct {
 	ConstantValues map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
 	WorkflowName   string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	WorkflowSchema string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
+	FunctionName   string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
 }
 
 type ActionConfig struct {

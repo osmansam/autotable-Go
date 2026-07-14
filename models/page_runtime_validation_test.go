@@ -240,6 +240,37 @@ func TestValidatePageRuntimeConfigRejectsCellFilterWithoutMatchingCell(t *testin
 	requireRuntimeValidationError(t, page, "unknown cell")
 }
 
+func TestNormalizePageRuntimeConfigRepairsTenantPanelFilterPayload(t *testing.T) {
+	page := validRuntimePage()
+	page.Filters = []PageFilterDefinition{{
+		ID:            "pfl_missing_cell",
+		Key:           "createdAt",
+		Label:         "Created At",
+		Type:          RuntimeValueTypeDate,
+		DefaultPreset: PageFilterDefaultPresetToday,
+		Placement:     PageFilterPlacement{Kind: PageFilterPlacementCell, CellID: "cell_missing"},
+	}, {
+		ID:            "pfl_month",
+		Key:           "month",
+		Label:         "Month",
+		Type:          RuntimeValueTypeMonthYear,
+		DefaultPreset: PageFilterDefaultPresetToday,
+		Placement:     PageFilterPlacement{Kind: PageFilterPlacementNavbar},
+	}}
+
+	NormalizePageRuntimeConfig(&page)
+
+	if page.Filters[0].Placement.Kind != PageFilterPlacementNavbar || page.Filters[0].Placement.CellID != "" {
+		t.Fatalf("stale cell placement was not normalized: %#v", page.Filters[0].Placement)
+	}
+	if page.Filters[1].DefaultPreset != PageFilterDefaultPresetCurrentMonthYear {
+		t.Fatalf("monthYear preset = %q, want %q", page.Filters[1].DefaultPreset, PageFilterDefaultPresetCurrentMonthYear)
+	}
+	if err := ValidatePageRuntimeConfig(&page); err != nil {
+		t.Fatalf("ValidatePageRuntimeConfig() error = %v", err)
+	}
+}
+
 func TestValidatePageRuntimeConfigRejectsScalarFieldAccessor(t *testing.T) {
 	page := validRuntimePage()
 	binding := page.Sections[1].Component.DataBinding.Parameters["after"]

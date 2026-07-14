@@ -68,16 +68,20 @@ func ReplacePlaceholdersWithQueryParams(pipelineJSON string, c *fiber.Ctx) strin
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			placeholder := match[1] // Placeholder name
+			rawPlaceholder := match[1]
+			placeholder := strings.TrimSpace(rawPlaceholder)
+			if placeholder == "" {
+				continue
+			}
 			queryValue := c.Query(placeholder)
 
 			// Check if the query value is an integer
 			if _, err := strconv.Atoi(queryValue); err == nil {
 				// It's an integer, so replace the placeholder without quotes
-				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("\"{{%s}}\"", placeholder), queryValue)
+				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("\"{{%s}}\"", rawPlaceholder), queryValue)
 			} else if queryValue != "" {
 				// Replace placeholder with query parameter value (as string)
-				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("{{%s}}", placeholder), queryValue)
+				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("{{%s}}", rawPlaceholder), queryValue)
 			}
 		}
 	}

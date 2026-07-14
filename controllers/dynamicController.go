@@ -918,6 +918,25 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		workflowName = c.Query("workflowName")
 	}
 
+	queryParams := map[string]interface{}{}
+	c.Context().QueryArgs().VisitAll(func(keyBytes, valueBytes []byte) {
+		key := string(keyBytes)
+		if key == "schemaName" || key == "workflowName" {
+			return
+		}
+		value := string(valueBytes)
+		if existing, ok := queryParams[key]; ok {
+			switch typed := existing.(type) {
+			case []interface{}:
+				queryParams[key] = append(typed, value)
+			default:
+				queryParams[key] = []interface{}{typed, value}
+			}
+			return
+		}
+		queryParams[key] = value
+	})
+
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		container, _ = storedContainer.(*models.ContainerModel)
@@ -951,6 +970,7 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		Schema:       schemaName,
 		WorkflowName: workflowName,
 		Record:       record,
+		Query:        queryParams,
 		OldRecord:    oldRecord,
 		StepOutputs:  stepOutputs,
 		UserID:       userID,
