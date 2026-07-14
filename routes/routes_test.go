@@ -35,3 +35,32 @@ func TestRouteRegistration(t *testing.T) {
 		t.Fatalf("registered routes = %d, want at least 40", registered)
 	}
 }
+
+func TestProjectTemplateRouteRegisteredBeforeProjectIDRoute(t *testing.T) {
+	app := fiber.New()
+	ProjectRoutes(app)
+
+	templateIndex := -1
+	projectIDIndex := -1
+	for index, route := range app.GetRoutes() {
+		if route.Method != "GET" {
+			continue
+		}
+		switch route.Path {
+		case "/api/v1/tenant/projects/templates":
+			templateIndex = index
+		case "/api/v1/tenant/projects/:id":
+			projectIDIndex = index
+		}
+	}
+
+	if templateIndex == -1 {
+		t.Fatal("GET /api/v1/tenant/projects/templates route is not registered")
+	}
+	if projectIDIndex == -1 {
+		t.Fatal("GET /api/v1/tenant/projects/:id route is not registered")
+	}
+	if templateIndex > projectIDIndex {
+		t.Fatalf("templates route index = %d, want before project id route index = %d", templateIndex, projectIDIndex)
+	}
+}
