@@ -72,6 +72,7 @@ type ActionSubmitConfig struct {
 	ConstantValues map[string]interface{} `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
 	WorkflowName   string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	WorkflowSchema string                 `bson:"workflowSchema,omitempty" json:"workflowSchema,omitempty"`
+	FunctionName   string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
 }
 
 type ActionConfig struct {
@@ -224,9 +225,9 @@ type ContainerModel struct {
 	DynamicFunctions    []DynamicFunction  `bson:"dynamicFunctions"`
 	DynamicApis         []DynamicApiModel  `bson:"dynamicApis"`
 	Workflows           []DynamicWorkflow  `bson:"workflows,omitempty" json:"workflows,omitempty"`
-	IsAuthContainer     bool               `bson:"isAuthContainer,omitempty"`
-	IsRegisterActive    bool               `bson:"isRegisterActive,omitempty"`
-	IsGoogleLoginActive bool               `bson:"isGoogleLoginActive,omitempty" json:"isGoogleLoginActive,omitempty"`
+	IsAuthContainer     bool               `bson:"isAuthContainer" json:"isAuthContainer"`
+	IsRegisterActive    bool               `bson:"isRegisterActive" json:"isRegisterActive"`
+	IsGoogleLoginActive bool               `bson:"isGoogleLoginActive" json:"isGoogleLoginActive"`
 	PopulatedRoutes     []string           `bson:"populatedRoutes"`
 	Indexes             []Index            `bson:"indexes,omitempty"` // MongoDB indexes for performance
 	RowAccess           *RowAccessRule     `bson:"rowAccess,omitempty"`

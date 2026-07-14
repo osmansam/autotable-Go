@@ -78,14 +78,18 @@ type Tenant struct {
 PROJECT (belongs to a tenant)
 */
 type Project struct {
-	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	TenantID   primitive.ObjectID `bson:"tenantId" json:"tenantId"`
-	TenantSlug string             `bson:"tenantSlug" json:"tenantSlug"` // Denormalized for fast lookup
-	Name       string             `bson:"name" json:"name"`
-	Slug       string             `bson:"slug" json:"slug"`
-	IsActive   bool               `bson:"isActive" json:"isActive"`
-	CreatedAt  time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt  time.Time          `bson:"updatedAt" json:"updatedAt"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	TenantID             primitive.ObjectID `bson:"tenantId" json:"tenantId"`
+	TenantSlug           string             `bson:"tenantSlug" json:"tenantSlug"` // Denormalized for fast lookup
+	Name                 string             `bson:"name" json:"name"`
+	Slug                 string             `bson:"slug" json:"slug"`
+	IsActive             bool               `bson:"isActive" json:"isActive"`
+	IsTemplate           bool               `bson:"isTemplate,omitempty" json:"isTemplate,omitempty"`
+	TemplateScope        string             `bson:"templateScope,omitempty" json:"templateScope,omitempty"`
+	TemplateIncludeItems bool               `bson:"templateIncludeItems,omitempty" json:"templateIncludeItems,omitempty"`
+	TemplateDescription  string             `bson:"templateDescription,omitempty" json:"templateDescription,omitempty"`
+	CreatedAt            time.Time          `bson:"createdAt" json:"createdAt"`
+	UpdatedAt            time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 /*

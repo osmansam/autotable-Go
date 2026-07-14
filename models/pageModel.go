@@ -20,6 +20,7 @@ const (
 	RuntimeValueTypeNumber      RuntimeValueType = "number"
 	RuntimeValueTypeBoolean     RuntimeValueType = "boolean"
 	RuntimeValueTypeDate        RuntimeValueType = "date"
+	RuntimeValueTypeMonthYear   RuntimeValueType = "monthYear"
 	RuntimeValueTypeDateRange   RuntimeValueType = "dateRange"
 	RuntimeValueTypeStringArray RuntimeValueType = "stringArray"
 	RuntimeValueTypeNumberArray RuntimeValueType = "numberArray"
@@ -54,15 +55,16 @@ const (
 type PageFilterDefaultPreset string
 
 const (
-	PageFilterDefaultPresetToday     PageFilterDefaultPreset = "today"
-	PageFilterDefaultPresetYesterday PageFilterDefaultPreset = "yesterday"
-	PageFilterDefaultPresetTomorrow  PageFilterDefaultPreset = "tomorrow"
-	PageFilterDefaultPresetThisWeek  PageFilterDefaultPreset = "thisWeek"
-	PageFilterDefaultPresetLastWeek  PageFilterDefaultPreset = "lastWeek"
-	PageFilterDefaultPresetThisMonth PageFilterDefaultPreset = "thisMonth"
-	PageFilterDefaultPresetLastMonth PageFilterDefaultPreset = "lastMonth"
-	PageFilterDefaultPresetThisYear  PageFilterDefaultPreset = "thisYear"
-	PageFilterDefaultPresetLastYear  PageFilterDefaultPreset = "lastYear"
+	PageFilterDefaultPresetToday            PageFilterDefaultPreset = "today"
+	PageFilterDefaultPresetYesterday        PageFilterDefaultPreset = "yesterday"
+	PageFilterDefaultPresetTomorrow         PageFilterDefaultPreset = "tomorrow"
+	PageFilterDefaultPresetCurrentMonthYear PageFilterDefaultPreset = "currentMonthYear"
+	PageFilterDefaultPresetThisWeek         PageFilterDefaultPreset = "thisWeek"
+	PageFilterDefaultPresetLastWeek         PageFilterDefaultPreset = "lastWeek"
+	PageFilterDefaultPresetThisMonth        PageFilterDefaultPreset = "thisMonth"
+	PageFilterDefaultPresetLastMonth        PageFilterDefaultPreset = "lastMonth"
+	PageFilterDefaultPresetThisYear         PageFilterDefaultPreset = "thisYear"
+	PageFilterDefaultPresetLastYear         PageFilterDefaultPreset = "lastYear"
 )
 
 type PageFilterDefinition struct {
@@ -198,6 +200,12 @@ type TableFilterPanelConfig struct {
 	Inputs *[]ActionFormFieldConfig `bson:"inputs,omitempty" json:"inputs,omitempty"`
 }
 
+// TableBulkActionsConfig defines selectable table bulk operation behavior.
+type TableBulkActionsConfig struct {
+	Edit   *ActionConfig `bson:"edit,omitempty" json:"edit,omitempty"`
+	Delete *ActionConfig `bson:"delete,omitempty" json:"delete,omitempty"`
+}
+
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
 	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
@@ -205,6 +213,7 @@ type TableComponentConfig struct {
 	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
 	AddButton   *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
 	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
+	BulkActions *TableBulkActionsConfig `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
 	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
 

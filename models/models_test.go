@@ -65,6 +65,32 @@ func TestAuthContainerGoogleLoginFlagRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthContainerBooleanFalseValuesArePersisted(t *testing.T) {
+	container := ContainerModel{
+		SchemaName:          "auth",
+		IsAuthContainer:     true,
+		IsRegisterActive:    false,
+		IsGoogleLoginActive: false,
+	}
+
+	data, err := bson.Marshal(container)
+	if err != nil {
+		t.Fatalf("bson.Marshal(ContainerModel) error = %v", err)
+	}
+
+	var raw bson.M
+	if err := bson.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("bson.Unmarshal(ContainerModel) error = %v", err)
+	}
+
+	if got, exists := raw["isRegisterActive"]; !exists || got != false {
+		t.Fatalf("isRegisterActive BSON = %#v, exists %v; want false and present", got, exists)
+	}
+	if got, exists := raw["isGoogleLoginActive"]; !exists || got != false {
+		t.Fatalf("isGoogleLoginActive BSON = %#v, exists %v; want false and present", got, exists)
+	}
+}
+
 func TestValidateAuthContainerGoogleLoginConfig(t *testing.T) {
 	tests := []struct {
 		name      string

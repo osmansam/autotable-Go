@@ -279,6 +279,7 @@ type ExecuteWorkflowInput struct {
 	Schema       string
 	WorkflowName string
 	Record       map[string]interface{}
+	Query        map[string]interface{}
 	OldRecord    map[string]interface{}
 	StepOutputs  map[string]interface{}
 	UserID       string
@@ -818,6 +819,7 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 			SchemaName:  input.Schema,
 			Record:      workflowRecord,
 			OldRecord:   workflowRecord,
+			Query:       workflowRecord,
 			StepOutputs: map[string]interface{}{},
 			UserID:      input.UserID,
 			AuditUser:   input.User,
@@ -1695,12 +1697,20 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 		items = projectTableSourceItems(items, input.Fields)
 		return paginateTableSourceItems(items, input.Pager), nil
 	case models.BindingKindWorkflow:
+		workflowRecord := make(map[string]interface{}, len(input.Params)+2)
+		for k, v := range input.Params {
+			workflowRecord[k] = v
+		}
+		if input.SearchKey != "" {
+			workflowRecord["search"] = input.SearchKey
+		}
 		result, err := s.ExecuteWorkflow(ctx, ExecuteWorkflowInput{
 			TenantID:     input.TenantID,
 			ProjectID:    input.ProjectID,
 			Schema:       input.Schema,
 			WorkflowName: input.WorkflowName,
-			Record:       input.Params,
+			Record:       workflowRecord,
+			Query:        workflowRecord,
 			StepOutputs:  map[string]interface{}{},
 			UserID:       input.UserID,
 			AuditUser:    input.AuditUser,
@@ -2076,6 +2086,7 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		SchemaName:   input.Schema,
 		WorkflowName: workflow.Name,
 		Record:       cloneWorkflowMap(input.Record),
+		Query:        cloneWorkflowMap(input.Query),
 		OldRecord:    cloneWorkflowMap(input.OldRecord),
 		StepOutputs:  cloneWorkflowMap(input.StepOutputs),
 		UserID:       input.UserID,
@@ -2085,6 +2096,9 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 	}
 	if payload.Record == nil {
 		payload.Record = map[string]interface{}{}
+	}
+	if payload.Query == nil {
+		payload.Query = map[string]interface{}{}
 	}
 	if payload.OldRecord == nil {
 		payload.OldRecord = map[string]interface{}{}

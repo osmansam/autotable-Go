@@ -39,6 +39,7 @@ type workflowExecutionPayload struct {
 	ExecutionMode   string
 	StopOnError     bool
 	Record          map[string]interface{}
+	Query           map[string]interface{}
 	OldRecord       map[string]interface{}
 	StepOutputs     map[string]interface{}
 	Variables       map[string]interface{}
@@ -58,6 +59,15 @@ type workflowExecutionPayload struct {
 type workflowTableSourcePagination struct {
 	Pager   utils.Pager
 	Applied bool
+}
+
+func (p *workflowTableSourcePagination) disableWorkflowPagination() {
+	if p == nil {
+		return
+	}
+	p.Applied = false
+	p.Pager.TotalItems = 0
+	p.Pager.TotalPages = 0
 }
 
 const (
@@ -209,6 +219,9 @@ func (s *DynamicService) runWorkflows(ctx mongo.SessionContext, payload workflow
 func ensureWorkflowPayloadMaps(payload *workflowExecutionPayload) {
 	if payload.StepOutputs == nil {
 		payload.StepOutputs = map[string]interface{}{}
+	}
+	if payload.Query == nil {
+		payload.Query = map[string]interface{}{}
 	}
 	if payload.Variables == nil {
 		payload.Variables = map[string]interface{}{}
@@ -579,11 +592,10 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 	}
 	normalizeWorkflowIDs(filter)
 
-	searchKey := workflowStringConfig(step.Config, "search", "")
-	if searchKey == "" {
-		searchKey = workflowStringConfig(step.Config, "searchKey", "")
-	}
-	if searchKey != "" {
+	searchKey := workflowFindRecordsSearchKey(step.Config, payload)
+	searchFields := workflowFindRecordsSearchFields(step.Config, payload)
+	usesPostPopulationSearch := searchKey != "" && len(searchFields) > 0
+	if searchKey != "" && !usesPostPopulationSearch {
 		orClauses, err := utils.BuildSearchWithReferences(ctx, targetContainer, searchKey)
 		if err != nil {
 			return nil, err
@@ -611,11 +623,11 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 		}
 	}
 
-	limit, skip, err := workflowFindRecordsWindow(step.Config, payload.Pagination)
+	limit, skip, err := workflowFindRecordsWindow(step.Config, payload.Pagination, usesPostPopulationSearch)
 	if err != nil {
 		return nil, err
 	}
-	if payload.Pagination != nil && payload.Pagination.Pager.Enabled {
+	if payload.Pagination != nil && payload.Pagination.Pager.Enabled && !usesPostPopulationSearch {
 		totalItems, err := s.repository.Count(ctx, payload.TenantID, payload.ProjectID, targetSchema, filter)
 		if err != nil {
 			return nil, err
@@ -647,7 +659,12 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 	if err != nil {
 		return nil, err
 	}
+	if usesPostPopulationSearch {
+		items = workflowFilterItemsBySearchFields(items, searchKey, searchFields)
+		payload.Pagination.disableWorkflowPagination()
+	}
 	items = utils.FilterDocuments(items, targetContainer.Fields, userRole)
+	items = workflowApplyOutputMappings(step.Config, items)
 
 	return map[string]interface{}{
 		"items": items,
@@ -655,10 +672,34 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 	}, nil
 }
 
-func workflowFindRecordsWindow(config map[string]interface{}, pagination *workflowTableSourcePagination) (int, int64, error) {
+func workflowApplyOutputMappings(config map[string]interface{}, items []map[string]interface{}) []map[string]interface{} {
+	rawMappings, ok := config["outputMappings"]
+	if !ok {
+		return items
+	}
+	mappings, ok := workflowMapConfig(rawMappings)
+	if !ok || len(mappings) == 0 {
+		return items
+	}
+
+	for _, item := range items {
+		for outputField, rawPath := range mappings {
+			path := strings.TrimSpace(fmt.Sprint(rawPath))
+			if path == "" {
+				continue
+			}
+			if value, ok := workflowPathValue(item, path); ok {
+				item[outputField] = value
+			}
+		}
+	}
+	return items
+}
+
+func workflowFindRecordsWindow(config map[string]interface{}, pagination *workflowTableSourcePagination, ignorePagination bool) (int, int64, error) {
 	limit := workflowIntConfig(config, "limit", 50)
 	skip := int64(0)
-	if pagination != nil && pagination.Pager.Enabled {
+	if pagination != nil && pagination.Pager.Enabled && !ignorePagination {
 		limit = pagination.Pager.Limit
 		skip = pagination.Pager.Skip
 	}
@@ -2021,6 +2062,163 @@ func workflowStringConfig(config map[string]interface{}, key, fallback string) s
 	return fallback
 }
 
+// workflowResolvedStringConfig is like workflowStringConfig but resolves
+// template expressions (e.g. {{record.search}}) against the workflow payload.
+func workflowResolvedStringConfig(config map[string]interface{}, key string, payload workflowExecutionPayload) string {
+	raw, ok := config[key].(string)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	resolved := resolveWorkflowTemplates(raw, payload)
+	if resolved == nil {
+		return ""
+	}
+	if s, ok := resolved.(string); ok {
+		normalized := strings.TrimSpace(s)
+		if normalized == "<nil>" {
+			return ""
+		}
+		return normalized
+	}
+	return fmt.Sprint(resolved)
+}
+
+func workflowFindRecordsSearchFields(config map[string]interface{}, payload workflowExecutionPayload) []string {
+	raw, ok := config["search"]
+	if !ok {
+		return nil
+	}
+	resolved := resolveWorkflowTemplates(raw, payload)
+	searchConfig, ok := workflowMapConfig(resolved)
+	if !ok {
+		return nil
+	}
+	return workflowStringSliceConfig(searchConfig["fields"])
+}
+
+func workflowStringSliceConfig(value interface{}) []string {
+	var fields []string
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			if field := strings.TrimSpace(fmt.Sprint(item)); field != "" {
+				fields = append(fields, field)
+			}
+		}
+	case []string:
+		for _, item := range typed {
+			if field := strings.TrimSpace(item); field != "" {
+				fields = append(fields, field)
+			}
+		}
+	}
+	return fields
+}
+
+func workflowFilterItemsBySearchFields(items []map[string]interface{}, searchKey string, fields []string) []map[string]interface{} {
+	searchKey = strings.ToLower(strings.TrimSpace(searchKey))
+	if searchKey == "" || len(fields) == 0 {
+		return items
+	}
+	filtered := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		for _, field := range fields {
+			if value, found := workflowPathValue(item, field); found && workflowSearchFieldValueMatches(value, searchKey) {
+				filtered = append(filtered, item)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func workflowSearchFieldValueMatches(value interface{}, searchKey string) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.Contains(strings.ToLower(typed), searchKey)
+	case []interface{}:
+		for _, item := range typed {
+			if workflowSearchFieldValueMatches(item, searchKey) {
+				return true
+			}
+		}
+		return false
+	case []map[string]interface{}:
+		for _, item := range typed {
+			if workflowSearchFieldValueMatches(item, searchKey) {
+				return true
+			}
+		}
+		return false
+	case map[string]interface{}:
+		for _, item := range typed {
+			if workflowSearchFieldValueMatches(item, searchKey) {
+				return true
+			}
+		}
+		return false
+	case bson.M:
+		for _, item := range typed {
+			if workflowSearchFieldValueMatches(item, searchKey) {
+				return true
+			}
+		}
+		return false
+	default:
+		return strings.Contains(strings.ToLower(fmt.Sprint(value)), searchKey)
+	}
+}
+
+func workflowFindRecordsSearchKey(config map[string]interface{}, payload workflowExecutionPayload) string {
+	searchKey := workflowResolvedStringConfig(config, "search", payload)
+	if searchKey != "" {
+		return searchKey
+	}
+
+	if raw, ok := config["search"]; ok {
+		resolved := resolveWorkflowTemplates(raw, payload)
+		if searchConfig, ok := workflowMapConfig(resolved); ok {
+			if value, ok := searchConfig["value"]; ok {
+				return workflowSearchValueString(value)
+			}
+		}
+	}
+
+	return workflowResolvedStringConfig(config, "searchKey", payload)
+}
+
+func workflowMapConfig(value interface{}) (map[string]interface{}, bool) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed, true
+	case bson.M:
+		return map[string]interface{}(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func workflowSearchValueString(value interface{}) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		normalized := strings.TrimSpace(typed)
+		if normalized == "<nil>" {
+			return ""
+		}
+		return normalized
+	default:
+		normalized := strings.TrimSpace(fmt.Sprint(typed))
+		if normalized == "<nil>" {
+			return ""
+		}
+		return normalized
+	}
+}
+
 func workflowIntConfig(config map[string]interface{}, key string, fallback int) int {
 	value, ok := config[key]
 	if !ok {
@@ -2757,6 +2955,8 @@ func workflowTemplateValue(token string, payload workflowExecutionPayload) (inte
 	switch {
 	case strings.HasPrefix(token, "record."):
 		return workflowPathValue(payload.Record, strings.TrimPrefix(token, "record."))
+	case strings.HasPrefix(token, "query."):
+		return workflowPathValue(payload.Query, strings.TrimPrefix(token, "query."))
 	case strings.HasPrefix(token, "oldRecord."):
 		return workflowPathValue(payload.OldRecord, strings.TrimPrefix(token, "oldRecord."))
 	case strings.HasPrefix(token, "steps."):

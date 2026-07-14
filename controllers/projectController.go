@@ -22,8 +22,10 @@ import (
 
 // CreateProjectInput represents the project creation payload
 type CreateProjectInput struct {
-	Name string `json:"name" validate:"required,min=2,max=100"`
-	Slug string `json:"slug" validate:"required,min=2,max=50"`
+	Name                 string `json:"name" validate:"required,min=2,max=100"`
+	Slug                 string `json:"slug" validate:"required,min=2,max=50"`
+	TemplateProjectID    string `json:"templateProjectId,omitempty"`
+	IncludeTemplateItems *bool  `json:"includeTemplateItems,omitempty"`
 }
 
 // UpdateProjectInput represents the project update payload
@@ -32,6 +34,19 @@ type UpdateProjectInput struct {
 	Slug     *string `json:"slug,omitempty" validate:"omitempty,min=2,max=50"`
 	IsActive *bool   `json:"isActive,omitempty"`
 }
+
+type UpdateProjectTemplateInput struct {
+	IsTemplate           bool   `json:"isTemplate"`
+	TemplateIncludeItems *bool  `json:"templateIncludeItems,omitempty"`
+	TemplateDescription  string `json:"templateDescription,omitempty"`
+}
+
+const (
+	projectTemplateScopeTenant = "tenant"
+	projectTemplateScopeGlobal = "global"
+)
+
+type projectCloneIDMap map[string]map[primitive.ObjectID]primitive.ObjectID
 
 // GetCollectionNameForProject generates a unique collection name for a project
 // Format: "tenant_{tenantId}_project_{projectId}_{schemaName}"
@@ -52,6 +67,120 @@ func ValidateSlug(slug string) bool {
 	// No consecutive hyphens
 	match := regexp.MustCompile(`^[a-z][a-z0-9-]*[a-z0-9]$`).MatchString(slug)
 	return match && !regexp.MustCompile(`--`).MatchString(slug)
+}
+
+func projectTemplateVisibilityFilter(tenantOID primitive.ObjectID) bson.M {
+	return bson.M{
+		"isTemplate": true,
+		"isActive":   true,
+		"$or": bson.A{
+			bson.M{"tenantId": tenantOID, "templateScope": projectTemplateScopeTenant},
+			bson.M{"templateScope": projectTemplateScopeGlobal},
+		},
+	}
+}
+
+func projectTemplateVisibleToTenant(project models.Project, tenantOID primitive.ObjectID) bool {
+	if !project.IsActive || !project.IsTemplate {
+		return false
+	}
+	if project.TemplateScope == projectTemplateScopeGlobal {
+		return true
+	}
+	return project.TemplateScope == projectTemplateScopeTenant && project.TenantID == tenantOID
+}
+
+func projectTemplateUpdateSet(input UpdateProjectTemplateInput, now time.Time) bson.M {
+	includeItems := false
+	if input.TemplateIncludeItems != nil {
+		includeItems = *input.TemplateIncludeItems
+	}
+	return bson.M{
+		"isTemplate":           input.IsTemplate,
+		"templateScope":        projectTemplateScopeTenant,
+		"templateIncludeItems": includeItems,
+		"templateDescription":  input.TemplateDescription,
+		"updatedAt":            now,
+	}
+}
+
+func resolveIncludeTemplateItems(template models.Project, override *bool) bool {
+	if override != nil {
+		return *override
+	}
+	return template.TemplateIncludeItems
+}
+
+func shouldCloneDynamicRecords(container models.ContainerModel) bool {
+	return !container.IsAuthContainer && container.SchemaName != "auth"
+}
+
+func isObjectIDField(field models.Field) bool {
+	return field.Type == "objectId" || field.Type == "objectid" || field.Type == "reference"
+}
+
+func isObjectIDArrayField(field models.Field) bool {
+	return field.Type == "objectIdArray" || field.Type == "objectidArray" || field.Type == "referenceArray"
+}
+
+func remapCopiedObjectIDReferences(doc bson.M, container models.ContainerModel, idMap projectCloneIDMap) bson.M {
+	next := bson.M{}
+	for key, value := range doc {
+		next[key] = value
+	}
+
+	for _, field := range container.Fields {
+		if field.ObjectSchemaName == "" {
+			continue
+		}
+		schemaMap, ok := idMap[field.ObjectSchemaName]
+		if !ok {
+			continue
+		}
+
+		value, exists := next[field.Name]
+		if !exists {
+			continue
+		}
+
+		if isObjectIDField(field) {
+			if oid, ok := value.(primitive.ObjectID); ok {
+				if mapped, found := schemaMap[oid]; found {
+					next[field.Name] = mapped
+				}
+			}
+			continue
+		}
+
+		if isObjectIDArrayField(field) {
+			switch values := value.(type) {
+			case bson.A:
+				remapped := make(bson.A, len(values))
+				for i, item := range values {
+					if oid, ok := item.(primitive.ObjectID); ok {
+						if mapped, found := schemaMap[oid]; found {
+							remapped[i] = mapped
+							continue
+						}
+					}
+					remapped[i] = item
+				}
+				next[field.Name] = remapped
+			case []primitive.ObjectID:
+				remapped := make([]primitive.ObjectID, len(values))
+				for i, oid := range values {
+					if mapped, found := schemaMap[oid]; found {
+						remapped[i] = mapped
+					} else {
+						remapped[i] = oid
+					}
+				}
+				next[field.Name] = remapped
+			}
+		}
+	}
+
+	return next
 }
 
 // createDefaultSchemas creates the default 'role' and 'auth' schemas for a new project
@@ -184,6 +313,231 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 	return nil
 }
 
+func readProjectContainers(ctx context.Context, tenantID, projectID string) ([]models.ContainerModel, error) {
+	cursor, err := utils.GetContainerCollectionForProject(tenantID, projectID).Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var containers []models.ContainerModel
+	if err := cursor.All(ctx, &containers); err != nil {
+		return nil, err
+	}
+	return containers, nil
+}
+
+func insertManyIfAny(ctx context.Context, collection *mongo.Collection, docs []interface{}) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	_, err := collection.InsertMany(ctx, docs)
+	return err
+}
+
+func cloneProjectContainers(ctx context.Context, source models.Project, target models.Project) ([]models.ContainerModel, error) {
+	sourceTenantID := source.TenantID.Hex()
+	sourceProjectID := source.ID.Hex()
+	targetTenantID := target.TenantID.Hex()
+	targetProjectID := target.ID.Hex()
+
+	containers, err := readProjectContainers(ctx, sourceTenantID, sourceProjectID)
+	if err != nil {
+		return nil, err
+	}
+
+	targetTenantOID := target.TenantID
+	targetProjectOID := target.ID
+	docs := make([]interface{}, 0, len(containers))
+	for i := range containers {
+		containers[i].ID = primitive.NewObjectID()
+		containers[i].TenantID = &targetTenantOID
+		containers[i].ProjectID = &targetProjectOID
+		containers[i].CollectionName = utils.GetProjectCollectionName(targetTenantID, targetProjectID, containers[i].SchemaName)
+		docs = append(docs, containers[i])
+	}
+
+	if err := insertManyIfAny(ctx, utils.GetContainerCollectionForProject(targetTenantID, targetProjectID), docs); err != nil {
+		return nil, err
+	}
+
+	for i := range containers {
+		if err := utils.EnsureIndexes(ctx, &containers[i], targetTenantID, targetProjectID); err != nil {
+			return nil, err
+		}
+	}
+
+	return containers, nil
+}
+
+func cloneProjectPages(ctx context.Context, source models.Project, target models.Project) error {
+	sourcePages := utils.GetPageCollectionForProject(source.TenantID.Hex(), source.ID.Hex())
+	cursor, err := sourcePages.Find(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	var pages []models.PageModel
+	if err := cursor.All(ctx, &pages); err != nil {
+		return err
+	}
+
+	pageIDMap := map[primitive.ObjectID]primitive.ObjectID{}
+	for _, page := range pages {
+		if page.ID != primitive.NilObjectID {
+			pageIDMap[page.ID] = primitive.NewObjectID()
+		}
+	}
+
+	docs := make([]interface{}, 0, len(pages))
+	for i := range pages {
+		if mapped, ok := pageIDMap[pages[i].ID]; ok {
+			pages[i].ID = mapped
+		} else {
+			pages[i].ID = primitive.NewObjectID()
+		}
+		if pages[i].ParentPageID != nil {
+			if mapped, ok := pageIDMap[*pages[i].ParentPageID]; ok {
+				pages[i].ParentPageID = &mapped
+			}
+		}
+		docs = append(docs, pages[i])
+	}
+
+	return insertManyIfAny(ctx, utils.GetPageCollectionForProject(target.TenantID.Hex(), target.ID.Hex()), docs)
+}
+
+func dynamicRecordsForClone(ctx context.Context, tenantID, projectID string, container models.ContainerModel) ([]bson.M, error) {
+	if !shouldCloneDynamicRecords(container) {
+		return nil, nil
+	}
+	cursor, err := utils.GetDynamicCollectionForProject(tenantID, projectID, container.SchemaName).Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	return docs, nil
+}
+
+func cloneProjectDynamicItems(ctx context.Context, source models.Project, target models.Project, containers []models.ContainerModel) error {
+	sourceTenantID := source.TenantID.Hex()
+	sourceProjectID := source.ID.Hex()
+	targetTenantID := target.TenantID.Hex()
+	targetProjectID := target.ID.Hex()
+	idMap := projectCloneIDMap{}
+	docsBySchema := map[string][]bson.M{}
+	containerBySchema := map[string]models.ContainerModel{}
+
+	for _, container := range containers {
+		docs, err := dynamicRecordsForClone(ctx, sourceTenantID, sourceProjectID, container)
+		if err != nil {
+			return err
+		}
+		if len(docs) == 0 {
+			continue
+		}
+		containerBySchema[container.SchemaName] = container
+		docsBySchema[container.SchemaName] = docs
+		idMap[container.SchemaName] = map[primitive.ObjectID]primitive.ObjectID{}
+		for _, doc := range docs {
+			if oldID, ok := doc["_id"].(primitive.ObjectID); ok {
+				idMap[container.SchemaName][oldID] = primitive.NewObjectID()
+			}
+		}
+	}
+
+	for schemaName, docs := range docsBySchema {
+		container := containerBySchema[schemaName]
+		insertDocs := make([]interface{}, 0, len(docs))
+		for _, doc := range docs {
+			next := bson.M{}
+			for key, value := range doc {
+				next[key] = value
+			}
+			if oldID, ok := next["_id"].(primitive.ObjectID); ok {
+				next["_id"] = idMap[schemaName][oldID]
+			} else {
+				next["_id"] = primitive.NewObjectID()
+			}
+			next = remapCopiedObjectIDReferences(next, container, idMap)
+			insertDocs = append(insertDocs, next)
+		}
+		if err := insertManyIfAny(ctx, utils.GetDynamicCollectionForProject(targetTenantID, targetProjectID, schemaName), insertDocs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func ensureDefaultRoleRecord(ctx context.Context, tenantID, projectID string) error {
+	roleCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, "role")
+	count, err := roleCollection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err = roleCollection.InsertOne(ctx, bson.M{"name": "admin"})
+	return err
+}
+
+func cloneProjectFromTemplate(ctx context.Context, source models.Project, target models.Project, includeItems bool) error {
+	containers, err := cloneProjectContainers(ctx, source, target)
+	if err != nil {
+		return err
+	}
+	if err := cloneProjectPages(ctx, source, target); err != nil {
+		return err
+	}
+	if includeItems {
+		if err := cloneProjectDynamicItems(ctx, source, target, containers); err != nil {
+			return err
+		}
+	}
+	if err := ensureDefaultRoleRecord(ctx, target.TenantID.Hex(), target.ID.Hex()); err != nil {
+		return err
+	}
+	if err := repositories.NewDynamicRepository().EnsureNotificationIndexes(ctx, target.TenantID.Hex(), target.ID.Hex()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func rollbackProjectCreate(ctx context.Context, tenantID string, projectID primitive.ObjectID, schemas []string) {
+	projectIDHex := projectID.Hex()
+	if _, err := projectMembershipsCollection().DeleteMany(ctx, bson.M{"projectId": projectID}); err != nil {
+		log.Printf("Failed to rollback project memberships for project %s: %v", projectIDHex, err)
+	}
+	if _, err := projectsCollection().DeleteOne(ctx, bson.M{"_id": projectID}); err != nil {
+		log.Printf("Failed to rollback project %s: %v", projectIDHex, err)
+	}
+	for _, resource := range append([]string{"containers", "pages", "role", "auth"}, schemas...) {
+		if err := configs.GetCollection(utils.GetProjectCollectionName(tenantID, projectIDHex, resource)).Drop(ctx); err != nil {
+			log.Printf("Failed to rollback project collection %s for project %s: %v", resource, projectIDHex, err)
+		}
+	}
+}
+
+func templateProjectSchemas(ctx context.Context, project models.Project) []string {
+	containers, err := readProjectContainers(ctx, project.TenantID.Hex(), project.ID.Hex())
+	if err != nil {
+		return nil
+	}
+	schemas := make([]string, 0, len(containers))
+	for _, container := range containers {
+		schemas = append(schemas, container.SchemaName)
+	}
+	return schemas
+}
+
 // CreateProject creates a new project within a tenant
 func CreateProject(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
@@ -272,6 +626,43 @@ func CreateProject(c *fiber.Ctx) error {
 		})
 	}
 
+	var templateProject *models.Project
+	includeTemplateItems := false
+	if input.TemplateProjectID != "" {
+		templateOID, err := primitive.ObjectIDFromHex(input.TemplateProjectID)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+				Status:  http.StatusBadRequest,
+				Message: "Invalid template project ID",
+				Data:    nil,
+			})
+		}
+		var foundTemplate models.Project
+		if err := projectsCollection().FindOne(ctx, bson.M{"_id": templateOID, "isTemplate": true}).Decode(&foundTemplate); err != nil {
+			if err == mongo.ErrNoDocuments {
+				return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+					Status:  http.StatusNotFound,
+					Message: "Template project not found",
+					Data:    nil,
+				})
+			}
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to fetch template project",
+				Data:    &fiber.Map{"error": err.Error()},
+			})
+		}
+		if !projectTemplateVisibleToTenant(foundTemplate, tenantOID) {
+			return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
+				Status:  http.StatusForbidden,
+				Message: "Template project is not available to this tenant",
+				Data:    nil,
+			})
+		}
+		templateProject = &foundTemplate
+		includeTemplateItems = resolveIncludeTemplateItems(foundTemplate, input.IncludeTemplateItems)
+	}
+
 	// Create project
 	newProject := models.Project{
 		ID:         primitive.NewObjectID(),
@@ -344,15 +735,28 @@ func CreateProject(c *fiber.Ctx) error {
 		// Don't fail the project creation, just log it
 	}
 
-	// Create default schemas (role and auth)
-	err = createDefaultSchemas(ctx, tenantID, newProject.ID.Hex())
-	if err != nil {
-		log.Printf("Warning: Failed to create default schemas: %v", err)
-		// Don't fail the project creation, just log the warning
-		// The schemas can be created manually later if needed
-	}
-	if err := repositories.NewDynamicRepository().EnsureNotificationIndexes(ctx, tenantID, newProject.ID.Hex()); err != nil {
-		log.Printf("Warning: Failed to create notification indexes: %v", err)
+	if templateProject != nil {
+		err = cloneProjectFromTemplate(ctx, *templateProject, newProject, includeTemplateItems)
+		if err != nil {
+			log.Printf("Failed to clone project from template: %v", err)
+			rollbackProjectCreate(ctx, tenantID, newProject.ID, templateProjectSchemas(ctx, *templateProject))
+			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to create project from template",
+				Data:    &fiber.Map{"error": err.Error()},
+			})
+		}
+	} else {
+		// Create default schemas (role and auth)
+		err = createDefaultSchemas(ctx, tenantID, newProject.ID.Hex())
+		if err != nil {
+			log.Printf("Warning: Failed to create default schemas: %v", err)
+			// Don't fail the project creation, just log the warning
+			// The schemas can be created manually later if needed
+		}
+		if err := repositories.NewDynamicRepository().EnsureNotificationIndexes(ctx, tenantID, newProject.ID.Hex()); err != nil {
+			log.Printf("Warning: Failed to create notification indexes: %v", err)
+		}
 	}
 
 	email, _ := c.Locals("email").(string)
@@ -428,6 +832,114 @@ func GetAllProjects(c *fiber.Ctx) error {
 		Status:  http.StatusOK,
 		Message: "Projects retrieved successfully",
 		Data:    &fiber.Map{"projects": projects},
+	})
+}
+
+func GetProjectTemplates(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
+	defer cancel()
+
+	tenantID := c.Locals("tenantID").(string)
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid tenant ID",
+			Data:    nil,
+		})
+	}
+
+	cursor, err := projectsCollection().Find(ctx, projectTemplateVisibilityFilter(tenantOID))
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch project templates",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+	defer cursor.Close(ctx)
+
+	var templates []models.Project
+	if err := cursor.All(ctx, &templates); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to decode project templates",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Project templates retrieved successfully",
+		Data:    &fiber.Map{"templates": templates},
+	})
+}
+
+func UpdateProjectTemplate(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
+	defer cancel()
+
+	projectOID, err := primitive.ObjectIDFromHex(c.Params("id"))
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid project ID",
+			Data:    nil,
+		})
+	}
+
+	tenantID := c.Locals("tenantID").(string)
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid tenant ID",
+			Data:    nil,
+		})
+	}
+
+	var input UpdateProjectTemplateInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	result, err := projectsCollection().UpdateOne(
+		ctx,
+		bson.M{"_id": projectOID, "tenantId": tenantOID},
+		bson.M{"$set": projectTemplateUpdateSet(input, time.Now())},
+	)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to update project template",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+	if result.MatchedCount == 0 {
+		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+			Status:  http.StatusNotFound,
+			Message: "Project not found",
+			Data:    nil,
+		})
+	}
+
+	var project models.Project
+	if err := projectsCollection().FindOne(ctx, bson.M{"_id": projectOID, "tenantId": tenantOID}).Decode(&project); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch updated project",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
+		Status:  http.StatusOK,
+		Message: "Project template updated successfully",
+		Data:    &fiber.Map{"project": project},
 	})
 }
 

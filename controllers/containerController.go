@@ -209,6 +209,30 @@ func syncReferencedInvalidations(ctx context.Context, containerCollection *mongo
 	return updatedReferencedIDs, nil
 }
 
+func payloadKeysFromBody(body []byte) map[string]bool {
+	keys := map[string]bool{}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return keys
+	}
+	for key := range payload {
+		keys[key] = true
+	}
+	return keys
+}
+
+func applyContainerAuthFlagDefaults(existing models.ContainerModel, updated *models.ContainerModel, payloadKeys map[string]bool) {
+	if !payloadKeys["isAuthContainer"] {
+		updated.IsAuthContainer = existing.IsAuthContainer
+	}
+	if !payloadKeys["isRegisterActive"] {
+		updated.IsRegisterActive = existing.IsRegisterActive
+	}
+	if !payloadKeys["isGoogleLoginActive"] {
+		updated.IsGoogleLoginActive = existing.IsGoogleLoginActive
+	}
+}
+
 func containerCacheKeys(tenantID, projectID string, containerIDs []primitive.ObjectID) []string {
 	keys := []string{fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID)}
 	for _, containerID := range containerIDs {
@@ -598,6 +622,8 @@ func UpdateContainer(c *fiber.Ctx) error {
 
 	var updatedContainer models.ContainerModel
 
+	payloadKeys := payloadKeysFromBody(c.Body())
+
 	log.Println("Parsing request body for UpdateContainer")
 	if err := c.BodyParser(&updatedContainer); err != nil {
 		log.Printf("Failed to parse request body: %v", err)
@@ -612,10 +638,6 @@ func UpdateContainer(c *fiber.Ctx) error {
 	if validationErr := models.ValidateContainerFrontendConfig(&updatedContainer); validationErr != nil {
 		log.Printf("Frontend config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
-	}
-	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&updatedContainer); validationErr != nil {
-		log.Printf("Auth container Google login validation error: %v", validationErr)
-		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
 	}
 
 	updateIdStr := c.Params("id")
@@ -637,6 +659,12 @@ func UpdateContainer(c *fiber.Ctx) error {
 		}
 		log.Printf("Database error: %v", err)
 		return utils.SendErrorResponse(c, err, "Database error occurred while fetching the container.")
+	}
+
+	applyContainerAuthFlagDefaults(existingContainer, &updatedContainer, payloadKeys)
+	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&updatedContainer); validationErr != nil {
+		log.Printf("Auth container Google login validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
 	}
 
 	log.Println("Checking for existing container with the same schema name")

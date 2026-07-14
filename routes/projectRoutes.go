@@ -29,6 +29,18 @@ func ProjectRoutes(app *fiber.App) {
 	// List all projects in tenant - any tenant member can view
 	projectGroup.Get("/", middlewares.SearchRateLimit(), controllers.GetAllProjects)
 
+	projectGroup.Get("/templates", middlewares.SearchRateLimit(), controllers.GetProjectTemplates)
+
+	projectGroup.Patch("/:id/template",
+		middlewares.TenantAuthorize([]string{
+			models.TenantRoleOwner,
+			models.TenantRoleAdmin,
+		}),
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.UpdateProjectTemplate,
+	)
+
 	// Get single project - any tenant member can view
 	projectGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetProject)
 

@@ -207,6 +207,31 @@ func TestDefaultContainerRedis(t *testing.T) {
 	}
 }
 
+func TestApplyContainerAuthFlagDefaults(t *testing.T) {
+	existing := models.ContainerModel{
+		IsAuthContainer:     true,
+		IsRegisterActive:    true,
+		IsGoogleLoginActive: true,
+	}
+	updated := models.ContainerModel{
+		IsRegisterActive: false,
+	}
+
+	applyContainerAuthFlagDefaults(existing, &updated, map[string]bool{
+		"isRegisterActive": true,
+	})
+
+	if !updated.IsAuthContainer {
+		t.Fatal("IsAuthContainer = false, want preserved true")
+	}
+	if updated.IsRegisterActive {
+		t.Fatal("IsRegisterActive = true, want explicit false")
+	}
+	if !updated.IsGoogleLoginActive {
+		t.Fatal("IsGoogleLoginActive = false, want preserved true")
+	}
+}
+
 func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()

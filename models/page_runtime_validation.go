@@ -19,6 +19,8 @@ type pageRuntimeGraph struct {
 	filters    map[string]PageFilterDefinition
 }
 
+var monthYearValuePattern = regexp.MustCompile(`^(0[1-9]|1[0-2])-\d{4}$`)
+
 var safeRuntimeName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func ValidatePageRuntimeConfig(page *PageModel) error {
@@ -135,6 +137,38 @@ func ValidatePageRuntimeConfig(page *PageModel) error {
 	}
 
 	return nil
+}
+
+func NormalizePageRuntimeConfig(page *PageModel) {
+	for currentPage := page; currentPage != nil; currentPage = currentPage.SubPage {
+		cellIDs := collectPageCellIDs(currentPage)
+		for i := range currentPage.Filters {
+			normalizePageFilter(&currentPage.Filters[i], cellIDs)
+		}
+	}
+}
+
+func normalizePageFilter(filter *PageFilterDefinition, cellIDs map[string]struct{}) {
+	if filter == nil {
+		return
+	}
+	if filter.Type == RuntimeValueTypeMonthYear && filter.DefaultPreset != "" &&
+		!isValidPageFilterDefaultPreset(filter.Type, filter.DefaultPreset) {
+		filter.DefaultPreset = PageFilterDefaultPresetCurrentMonthYear
+	}
+
+	switch filter.Placement.Kind {
+	case "":
+		filter.Placement = PageFilterPlacement{Kind: PageFilterPlacementNavbar}
+	case PageFilterPlacementCell:
+		if filter.Placement.CellID == "" {
+			filter.Placement = PageFilterPlacement{Kind: PageFilterPlacementNavbar}
+			return
+		}
+		if _, exists := cellIDs[filter.Placement.CellID]; !exists {
+			filter.Placement = PageFilterPlacement{Kind: PageFilterPlacementNavbar}
+		}
+	}
 }
 
 func hasPageRuntimeConfig(page *PageModel) bool {
@@ -339,6 +373,8 @@ func isValidPageFilterDefaultPreset(valueType RuntimeValueType, preset PageFilte
 		case PageFilterDefaultPresetToday, PageFilterDefaultPresetYesterday, PageFilterDefaultPresetTomorrow:
 			return true
 		}
+	case RuntimeValueTypeMonthYear:
+		return preset == PageFilterDefaultPresetCurrentMonthYear
 	case RuntimeValueTypeDateRange:
 		switch preset {
 		case PageFilterDefaultPresetToday,
@@ -399,8 +435,28 @@ func validateParameterBinding(binding ParameterBinding, graph pageRuntimeGraph) 
 		if binding.FilterID == "" {
 			return fmt.Errorf("pageFilter binding requires filterId")
 		}
-		if _, exists := graph.filters[binding.FilterID]; !exists {
+		filter, exists := graph.filters[binding.FilterID]
+		if !exists {
 			return fmt.Errorf("pageFilter binding references unknown page filter %q", binding.FilterID)
+		}
+		if filter.Type == RuntimeValueTypeDateRange {
+			switch binding.Field {
+			case "", "value", "start", "end", "preset", "timezone":
+				return nil
+			default:
+				return fmt.Errorf("invalid date-range page filter field %q", binding.Field)
+			}
+		}
+		if filter.Type == RuntimeValueTypeMonthYear {
+			switch binding.Field {
+			case "", "value", "month", "year":
+				return nil
+			default:
+				return fmt.Errorf("invalid month-year page filter field %q", binding.Field)
+			}
+		}
+		if binding.Field != "" {
+			return fmt.Errorf("page filter %q of type %q does not allow field accessor %q", binding.FilterID, filter.Type, binding.Field)
 		}
 		return nil
 	case ParameterBindingSourceComponentOutput:
@@ -451,6 +507,14 @@ func validateRuntimeValue(value interface{}, valueType RuntimeValueType) error {
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("expected date string, got %T", value)
 		}
+	case RuntimeValueTypeMonthYear:
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("expected monthYear string, got %T", value)
+		}
+		if !monthYearValuePattern.MatchString(text) {
+			return fmt.Errorf("expected monthYear string in MM-YYYY format")
+		}
 	case RuntimeValueTypeDateRange:
 		dateRange, ok := value.(map[string]interface{})
 		if !ok {
@@ -500,6 +564,7 @@ func validateRuntimeValueType(valueType RuntimeValueType) error {
 		RuntimeValueTypeNumber,
 		RuntimeValueTypeBoolean,
 		RuntimeValueTypeDate,
+		RuntimeValueTypeMonthYear,
 		RuntimeValueTypeDateRange,
 		RuntimeValueTypeStringArray,
 		RuntimeValueTypeNumberArray:

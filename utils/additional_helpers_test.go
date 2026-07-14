@@ -42,6 +42,21 @@ func TestReplacePlaceholdersWithQueryParams(t *testing.T) {
 	}
 }
 
+func TestReplacePlaceholdersWithQueryParamsTrimsPlaceholderNames(t *testing.T) {
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		got := ReplacePlaceholdersWithQueryParams(`[{"$match":{"period":"{{ filter }}"}}]`, c)
+		want := `[{"$match":{"period":"07-2026"}}]`
+		if got != want {
+			t.Fatalf("ReplacePlaceholdersWithQueryParams() = %q, want %q", got, want)
+		}
+		return nil
+	})
+	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/?filter=07-2026", nil)); err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+}
+
 func TestReplacePlaceholdersWithProjectContext(t *testing.T) {
 	got := ReplacePlaceholdersWithProjectContext(
 		`[{"$lookup":{"from":"{{projectCollection:product}}"}},{"$match":{"tenant":"{{tenantID}}","project":"{{projectID}}"}}]`,

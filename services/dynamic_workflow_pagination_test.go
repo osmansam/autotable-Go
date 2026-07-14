@@ -17,7 +17,7 @@ func TestWorkflowFindRecordsWindowUsesTableSourcePager(t *testing.T) {
 		},
 	}
 
-	limit, skip, err := workflowFindRecordsWindow(map[string]interface{}{"limit": 500}, pagination)
+	limit, skip, err := workflowFindRecordsWindow(map[string]interface{}{"limit": 500}, pagination, false)
 	if err != nil {
 		t.Fatalf("workflowFindRecordsWindow() error = %v", err)
 	}
