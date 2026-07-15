@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -48,6 +49,54 @@ func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 				t.Fatalf("status = %d, want error status", resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestParseWorkflowRequestBodyAcceptsBulkArray(t *testing.T) {
+	body := []byte(`[
+		{"productId":"6a56770742b009c32a92d202","quantity":1},
+		{"productId":"6a56770742b009c32a92d1f8","quantity":2}
+	]`)
+
+	record, oldRecord, stepOutputs, err := parseWorkflowRequestBody(body)
+	if err != nil {
+		t.Fatalf("parseWorkflowRequestBody() error = %v", err)
+	}
+
+	wantProductIDs := []interface{}{"6a56770742b009c32a92d202", "6a56770742b009c32a92d1f8"}
+	if !reflect.DeepEqual(record["productIds"], wantProductIDs) {
+		t.Fatalf("record.productIds = %#v, want %#v", record["productIds"], wantProductIDs)
+	}
+	items, ok := record["items"].([]interface{})
+	if !ok || len(items) != 2 {
+		t.Fatalf("record.items = %#v, want two array items", record["items"])
+	}
+	if oldRecord == nil || len(oldRecord) != 0 {
+		t.Fatalf("oldRecord = %#v, want empty map", oldRecord)
+	}
+	if stepOutputs == nil || len(stepOutputs) != 0 {
+		t.Fatalf("stepOutputs = %#v, want empty map", stepOutputs)
+	}
+}
+
+func TestParseWorkflowRequestBodyAddsProductIDsForWrappedItems(t *testing.T) {
+	body := []byte(`{
+		"record": {
+			"items": [
+				{"productId":"6a486f0faadf8857d624d25e","quantity":1},
+				{"productId":"6a486f0faadf8857d624d26d","quantity":1}
+			]
+		}
+	}`)
+
+	record, _, _, err := parseWorkflowRequestBody(body)
+	if err != nil {
+		t.Fatalf("parseWorkflowRequestBody() error = %v", err)
+	}
+
+	wantProductIDs := []interface{}{"6a486f0faadf8857d624d25e", "6a486f0faadf8857d624d26d"}
+	if !reflect.DeepEqual(record["productIds"], wantProductIDs) {
+		t.Fatalf("record.productIds = %#v, want %#v", record["productIds"], wantProductIDs)
 	}
 }
 

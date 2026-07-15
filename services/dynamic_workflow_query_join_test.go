@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/osmansam/autotableGo/models"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func TestValidateWorkflowAcceptsQueryDynamicAPIAndJoinArrays(t *testing.T) {
@@ -261,6 +262,31 @@ func TestWorkflowJoinArraysEnrichesMatchesAndFallbacksWithoutMutation(t *testing
 	originalPricing := items[0].(map[string]interface{})["pricing"].(map[string]interface{})
 	if _, mutated := originalPricing["remote"]; mutated {
 		t.Fatalf("workflowJoinArrays() mutated input: %#v", items[0])
+	}
+}
+
+func TestWorkflowJoinArraysMatchesHexStringToObjectID(t *testing.T) {
+	productID := primitive.NewObjectID()
+	output, err := workflowJoinArrays(models.DynamicWorkflowStep{
+		Config: map[string]interface{}{
+			"items": []interface{}{
+				map[string]interface{}{"productId": productID.Hex(), "quantity": 1},
+			},
+			"lookupItems": []interface{}{
+				map[string]interface{}{"_id": productID, "davinciId": 123},
+			},
+			"localField":  "productId",
+			"lookupField": "_id",
+			"mappings":    map[string]interface{}{"productDavinciId": "davinciId"},
+		},
+	}, workflowExecutionPayload{})
+	if err != nil {
+		t.Fatalf("workflowJoinArrays() error = %v", err)
+	}
+
+	items := output.(map[string]interface{})["items"].([]map[string]interface{})
+	if got := items[0]["productDavinciId"]; got != 123 {
+		t.Fatalf("productDavinciId = %#v, want 123", got)
 	}
 }
 

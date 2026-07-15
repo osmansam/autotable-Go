@@ -696,6 +696,52 @@ func TestPageTableProgressBarColumnRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableNestedRowsRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					NestedRows: &TableNestedRowsConfig{
+						Enabled: true,
+						Field:   "product",
+						Header:  "Products",
+						Columns: []TableNestedRowColumnConfig{
+							{Field: "productDavinciId", DisplayName: "Davinci ID", Type: "number"},
+							{Field: "productId", DisplayName: "Product ID"},
+							{Field: "quantity", DisplayName: "Quantity", Type: "number"},
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	if err := ValidatePageTableConfig(&page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() error = %v", err)
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	nestedRows := got.Sections[0].Component.Table.NestedRows
+	if nestedRows == nil || !nestedRows.Enabled || nestedRows.Field != "product" {
+		t.Fatalf("NestedRows = %#v, want enabled product config", nestedRows)
+	}
+	if len(nestedRows.Columns) != 3 || nestedRows.Columns[0].Field != "productDavinciId" {
+		t.Fatalf("NestedRows columns = %#v, want product child columns", nestedRows.Columns)
+	}
+}
+
 func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	isNumberButtonsActive := true
 	isDisabled := true
@@ -826,6 +872,9 @@ func TestValidateFormComponentConfig(t *testing.T) {
 		}},
 		{name: "valid workflow submit", form: &FormComponentConfig{
 			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "workflow", WorkflowSchema: "sales", WorkflowName: "submitSale"},
+		}},
+		{name: "valid workflow submit with implicit items body", form: &FormComponentConfig{
+			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "workflow", WorkflowSchema: "sales", WorkflowName: "submitSale", BulkObjectListKey: "items"},
 		}},
 		{name: "invalid submit mode", form: &FormComponentConfig{
 			SchemaName: "sales", Submit: &FormSubmitConfig{Mode: "archive"},

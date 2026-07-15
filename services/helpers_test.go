@@ -215,6 +215,12 @@ func TestWorkflowObjectIDHelpers(t *testing.T) {
 	if nested["_id"] != id || nested["child"].(bson.M)["_id"] != id {
 		t.Fatalf("normalizeWorkflowIDs() = %#v", nested)
 	}
+	filter := map[string]interface{}{"_id": map[string]interface{}{"$in": []interface{}{id.Hex(), "keep"}}}
+	normalizeWorkflowIDs(filter)
+	inValues := filter["_id"].(map[string]interface{})["$in"].([]interface{})
+	if inValues[0] != id || inValues[1] != "keep" {
+		t.Fatalf("normalizeWorkflowIDs(_id.$in) = %#v", filter)
+	}
 	arrayValues := []interface{}{
 		map[string]interface{}{"_id": id.Hex()},
 		bson.M{"_id": id.Hex()},

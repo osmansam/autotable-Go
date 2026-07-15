@@ -190,6 +190,21 @@ type TableRowsConfig struct {
 	ClassName []RowClassConfig `bson:"className,omitempty" json:"className,omitempty"`
 }
 
+// TableNestedRowColumnConfig defines one column in an expandable nested row table.
+type TableNestedRowColumnConfig struct {
+	Field       string `bson:"field,omitempty" json:"field,omitempty"`
+	DisplayName string `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	Type        string `bson:"type,omitempty" json:"type,omitempty"`
+}
+
+// TableNestedRowsConfig defines expandable child rows sourced from an array field.
+type TableNestedRowsConfig struct {
+	Enabled bool                         `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Field   string                       `bson:"field,omitempty" json:"field,omitempty"`
+	Header  string                       `bson:"header,omitempty" json:"header,omitempty"`
+	Columns []TableNestedRowColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
+}
+
 // TableCacheConfig defines cache invalidation behavior for table mutations.
 type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
@@ -210,6 +225,7 @@ type TableBulkActionsConfig struct {
 type TableComponentConfig struct {
 	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
 	Rows        *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
+	NestedRows  *TableNestedRowsConfig  `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
 	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
 	AddButton   *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
 	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`

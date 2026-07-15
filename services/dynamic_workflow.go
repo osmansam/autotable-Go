@@ -75,7 +75,7 @@ const (
 	maxWorkflowSteps             = 100
 	maxWorkflowOutboxEvents      = 100
 	maxWorkflowLoopItems         = 500
-	maxWorkflowQueryLimit        = 500
+	maxWorkflowQueryLimit        = 4000
 	maxWorkflowAggregateLimit    = 500
 	maxWorkflowAggregateSkip     = 5000
 	minWorkflowCallAPITimeoutSec = 1
@@ -1328,6 +1328,9 @@ func workflowJoinObject(value interface{}) (map[string]interface{}, bool) {
 func workflowJoinKey(value interface{}) (string, bool) {
 	switch typed := value.(type) {
 	case string:
+		if objectID, err := primitive.ObjectIDFromHex(typed); err == nil {
+			return "objectId:" + objectID.Hex(), true
+		}
 		return "string:" + typed, true
 	case bool:
 		return "bool:" + strconv.FormatBool(typed), true
@@ -3270,11 +3273,9 @@ func normalizeWorkflowIDs(value interface{}) {
 	case map[string]interface{}:
 		for key, item := range typed {
 			if key == "_id" {
-				if idString, ok := item.(string); ok {
-					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
-						typed[key] = objectID
-						continue
-					}
+				if normalized, ok := normalizeWorkflowIDValue(item); ok {
+					typed[key] = normalized
+					continue
 				}
 			}
 			normalizeWorkflowIDs(item)
@@ -3282,11 +3283,9 @@ func normalizeWorkflowIDs(value interface{}) {
 	case bson.M:
 		for key, item := range typed {
 			if key == "_id" {
-				if idString, ok := item.(string); ok {
-					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
-						typed[key] = objectID
-						continue
-					}
+				if normalized, ok := normalizeWorkflowIDValue(item); ok {
+					typed[key] = normalized
+					continue
 				}
 			}
 			normalizeWorkflowIDs(item)
@@ -3306,6 +3305,50 @@ func normalizeWorkflowIDs(value interface{}) {
 	case primitive.A:
 		for _, item := range typed {
 			normalizeWorkflowIDs(item)
+		}
+	}
+}
+
+func normalizeWorkflowIDValue(value interface{}) (interface{}, bool) {
+	if idString, ok := value.(string); ok {
+		if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+			return objectID, true
+		}
+		return nil, false
+	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		normalizeWorkflowIDOperatorMap(typed)
+		return typed, true
+	case bson.M:
+		normalizeWorkflowIDOperatorMap(typed)
+		return typed, true
+	default:
+		return nil, false
+	}
+}
+
+func normalizeWorkflowIDOperatorMap(operatorMap map[string]interface{}) {
+	for operator, value := range operatorMap {
+		switch typed := value.(type) {
+		case []interface{}:
+			for index, item := range typed {
+				if idString, ok := item.(string); ok {
+					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+						typed[index] = objectID
+					}
+				}
+			}
+			operatorMap[operator] = typed
+		case primitive.A:
+			for index, item := range typed {
+				if idString, ok := item.(string); ok {
+					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+						typed[index] = objectID
+					}
+				}
+			}
+			operatorMap[operator] = typed
 		}
 	}
 }
