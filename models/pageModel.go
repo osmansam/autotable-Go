@@ -153,11 +153,19 @@ type TableColumnConfig struct {
 	Field              string                   `bson:"field" json:"field"`
 	Type               string                   `bson:"type,omitempty" json:"type,omitempty"`
 	DisplayName        string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	Lookup             *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	ComputedLabelRules []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
 	FallbackValue      string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
 	ProgressBar        *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
 	CellClassName      []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
 	Link               *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+}
+
+// TableLookupLabelConfig defines display-only lookup rendering for a table column.
+type TableLookupLabelConfig struct {
+	SchemaName string `bson:"schemaName,omitempty" json:"schemaName,omitempty"`
+	MatchField string `bson:"matchField,omitempty" json:"matchField,omitempty"`
+	LabelField string `bson:"labelField,omitempty" json:"labelField,omitempty"`
 }
 
 // TableComputedLabelRule defines one frontend-computed table label rule.
@@ -192,9 +200,11 @@ type TableRowsConfig struct {
 
 // TableNestedRowColumnConfig defines one column in an expandable nested row table.
 type TableNestedRowColumnConfig struct {
-	Field       string `bson:"field,omitempty" json:"field,omitempty"`
-	DisplayName string `bson:"displayName,omitempty" json:"displayName,omitempty"`
-	Type        string `bson:"type,omitempty" json:"type,omitempty"`
+	Field         string                  `bson:"field,omitempty" json:"field,omitempty"`
+	DisplayName   string                  `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	Type          string                  `bson:"type,omitempty" json:"type,omitempty"`
+	Lookup        *TableLookupLabelConfig `bson:"lookup,omitempty" json:"lookup,omitempty"`
+	FallbackValue string                  `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
 }
 
 // TableNestedRowsConfig defines expandable child rows sourced from an array field.
@@ -223,14 +233,15 @@ type TableBulkActionsConfig struct {
 
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	Columns     []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows        *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
-	NestedRows  *TableNestedRowsConfig  `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
-	Cache       *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
-	AddButton   *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
-	Actions     []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
-	BulkActions *TableBulkActionsConfig `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
-	FilterPanel *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	EnableSearch *bool                   `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
+	Columns      []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
+	Rows         *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
+	NestedRows   *TableNestedRowsConfig  `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
+	Cache        *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
+	AddButton    *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
+	Actions      []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
+	BulkActions  *TableBulkActionsConfig `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
+	FilterPanel  *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
 
 // FormLayoutConfig controls the layout shell for form components.

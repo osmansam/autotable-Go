@@ -168,7 +168,9 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 				return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
 			}
 		}
-		if workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox && workflowStepHasUnsafeOutboxReference(step) {
+		if workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox &&
+			workflowStepHasUnsafeOutboxReference(step) &&
+			!workflowAllowsCapturedOutboxReferences(workflow) {
 			return fmt.Errorf("workflow %s step %s outbox execution cannot depend on steps.* or vars.* values", workflow.Name, step.Name)
 		}
 		if step.Type == models.WorkflowStepTypeReturn && workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox {
@@ -310,6 +312,10 @@ func workflowStepHasUnsafeOutboxReference(step models.DynamicWorkflowStep) bool 
 		}
 	}
 	return false
+}
+
+func workflowAllowsCapturedOutboxReferences(workflow models.DynamicWorkflow) bool {
+	return workflow.Trigger == models.WorkflowTriggerManual && workflow.Mode == models.WorkflowModeHybrid
 }
 
 func workflowContainsUnsafeOutboxReference(value interface{}) bool {

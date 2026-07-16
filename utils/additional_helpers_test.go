@@ -166,6 +166,22 @@ func TestExecuteAPIRequest(t *testing.T) {
 	}
 }
 
+func TestExecuteAPIRequestWithStatusReturnsStatusAndBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"bad request"}`))
+	}))
+	defer server.Close()
+
+	got, status, err := ExecuteApiRequestWithStatus(context.Background(), http.MethodPost, server.URL, map[string]interface{}{"name": "Ada"})
+	if err != nil {
+		t.Fatalf("ExecuteApiRequestWithStatus() error = %v", err)
+	}
+	if status != http.StatusBadRequest || string(got) != `{"message":"bad request"}` {
+		t.Fatalf("ExecuteApiRequestWithStatus() = (%q, %d), want bad request body and %d", got, status, http.StatusBadRequest)
+	}
+}
+
 func TestSendResponseAndSendErrorResponse(t *testing.T) {
 	app := fiber.New()
 	app.Get("/success", func(c *fiber.Ctx) error {
