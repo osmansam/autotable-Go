@@ -215,6 +215,12 @@ func TestWorkflowObjectIDHelpers(t *testing.T) {
 	if nested["_id"] != id || nested["child"].(bson.M)["_id"] != id {
 		t.Fatalf("normalizeWorkflowIDs() = %#v", nested)
 	}
+	filter := map[string]interface{}{"_id": map[string]interface{}{"$in": []interface{}{id.Hex(), "keep"}}}
+	normalizeWorkflowIDs(filter)
+	inValues := filter["_id"].(map[string]interface{})["$in"].([]interface{})
+	if inValues[0] != id || inValues[1] != "keep" {
+		t.Fatalf("normalizeWorkflowIDs(_id.$in) = %#v", filter)
+	}
 	arrayValues := []interface{}{
 		map[string]interface{}{"_id": id.Hex()},
 		bson.M{"_id": id.Hex()},
@@ -847,6 +853,47 @@ func TestWorkflowCallAPIEarlyValidation(t *testing.T) {
 	}
 }
 
+func TestWorkflowLogPreview(t *testing.T) {
+	if got := workflowLogPreview([]byte("davinci response"), 100); got != "davinci response" {
+		t.Fatalf("workflowLogPreview(short) = %q", got)
+	}
+	got := workflowLogPreview([]byte("1234567890"), 4)
+	if got != "1234...(truncated 6 bytes)" {
+		t.Fatalf("workflowLogPreview(truncated) = %q", got)
+	}
+}
+
+func TestWorkflowCallAPIStatusError(t *testing.T) {
+	if err := workflowCallAPIStatusError(http.StatusCreated, []byte(`{"ok":true}`)); err != nil {
+		t.Fatalf("workflowCallAPIStatusError(201) error = %v", err)
+	}
+	err := workflowCallAPIStatusError(http.StatusBadRequest, []byte(`{"message":"invalid order"}`))
+	if err == nil {
+		t.Fatal("workflowCallAPIStatusError(400) error = nil")
+	}
+	if !strings.Contains(err.Error(), "status 400") || !strings.Contains(err.Error(), "invalid order") {
+		t.Fatalf("workflowCallAPIStatusError(400) = %q, want status and response body", err.Error())
+	}
+}
+
+func TestWorkflowArrayFunctionWrapsResolvedValue(t *testing.T) {
+	payload := workflowExecutionPayload{
+		StepOutputs: map[string]interface{}{
+			"createOrder": map[string]interface{}{"_id": "order-1", "status": "pending"},
+		},
+	}
+
+	got := resolveWorkflowTemplates(map[string]interface{}{
+		"orders": "{{array(steps.createOrder)}}",
+	}, payload)
+	want := map[string]interface{}{
+		"orders": []interface{}{map[string]interface{}{"_id": "order-1", "status": "pending"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("resolveWorkflowTemplates(array) = %#v, want %#v", got, want)
+	}
+}
+
 func TestValidateWorkflowDefinitions(t *testing.T) {
 	valid := models.DynamicWorkflow{
 		Name:    "notify",
@@ -863,6 +910,34 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 	}
 	if err := ValidateWorkflow(valid); err != nil {
 		t.Fatalf("ValidateWorkflow(valid) error = %v", err)
+	}
+	if err := ValidateWorkflow(models.DynamicWorkflow{
+		Name:    "create-davinci-order",
+		Trigger: models.WorkflowTriggerManual,
+		Mode:    models.WorkflowModeHybrid,
+		Steps: []models.DynamicWorkflowStep{
+			{
+				Name:          "createOrder",
+				Type:          models.WorkflowStepTypeCreateRecord,
+				IsActive:      true,
+				ExecutionMode: models.WorkflowModeTransactional,
+			},
+			{
+				Name:          "sendDavinciOrder",
+				Type:          models.WorkflowStepTypeCallAPI,
+				IsActive:      true,
+				ExecutionMode: models.WorkflowModeOutbox,
+				TimeoutSec:    10,
+				Config: map[string]interface{}{
+					"url": "https://example.com/orders",
+					"body": map[string]interface{}{
+						"orders": []interface{}{"{{steps.createOrder}}"},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("ValidateWorkflow(manual hybrid outbox dependency) error = %v", err)
 	}
 	if err := ValidateWorkflow(models.DynamicWorkflow{
 		Name: "return-before-outbox",

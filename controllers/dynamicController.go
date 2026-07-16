@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -942,24 +943,9 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		container, _ = storedContainer.(*models.ContainerModel)
 	}
 
-	var requestBody map[string]interface{}
-	if err := c.BodyParser(&requestBody); err != nil && len(c.Body()) > 0 {
+	record, oldRecord, stepOutputs, err := parseWorkflowRequestBody(c.Body())
+	if err != nil {
 		return utils.SendErrorResponse(c, err, "Invalid request body")
-	}
-
-	record := requestBody
-	if nested, ok := requestBody["record"].(map[string]interface{}); ok {
-		record = nested
-	}
-
-	var oldRecord map[string]interface{}
-	if nested, ok := requestBody["oldRecord"].(map[string]interface{}); ok {
-		oldRecord = nested
-	}
-
-	stepOutputs := map[string]interface{}{}
-	if nested, ok := requestBody["stepOutputs"].(map[string]interface{}); ok {
-		stepOutputs = nested
 	}
 
 	userID, _ := c.Locals("userID").(string)
@@ -987,6 +973,70 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		Data:    result.Data,
 		Source:  utils.PointerToString(result.Source),
 	})
+}
+
+func parseWorkflowRequestBody(body []byte) (map[string]interface{}, map[string]interface{}, map[string]interface{}, error) {
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return map[string]interface{}{}, map[string]interface{}{}, map[string]interface{}{}, nil
+	}
+
+	var decoded interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, nil, nil, err
+	}
+
+	switch typed := decoded.(type) {
+	case map[string]interface{}:
+		record := typed
+		if nested, ok := typed["record"].(map[string]interface{}); ok {
+			record = nested
+		}
+		ensureWorkflowProductIDs(record)
+		oldRecord := map[string]interface{}{}
+		if nested, ok := typed["oldRecord"].(map[string]interface{}); ok {
+			oldRecord = nested
+		}
+		stepOutputs := map[string]interface{}{}
+		if nested, ok := typed["stepOutputs"].(map[string]interface{}); ok {
+			stepOutputs = nested
+		}
+		return record, oldRecord, stepOutputs, nil
+	case []interface{}:
+		return map[string]interface{}{
+			"items":      typed,
+			"productIds": workflowProductIDsFromItems(typed),
+		}, map[string]interface{}{}, map[string]interface{}{}, nil
+	default:
+		return nil, nil, nil, fmt.Errorf("workflow request body must be an object or array")
+	}
+}
+
+func ensureWorkflowProductIDs(record map[string]interface{}) {
+	if record == nil {
+		return
+	}
+	if _, exists := record["productIds"]; exists {
+		return
+	}
+	items, ok := record["items"].([]interface{})
+	if !ok {
+		return
+	}
+	record["productIds"] = workflowProductIDsFromItems(items)
+}
+
+func workflowProductIDsFromItems(items []interface{}) []interface{} {
+	productIDs := make([]interface{}, 0, len(items))
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if productID, ok := item["productId"]; ok && productID != nil && productID != "" {
+			productIDs = append(productIDs, productID)
+		}
+	}
+	return productIDs
 }
 
 // ExportDynamicModelItems exports items to an Excel file based on selected fields and filters.

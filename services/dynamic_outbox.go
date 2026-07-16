@@ -25,6 +25,9 @@ const (
 func StartDynamicOutboxProcessor(ctx context.Context) {
 	repository := repositories.NewDynamicRepository()
 	events := dynamicevents.NewDynamicEvents()
+	observability.InfoCtx(ctx, "dynamic outbox processor started",
+		slog.String(observability.FieldOperation, "outbox_processor_start"),
+		slog.String(observability.FieldStatus, "started"))
 	if err := repository.EnsureOutboxIndexes(ctx); err != nil {
 		observability.ErrorCtx(ctx, "dynamic outbox index setup failed", err,
 			slog.String(observability.FieldOperation, "ensure_indexes"),
@@ -47,6 +50,11 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 	for i := 0; i < limit; i++ {
 		event, err := repository.ClaimPendingOutboxEvent(ctx, time.Now())
 		if errors.Is(err, mongo.ErrNoDocuments) {
+			if i == 0 {
+				observability.DebugCtx(ctx, "dynamic outbox batch idle",
+					slog.String(observability.FieldOperation, "claim"),
+					slog.String(observability.FieldStatus, "idle"))
+			}
 			return
 		}
 		if err != nil {
@@ -58,6 +66,16 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 		}
 
 		start := time.Now()
+		observability.InfoCtx(ctx, "dynamic outbox event claimed",
+			append(observability.TenantProjectAttrs(event.TenantID, event.ProjectID),
+				slog.String(observability.FieldSchemaName, event.SchemaName),
+				slog.String(observability.FieldOperation, event.Operation),
+				slog.String("outbox_event_id", event.ID.Hex()),
+				slog.String("workflow_name", event.Payload.WorkflowName),
+				slog.String("step_name", event.Payload.StepName),
+				slog.Int("attempt", event.Attempts+1),
+			)...,
+		)
 		if err := dispatchDynamicOutboxEvent(ctx, repository, event, events); err != nil {
 			observability.RecordOutboxJob(event.Operation, "failed")
 			attrs := append(observability.TenantProjectAttrs(event.TenantID, event.ProjectID),
@@ -81,6 +99,16 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 			continue
 		}
 		observability.RecordOutboxJob(event.Operation, "done")
+		observability.InfoCtx(ctx, "dynamic outbox event done",
+			append(observability.TenantProjectAttrs(event.TenantID, event.ProjectID),
+				slog.String(observability.FieldSchemaName, event.SchemaName),
+				slog.String(observability.FieldOperation, event.Operation),
+				slog.String("outbox_event_id", event.ID.Hex()),
+				slog.String("workflow_name", event.Payload.WorkflowName),
+				slog.String("step_name", event.Payload.StepName),
+				slog.Float64(observability.FieldDurationMS, observability.DurationMS(start)),
+			)...,
+		)
 	}
 }
 

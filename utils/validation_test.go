@@ -14,6 +14,7 @@ func TestValidateContainerModelFieldTypes(t *testing.T) {
 	valid := map[string]interface{}{
 		"object":    map[string]interface{}{"name": "Ada"},
 		"array":     []interface{}{map[string]interface{}{"name": "Ada"}},
+		"mapArray":  []map[string]interface{}{{"name": "Ada"}},
 		"objectId":  id,
 		"objectIds": []interface{}{id},
 		"sequence":  float64(3),
@@ -23,15 +24,18 @@ func TestValidateContainerModelFieldTypes(t *testing.T) {
 		"url":       "https://example.com",
 		"ip":        "127.0.0.1",
 		"enum":      "red",
+		"enumField": "pending",
 		"int":       float64(2),
 		"bool":      true,
 		"strings":   []interface{}{"a", "b"},
 		"numbers":   []interface{}{1, 2.5},
 		"date":      float64(1_700_000_000),
+		"timeDate":  time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC),
 	}
 	fields := []models.Field{
 		{Name: "object", Type: "object", Children: []models.Field{{Name: "name", Type: "string"}}},
 		{Name: "array", Type: "array", Children: []models.Field{{Name: "name", Type: "string"}}},
+		{Name: "mapArray", Type: "array", Children: []models.Field{{Name: "name", Type: "string"}}},
 		{Name: "objectId", Type: "objectId"},
 		{Name: "objectIds", Type: "objectIdArray", Tag: "minlength=1,maxlength=2"},
 		{Name: "sequence", Type: "autoIncrementId"},
@@ -41,11 +45,13 @@ func TestValidateContainerModelFieldTypes(t *testing.T) {
 		{Name: "url", Type: "url"},
 		{Name: "ip", Type: "ip"},
 		{Name: "enum", Type: "enum", Tag: `enum="red|blue"`},
+		{Name: "enumField", Type: "enum", EnumList: []interface{}{"pending", "delivered"}},
 		{Name: "int", Type: "int", Tag: "positive,min=1,max=3"},
 		{Name: "bool", Type: "bool"},
 		{Name: "strings", Type: "stringArray", Tag: "minlength=1,maxlength=3"},
 		{Name: "numbers", Type: "numberArray", Tag: "minlength=1,maxlength=3"},
 		{Name: "date", Type: "date"},
+		{Name: "timeDate", Type: "date"},
 	}
 	if err := ValidateContainerModel(valid, models.ContainerModel{Fields: fields}); err != nil {
 		t.Fatalf("ValidateContainerModel() error = %v", err)

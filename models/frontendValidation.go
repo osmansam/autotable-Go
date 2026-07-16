@@ -225,6 +225,9 @@ func validateFormSubmitConfig(submit *FormSubmitConfig, objectListKeys map[strin
 		if submit.WorkflowName == "" {
 			return fmt.Errorf("workflow submit requires workflowName")
 		}
+		if submit.BulkObjectListKey != "" && submit.BulkObjectListKey != "items" && !objectListKeys[submit.BulkObjectListKey] {
+			return fmt.Errorf("bulkObjectListKey '%s' does not match a configured object list", submit.BulkObjectListKey)
+		}
 		return nil
 	default:
 		return fmt.Errorf("invalid form submit mode '%s'", submit.Mode)
@@ -288,6 +291,19 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 		}
 		if err := validateLinkType(column.Link.Type); err != nil {
 			return fmt.Errorf("table column '%s': %w", column.Field, err)
+		}
+	}
+	if table.NestedRows != nil && table.NestedRows.Enabled {
+		if strings.TrimSpace(table.NestedRows.Field) == "" {
+			return fmt.Errorf("table nestedRows requires field")
+		}
+		if len(table.NestedRows.Columns) == 0 {
+			return fmt.Errorf("table nestedRows requires at least one column")
+		}
+		for index, column := range table.NestedRows.Columns {
+			if strings.TrimSpace(column.Field) == "" {
+				return fmt.Errorf("table nestedRows column %d requires field", index)
+			}
 		}
 	}
 	if err := ValidateActionConfigs(table.Actions); err != nil {

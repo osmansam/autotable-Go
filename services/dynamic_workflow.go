@@ -75,7 +75,7 @@ const (
 	maxWorkflowSteps             = 100
 	maxWorkflowOutboxEvents      = 100
 	maxWorkflowLoopItems         = 500
-	maxWorkflowQueryLimit        = 500
+	maxWorkflowQueryLimit        = 4000
 	maxWorkflowAggregateLimit    = 500
 	maxWorkflowAggregateSkip     = 5000
 	minWorkflowCallAPITimeoutSec = 1
@@ -1328,6 +1328,9 @@ func workflowJoinObject(value interface{}) (map[string]interface{}, bool) {
 func workflowJoinKey(value interface{}) (string, bool) {
 	switch typed := value.(type) {
 	case string:
+		if objectID, err := primitive.ObjectIDFromHex(typed); err == nil {
+			return "objectId:" + objectID.Hex(), true
+		}
 		return "string:" + typed, true
 	case bool:
 		return "bool:" + strconv.FormatBool(typed), true
@@ -1485,8 +1488,26 @@ func (s *DynamicService) workflowCallAPI(ctx context.Context, step models.Dynami
 		return nil, err
 	}
 	body := resolveWorkflowTemplates(step.Config["body"], payload)
-	responseBytes, err := utils.ExecuteApiRequest(ctx, method, url, body)
+	requestBody, _ := json.Marshal(body)
+	callAttrs := append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, payload.WorkflowName),
+		slog.String("step_name", step.Name),
+		slog.String("method", method),
+		slog.String("url", url),
+		slog.String("request_body", workflowLogPreview(requestBody, 4000)),
+	)
+	observability.InfoCtx(ctx, "workflow call_api request", callAttrs...)
+	responseBytes, statusCode, err := utils.ExecuteApiRequestWithStatus(ctx, method, url, body)
 	if err != nil {
+		observability.ErrorCtx(ctx, "workflow call_api request failed", err, callAttrs...)
+		return nil, err
+	}
+	observability.InfoCtx(ctx, "workflow call_api response",
+		append(callAttrs,
+			slog.Int("response_status", statusCode),
+			slog.String("response_body", workflowLogPreview(responseBytes, 4000)),
+		)...,
+	)
+	if err := workflowCallAPIStatusError(statusCode, responseBytes); err != nil {
 		return nil, err
 	}
 	var response interface{}
@@ -1494,6 +1515,20 @@ func (s *DynamicService) workflowCallAPI(ctx context.Context, step models.Dynami
 		return string(responseBytes), nil
 	}
 	return response, nil
+}
+
+func workflowCallAPIStatusError(statusCode int, responseBytes []byte) error {
+	if statusCode >= 200 && statusCode < 300 {
+		return nil
+	}
+	return fmt.Errorf("call_api returned status %d: %s", statusCode, workflowLogPreview(responseBytes, 1000))
+}
+
+func workflowLogPreview(value []byte, maxBytes int) string {
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return string(value)
+	}
+	return fmt.Sprintf("%s...(truncated %d bytes)", string(value[:maxBytes]), len(value)-maxBytes)
 }
 
 func (s *DynamicService) workflowRunPipeline(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
@@ -1536,8 +1571,18 @@ func (s *DynamicService) enqueueWorkflowStep(ctx context.Context, payload workfl
 	}
 	event := buildWorkflowStepOutboxEvent(payload, workflowName, step)
 	event.Payload.WorkflowDepth = payload.WorkflowDepth + 1
-	_, err := s.repository.InsertOutboxEvent(ctx, event)
-	return err
+	if _, err := s.repository.InsertOutboxEvent(ctx, event); err != nil {
+		return err
+	}
+	observability.InfoCtx(ctx, "workflow outbox step queued",
+		append(observability.WorkflowAttrs(payload.TenantID, payload.ProjectID, payload.SchemaName, workflowName),
+			slog.String("step_name", step.Name),
+			slog.String(observability.FieldStepType, step.Type),
+			slog.String("outbox_event_id", event.ID.Hex()),
+			slog.String("idempotency_key", event.Payload.IdempotencyKey),
+		)...,
+	)
+	return nil
 }
 
 func buildWorkflowStepOutboxEvent(payload workflowExecutionPayload, workflowName string, step models.DynamicWorkflowStep) models.DynamicOutboxEvent {
@@ -1618,6 +1663,15 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		}
 		if done {
 			status = "skipped"
+			observability.InfoCtx(ctx, "workflow outbox step skipped",
+				append(observability.WorkflowAttrs(event.TenantID, event.ProjectID, event.SchemaName, event.Payload.WorkflowName),
+					slog.String("step_name", event.Payload.StepName),
+					slog.String(observability.FieldStepType, event.Payload.StepType),
+					slog.String("outbox_event_id", event.ID.Hex()),
+					slog.String("idempotency_key", event.Payload.IdempotencyKey),
+					slog.String("reason", "idempotency_key_already_done"),
+				)...,
+			)
 			return nil
 		}
 	}
@@ -1652,6 +1706,15 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		IdempotencyKey:  event.Payload.IdempotencyKey,
 		WorkflowDepth:   event.Payload.WorkflowDepth,
 	}
+	observability.InfoCtx(ctx, "workflow outbox step started",
+		append(observability.WorkflowAttrs(event.TenantID, event.ProjectID, event.SchemaName, event.Payload.WorkflowName),
+			slog.String("step_name", event.Payload.StepName),
+			slog.String(observability.FieldStepType, event.Payload.StepType),
+			slog.String("outbox_event_id", event.ID.Hex()),
+			slog.String("idempotency_key", event.Payload.IdempotencyKey),
+			slog.Int("attempt", event.Attempts+1),
+		)...,
+	)
 	_, err := service.processWorkflowStepWithTimeout(ctx, step, &payload)
 	if err != nil {
 		status = "error"
@@ -3127,6 +3190,16 @@ func resolveWorkflowFunction(name string, args []string, payload workflowExecuti
 			return nil, false
 		}
 		return workflowLength(value)
+	case "array":
+		items := make([]interface{}, 0, len(args))
+		for _, arg := range args {
+			value, ok := resolveWorkflowExpressionArg(arg, payload)
+			if !ok {
+				return nil, false
+			}
+			items = append(items, value)
+		}
+		return items, true
 	default:
 		return nil, false
 	}
@@ -3270,11 +3343,9 @@ func normalizeWorkflowIDs(value interface{}) {
 	case map[string]interface{}:
 		for key, item := range typed {
 			if key == "_id" {
-				if idString, ok := item.(string); ok {
-					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
-						typed[key] = objectID
-						continue
-					}
+				if normalized, ok := normalizeWorkflowIDValue(item); ok {
+					typed[key] = normalized
+					continue
 				}
 			}
 			normalizeWorkflowIDs(item)
@@ -3282,11 +3353,9 @@ func normalizeWorkflowIDs(value interface{}) {
 	case bson.M:
 		for key, item := range typed {
 			if key == "_id" {
-				if idString, ok := item.(string); ok {
-					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
-						typed[key] = objectID
-						continue
-					}
+				if normalized, ok := normalizeWorkflowIDValue(item); ok {
+					typed[key] = normalized
+					continue
 				}
 			}
 			normalizeWorkflowIDs(item)
@@ -3306,6 +3375,50 @@ func normalizeWorkflowIDs(value interface{}) {
 	case primitive.A:
 		for _, item := range typed {
 			normalizeWorkflowIDs(item)
+		}
+	}
+}
+
+func normalizeWorkflowIDValue(value interface{}) (interface{}, bool) {
+	if idString, ok := value.(string); ok {
+		if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+			return objectID, true
+		}
+		return nil, false
+	}
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		normalizeWorkflowIDOperatorMap(typed)
+		return typed, true
+	case bson.M:
+		normalizeWorkflowIDOperatorMap(typed)
+		return typed, true
+	default:
+		return nil, false
+	}
+}
+
+func normalizeWorkflowIDOperatorMap(operatorMap map[string]interface{}) {
+	for operator, value := range operatorMap {
+		switch typed := value.(type) {
+		case []interface{}:
+			for index, item := range typed {
+				if idString, ok := item.(string); ok {
+					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+						typed[index] = objectID
+					}
+				}
+			}
+			operatorMap[operator] = typed
+		case primitive.A:
+			for index, item := range typed {
+				if idString, ok := item.(string); ok {
+					if objectID, err := primitive.ObjectIDFromHex(idString); err == nil {
+						typed[index] = objectID
+					}
+				}
+			}
+			operatorMap[operator] = typed
 		}
 	}
 }

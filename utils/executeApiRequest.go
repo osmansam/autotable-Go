@@ -15,13 +15,19 @@ const maxExecuteAPIResponseBytes = 5 << 20
 // ExecuteApiRequest makes an HTTP request based on the provided method, URL, body, and context.
 // It returns the response body as a byte slice and any error encountered.
 func ExecuteApiRequest(ctx context.Context, method string, url string, body interface{}) ([]byte, error) {
+	respBody, _, err := ExecuteApiRequestWithStatus(ctx, method, url, body)
+	return respBody, err
+}
+
+// ExecuteApiRequestWithStatus makes an HTTP request and returns the response body and status code.
+func ExecuteApiRequestWithStatus(ctx context.Context, method string, url string, body interface{}) ([]byte, int, error) {
 	var reqBody []byte
 	var err error
 
 	if body != nil {
 		reqBody, err = json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 
@@ -30,7 +36,7 @@ func ExecuteApiRequest(ctx context.Context, method string, url string, body inte
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if method == "POST" || method == "PATCH" || method == "PUT" {
@@ -39,18 +45,18 @@ func ExecuteApiRequest(ctx context.Context, method string, url string, body inte
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	limitedReader := io.LimitReader(resp.Body, maxExecuteAPIResponseBytes+1)
 	respBody, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return nil, err
+		return nil, resp.StatusCode, err
 	}
 	if len(respBody) > maxExecuteAPIResponseBytes {
-		return nil, fmt.Errorf("api response exceeds max size of %d bytes", maxExecuteAPIResponseBytes)
+		return nil, resp.StatusCode, fmt.Errorf("api response exceeds max size of %d bytes", maxExecuteAPIResponseBytes)
 	}
 
-	return respBody, nil
+	return respBody, resp.StatusCode, nil
 }
