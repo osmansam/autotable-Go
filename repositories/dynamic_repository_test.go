@@ -248,6 +248,41 @@ func TestDynamicRepositoryOutbox(t *testing.T) {
 			t.Fatalf("EnsureOutboxIndexes() error = %v", err)
 		}
 	})
+
+	mt.Run("external api credential lookup is tenant project scoped", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		credentialID := primitive.NewObjectID()
+		tenantID := primitive.NewObjectID()
+		projectID := primitive.NewObjectID()
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch,
+			bson.D{
+				{Key: "_id", Value: credentialID},
+				{Key: "tenantId", Value: tenantID},
+				{Key: "projectId", Value: projectID},
+				{Key: "name", Value: "Stripe"},
+				{Key: "authType", Value: models.ExternalAPIAuthTypeBearer},
+				{Key: "encryptedSecret", Value: "ciphertext"},
+				{Key: "allowedDomains", Value: bson.A{"api.stripe.com"}},
+				{Key: "createdAt", Value: time.Now()},
+				{Key: "updatedAt", Value: time.Now()},
+			}))
+
+		got, err := repository.GetExternalAPICredential(context.Background(), tenantID.Hex(), projectID.Hex(), credentialID.Hex())
+		if err != nil {
+			t.Fatalf("GetExternalAPICredential() error = %v", err)
+		}
+		if got.ID != credentialID || got.TenantID != tenantID || got.ProjectID != projectID {
+			t.Fatalf("GetExternalAPICredential() = %#v, want scoped credential", got)
+		}
+		started := mt.GetStartedEvent()
+		filter, ok := started.Command.Lookup("filter").DocumentOK()
+		if !ok {
+			t.Fatalf("find command filter missing: %v", started.Command)
+		}
+		if filter.Lookup("_id").ObjectID() != credentialID || filter.Lookup("tenantId").ObjectID() != tenantID || filter.Lookup("projectId").ObjectID() != projectID {
+			t.Fatalf("GetExternalAPICredential filter = %v, want _id/tenantId/projectId", filter)
+		}
+	})
 }
 
 func TestNewDynamicRepository(t *testing.T) {

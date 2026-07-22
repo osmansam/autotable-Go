@@ -32,6 +32,11 @@ func main() {
 
 	appConfig := configs.GetAppConfig()
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
+	if key := os.Getenv("EXTERNAL_API_CREDENTIAL_KEY"); key != "" {
+		if err := utils.ValidateExternalAPIEncryptionKey(key); err != nil {
+			log.Fatalf("Invalid EXTERNAL_API_CREDENTIAL_KEY: %v", err)
+		}
+	}
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
 	tracingShutdown, err := observability.InitTracing(appCtx)
@@ -115,6 +120,7 @@ func main() {
 	// Project-scoped routes with tenant and project slugs in URL
 	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
 	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
+	routes.IntegrationRoutes("api/v1/:tenantSlug/:projectSlug/integrations", app)
 	routes.NotificationRoutes("api/v1/:tenantSlug/:projectSlug/notifications", app)
 	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)

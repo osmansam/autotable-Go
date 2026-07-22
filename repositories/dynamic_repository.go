@@ -123,6 +123,84 @@ func (r *DynamicRepository) GetProjectCollection(tenantID, projectID, collection
 	return utils.GetProjectCollection(tenantID, projectID, collectionName)
 }
 
+func (r *DynamicRepository) externalAPICredentialsCollection() *mongo.Collection {
+	return r.globalCollection("external_api_credentials")
+}
+
+func (r *DynamicRepository) InsertExternalAPICredential(ctx context.Context, credential models.ExternalAPICredential) (*mongo.InsertOneResult, error) {
+	return r.externalAPICredentialsCollection().InsertOne(ctx, credential)
+}
+
+func (r *DynamicRepository) ListExternalAPICredentials(ctx context.Context, tenantID, projectID string) ([]models.ExternalAPICredential, error) {
+	tenantObjID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	projectObjID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return nil, err
+	}
+	cursor, err := r.externalAPICredentialsCollection().Find(ctx, bson.M{"tenantId": tenantObjID, "projectId": projectObjID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	credentials := make([]models.ExternalAPICredential, 0)
+	if err := cursor.All(ctx, &credentials); err != nil {
+		return nil, err
+	}
+	return credentials, nil
+}
+
+func (r *DynamicRepository) GetExternalAPICredential(ctx context.Context, tenantID, projectID, credentialID string) (*models.ExternalAPICredential, error) {
+	credentialObjID, err := primitive.ObjectIDFromHex(credentialID)
+	if err != nil {
+		return nil, err
+	}
+	tenantObjID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	projectObjID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return nil, err
+	}
+	var credential models.ExternalAPICredential
+	err = r.externalAPICredentialsCollection().FindOne(ctx, bson.M{
+		"_id":       credentialObjID,
+		"tenantId":  tenantObjID,
+		"projectId": projectObjID,
+	}).Decode(&credential)
+	if err != nil {
+		return nil, err
+	}
+	return &credential, nil
+}
+
+func (r *DynamicRepository) RevokeExternalAPICredential(ctx context.Context, tenantID, projectID, credentialID string, revokedAt time.Time) (*mongo.UpdateResult, error) {
+	credentialObjID, err := primitive.ObjectIDFromHex(credentialID)
+	if err != nil {
+		return nil, err
+	}
+	tenantObjID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	projectObjID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return nil, err
+	}
+	return r.externalAPICredentialsCollection().UpdateOne(ctx,
+		bson.M{"_id": credentialObjID, "tenantId": tenantObjID, "projectId": projectObjID},
+		bson.M{"$set": bson.M{"revokedAt": revokedAt, "updatedAt": revokedAt}},
+	)
+}
+
+func (r *DynamicRepository) MarkExternalAPICredentialUsed(ctx context.Context, credentialID primitive.ObjectID, usedAt time.Time) error {
+	_, err := r.externalAPICredentialsCollection().UpdateByID(ctx, credentialID, bson.M{"$set": bson.M{"lastUsedAt": usedAt, "updatedAt": usedAt}})
+	return err
+}
+
 func (r *DynamicRepository) InsertNotification(ctx context.Context, notification models.DynamicNotification) (*mongo.InsertOneResult, error) {
 	return r.GetProjectCollection(notification.TenantID, notification.ProjectID, "notifications").InsertOne(ctx, notification)
 }
