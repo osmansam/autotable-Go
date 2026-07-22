@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func TestDynamicRepositoryCRUD(t *testing.T) {
@@ -98,6 +99,35 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		}
 		if _, err := repository.UpdateByID(context.Background(), "tenant", "project", "orders", "id", map[string]interface{}{"name": "Ada"}); err != nil {
 			t.Fatalf("UpdateByID() error = %v", err)
+		}
+	})
+
+	mt.Run("update many forwards upsert option", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		mt.AddMockResponses(mtest.CreateSuccessResponse(
+			bson.E{Key: "n", Value: 1},
+			bson.E{Key: "nModified", Value: 0},
+			bson.E{Key: "upserted", Value: bson.A{bson.D{{Key: "index", Value: int32(0)}, {Key: "_id", Value: "stock-1"}}}},
+		))
+		result, err := repository.UpdateMany(context.Background(), "tenant", "project", "stock",
+			bson.M{"product": "product-1"},
+			bson.M{"$inc": bson.M{"quantity": 3}},
+			options.Update().SetUpsert(true),
+		)
+		if err != nil {
+			t.Fatalf("UpdateMany() error = %v", err)
+		}
+		if result.UpsertedCount != 1 || result.UpsertedID != "stock-1" {
+			t.Fatalf("UpdateMany() upsert = (%d, %#v), want (1, stock-1)", result.UpsertedCount, result.UpsertedID)
+		}
+		started := mt.GetStartedEvent()
+		updates, ok := started.Command.Lookup("updates").ArrayOK()
+		if !ok {
+			t.Fatalf("update command missing updates array: %v", started.Command)
+		}
+		firstUpdate := updates.Index(0).Value().Document()
+		if upsert := firstUpdate.Lookup("upsert"); upsert.Type != bson.TypeBoolean || !upsert.Boolean() {
+			t.Fatalf("update command upsert = %v, want true", upsert)
 		}
 	})
 

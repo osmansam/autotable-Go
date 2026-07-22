@@ -440,9 +440,14 @@ func TestWorkflowTemplatesAndPaths(t *testing.T) {
 		SchemaName:   "orders",
 		WorkflowName: "notify",
 		UserID:       "user",
-		Record:       map[string]interface{}{"amount": 3, "nested": map[string]interface{}{"name": "Ada"}},
-		Query:        map[string]interface{}{"search": "coffee", "nested": map[string]interface{}{"term": "tea"}},
-		Variables:    map[string]interface{}{"enabled": true},
+		Record: map[string]interface{}{
+			"amount":  3,
+			"items":   []interface{}{map[string]interface{}{"productId": "product-1", "quantity": 1}},
+			"nested":  map[string]interface{}{"name": "Ada"},
+			"ownerId": "694571c1dae2e3250982c646",
+		},
+		Query:     map[string]interface{}{"search": "coffee", "nested": map[string]interface{}{"term": "tea"}},
+		Variables: map[string]interface{}{"enabled": true},
 	}
 	if got := resolveWorkflowTemplateString("{{record.amount}}", payload); got != 3 {
 		t.Fatalf("resolved scalar = %#v", got)
@@ -464,6 +469,15 @@ func TestWorkflowTemplatesAndPaths(t *testing.T) {
 	}
 	if got := resolveWorkflowTemplateString("{{subtract(record.amount, 1)}}", payload); got != float64(2) {
 		t.Fatalf("resolved subtract = %#v", got)
+	}
+	if got := resolveWorkflowTemplateString("*{{record.items}}*", payload); !reflect.DeepEqual(got, payload.Record["items"]) {
+		t.Fatalf("resolved wrapped items = %#v, want %#v", got, payload.Record["items"])
+	}
+	if got := resolveWorkflowTemplateString("*{{record.amount}}*", payload); got != 3 {
+		t.Fatalf("resolved wrapped amount = %#v, want 3", got)
+	}
+	if got := resolveWorkflowTemplateString("*{{record.ownerId}}*", payload); got != payload.Record["ownerId"] {
+		t.Fatalf("resolved wrapped ownerId = %#v, want %#v", got, payload.Record["ownerId"])
 	}
 	if got, ok := workflowPathValue(payload.Record, "nested.name"); !ok || got != "Ada" {
 		t.Fatalf("workflowPathValue() = %#v, %v", got, ok)
@@ -1085,6 +1099,28 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 		},
 	}); err != nil {
 		t.Fatalf("ValidateWorkflow(manual hybrid outbox dependency) error = %v", err)
+	}
+	if err := ValidateWorkflow(models.DynamicWorkflow{
+		Name:    "upsert-stock",
+		Trigger: models.WorkflowTriggerAfterCreate,
+		Mode:    models.WorkflowModeTransactional,
+		Steps: []models.DynamicWorkflowStep{{
+			Name:          "stock",
+			Type:          models.WorkflowStepTypeUpdateRecord,
+			IsActive:      true,
+			ExecutionMode: models.WorkflowModeTransactional,
+			TargetSchema:  "stock",
+			Config: map[string]interface{}{
+				"upsert": true,
+				"filter": map[string]interface{}{"product": "{{record.product}}"},
+				"update": map[string]interface{}{
+					"$inc":         map[string]interface{}{"quantity": "{{record.quantity}}"},
+					"$setOnInsert": map[string]interface{}{"status": "active"},
+				},
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("ValidateWorkflow(upsert stock) error = %v", err)
 	}
 	if err := ValidateWorkflow(models.DynamicWorkflow{
 		Name: "return-before-outbox",
