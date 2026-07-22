@@ -467,7 +467,11 @@ func (s *DynamicService) workflowUpdateRecord(ctx context.Context, step models.D
 		}
 		update = map[string]interface{}{"$set": update}
 	}
-	result, err := s.repository.GetCollection(payload.TenantID, payload.ProjectID, targetSchema).UpdateMany(ctx, bson.M(filter), bson.M(update))
+	var updateOptions []*options.UpdateOptions
+	if workflowBoolConfig(step.Config, "upsert", false) {
+		updateOptions = append(updateOptions, options.Update().SetUpsert(true))
+	}
+	result, err := s.repository.UpdateMany(ctx, payload.TenantID, payload.ProjectID, targetSchema, bson.M(filter), bson.M(update), updateOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -2870,12 +2874,13 @@ func validateWorkflowUpdateOperatorNames(update map[string]interface{}) error {
 		return fmt.Errorf("update_record update cannot be empty")
 	}
 	allowed := map[string]bool{
-		"$set":      true,
-		"$unset":    true,
-		"$inc":      true,
-		"$addToSet": true,
-		"$push":     true,
-		"$pull":     true,
+		"$set":         true,
+		"$unset":       true,
+		"$inc":         true,
+		"$addToSet":    true,
+		"$push":        true,
+		"$pull":        true,
+		"$setOnInsert": true,
 	}
 	for operator := range update {
 		if !allowed[operator] {
@@ -3224,6 +3229,12 @@ func resolveWorkflowTemplateString(value string, payload workflowExecutionPayloa
 	trimmed := strings.TrimSpace(value)
 	if strings.HasPrefix(trimmed, "{{") && strings.HasSuffix(trimmed, "}}") && strings.Count(trimmed, "{{") == 1 {
 		if resolved, ok := workflowTemplateValue(strings.TrimSuffix(strings.TrimPrefix(trimmed, "{{"), "}}"), payload); ok {
+			return resolved
+		}
+	}
+	if strings.HasPrefix(trimmed, "*{{") && strings.HasSuffix(trimmed, "}}*") && strings.Count(trimmed, "{{") == 1 {
+		token := strings.TrimSuffix(strings.TrimPrefix(trimmed, "*{{"), "}}*")
+		if resolved, ok := workflowTemplateValue(token, payload); ok {
 			return resolved
 		}
 	}
