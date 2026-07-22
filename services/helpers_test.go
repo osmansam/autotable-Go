@@ -221,6 +221,12 @@ func TestWorkflowObjectIDHelpers(t *testing.T) {
 	if inValues[0] != id || inValues[1] != "keep" {
 		t.Fatalf("normalizeWorkflowIDs(_id.$in) = %#v", filter)
 	}
+	plainOperatorFilter := map[string]interface{}{"_id": map[string]interface{}{"in": []interface{}{id.Hex(), "keep"}}}
+	normalizeWorkflowIDs(plainOperatorFilter)
+	plainOperatorValues := plainOperatorFilter["_id"].(map[string]interface{})["$in"].([]interface{})
+	if _, exists := plainOperatorFilter["_id"].(map[string]interface{})["in"]; exists || plainOperatorValues[0] != id || plainOperatorValues[1] != "keep" {
+		t.Fatalf("normalizeWorkflowIDs(_id.in) = %#v", plainOperatorFilter)
+	}
 	arrayValues := []interface{}{
 		map[string]interface{}{"_id": id.Hex()},
 		bson.M{"_id": id.Hex()},
@@ -228,6 +234,18 @@ func TestWorkflowObjectIDHelpers(t *testing.T) {
 	normalizeWorkflowIDs(arrayValues)
 	if arrayValues[0].(map[string]interface{})["_id"] != id || arrayValues[1].(bson.M)["_id"] != id {
 		t.Fatalf("normalizeWorkflowIDs(array) = %#v", arrayValues)
+	}
+	stockContainer := &models.ContainerModel{Fields: []models.Field{{Name: "product", Type: "objectId"}}}
+	productFilter := map[string]interface{}{"product": id.Hex()}
+	normalizeWorkflowFilterIDs(stockContainer, productFilter)
+	if productFilter["product"] != id {
+		t.Fatalf("normalizeWorkflowFilterIDs(product) = %#v", productFilter)
+	}
+	productInFilter := map[string]interface{}{"product": map[string]interface{}{"in": []interface{}{id.Hex(), "keep"}}}
+	normalizeWorkflowFilterIDs(stockContainer, productInFilter)
+	productInValues := productInFilter["product"].(map[string]interface{})["$in"].([]interface{})
+	if _, exists := productInFilter["product"].(map[string]interface{})["in"]; exists || productInValues[0] != id || productInValues[1] != "keep" {
+		t.Fatalf("normalizeWorkflowFilterIDs(product.in) = %#v", productInFilter)
 	}
 }
 
@@ -782,6 +800,19 @@ func TestWorkflowIfAndForEach(t *testing.T) {
 	}) {
 		t.Fatalf("workflowForEach() = %#v, %v", output, err)
 	}
+	payload.Record["mongoItems"] = primitive.A{
+		map[string]interface{}{"index": 0},
+		map[string]interface{}{"index": 1},
+	}
+	output, err = service.workflowForEach(context.Background(), models.DynamicWorkflowStep{
+		Config: map[string]interface{}{"items": "{{record.mongoItems}}"},
+	}, &payload)
+	if err != nil || !reflect.DeepEqual(output, map[string]interface{}{
+		"count": 2,
+		"items": []interface{}{map[string]interface{}{"index": 0}, map[string]interface{}{"index": 1}},
+	}) {
+		t.Fatalf("workflowForEach(primitive.A) = %#v, %v", output, err)
+	}
 	if _, err := service.workflowForEach(context.Background(), models.DynamicWorkflowStep{Config: map[string]interface{}{"items": "invalid"}}, &payload); err == nil {
 		t.Fatal("workflowForEach(invalid items) error = nil")
 	}
@@ -853,6 +884,26 @@ func TestWorkflowCallAPIEarlyValidation(t *testing.T) {
 	}
 }
 
+func TestWorkflowResolvedStringConfigResolvesURLTemplates(t *testing.T) {
+	payload := workflowExecutionPayload{
+		StepOutputs: map[string]interface{}{
+			"order": map[string]interface{}{
+				"data": map[string]interface{}{
+					"_id": "6a5987d76b8ce5ece558e176",
+				},
+			},
+		},
+	}
+
+	got := workflowResolvedStringConfig(map[string]interface{}{
+		"url": "https://api.example.com/order/{{steps.order.data._id}}/status",
+	}, "url", payload)
+	want := "https://api.example.com/order/6a5987d76b8ce5ece558e176/status"
+	if got != want {
+		t.Fatalf("workflowResolvedStringConfig(url) = %q, want %q", got, want)
+	}
+}
+
 func TestWorkflowLogPreview(t *testing.T) {
 	if got := workflowLogPreview([]byte("davinci response"), 100); got != "davinci response" {
 		t.Fatalf("workflowLogPreview(short) = %q", got)
@@ -873,6 +924,102 @@ func TestWorkflowCallAPIStatusError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status 400") || !strings.Contains(err.Error(), "invalid order") {
 		t.Fatalf("workflowCallAPIStatusError(400) = %q, want status and response body", err.Error())
+	}
+}
+
+func TestWorkflowExternalAPICredentialProtectedHeaders(t *testing.T) {
+	credential := models.ExternalAPICredential{
+		AuthType:       models.ExternalAPIAuthTypeBearer,
+		AllowedDomains: []string{"api.example.com"},
+	}
+
+	headers, err := workflowExternalAPICredentialProtectedHeaders(credential, "token-value", "api.example.com", time.Now())
+	if err != nil {
+		t.Fatalf("workflowExternalAPICredentialProtectedHeaders() error = %v", err)
+	}
+	if got := headers["Authorization"]; got != "Bearer token-value" {
+		t.Fatalf("Authorization = %q, want bearer token", got)
+	}
+}
+
+func TestWorkflowExternalAPICredentialProtectedHeadersRejectsInvalidCredential(t *testing.T) {
+	now := time.Now()
+	revokedAt := now.Add(-time.Minute)
+	tests := []struct {
+		name       string
+		credential models.ExternalAPICredential
+		host       string
+	}{
+		{
+			name:       "revoked",
+			credential: models.ExternalAPICredential{AuthType: models.ExternalAPIAuthTypeBearer, AllowedDomains: []string{"api.example.com"}, RevokedAt: &revokedAt},
+			host:       "api.example.com",
+		},
+		{
+			name:       "expired",
+			credential: models.ExternalAPICredential{AuthType: models.ExternalAPIAuthTypeBearer, AllowedDomains: []string{"api.example.com"}, ExpiresAt: now.Add(-time.Minute)},
+			host:       "api.example.com",
+		},
+		{
+			name:       "wrong domain",
+			credential: models.ExternalAPICredential{AuthType: models.ExternalAPIAuthTypeBearer, AllowedDomains: []string{"api.example.com"}},
+			host:       "evil.example.net",
+		},
+		{
+			name:       "custom authorization header",
+			credential: models.ExternalAPICredential{AuthType: models.ExternalAPIAuthTypeHeader, HeaderName: "Authorization", AllowedDomains: []string{"api.example.com"}},
+			host:       "api.example.com",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := workflowExternalAPICredentialProtectedHeaders(tt.credential, "secret", tt.host, now); err == nil {
+				t.Fatal("workflowExternalAPICredentialProtectedHeaders() error = nil")
+			}
+		})
+	}
+}
+
+func TestWorkflowExternalAPICredentialAllowsSubdomainByParsedHost(t *testing.T) {
+	credential := models.ExternalAPICredential{
+		AuthType:       models.ExternalAPIAuthTypeHeader,
+		HeaderName:     "X-API-Key",
+		AllowedDomains: []string{"example.com"},
+	}
+	headers, err := workflowExternalAPICredentialProtectedHeaders(credential, "secret", "orders.example.com", time.Now())
+	if err != nil {
+		t.Fatalf("workflowExternalAPICredentialProtectedHeaders(subdomain) error = %v", err)
+	}
+	if got := headers["X-API-Key"]; got != "secret" {
+		t.Fatalf("X-API-Key = %q, want secret", got)
+	}
+	if _, ok := headers["Authorization"]; ok {
+		t.Fatalf("Authorization header was set for custom header auth: %#v", headers)
+	}
+}
+
+func TestWorkflowMissingRequiredFieldPathsIncludesArrayIndexes(t *testing.T) {
+	fields := []models.Field{
+		{
+			Name: "product",
+			Type: "array",
+			Children: []models.Field{
+				{Name: "productId", Type: "objectId", Tag: "required"},
+				{Name: "productDavinciId", Type: "int", Tag: "required"},
+			},
+		},
+	}
+	document := map[string]interface{}{
+		"product": []interface{}{
+			map[string]interface{}{"productId": "p1", "productDavinciId": 181},
+			map[string]interface{}{"productId": "p2"},
+		},
+	}
+
+	got := workflowMissingRequiredFieldPaths(fields, document, "")
+	want := []string{"product[1].productDavinciId"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workflowMissingRequiredFieldPaths() = %#v, want %#v", got, want)
 	}
 }
 

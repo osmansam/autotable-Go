@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -179,6 +180,63 @@ func TestExecuteAPIRequestWithStatusReturnsStatusAndBody(t *testing.T) {
 	}
 	if status != http.StatusBadRequest || string(got) != `{"message":"bad request"}` {
 		t.Fatalf("ExecuteApiRequestWithStatus() = (%q, %d), want bad request body and %d", got, status, http.StatusBadRequest)
+	}
+}
+
+func TestExecuteAPIRequestWithStatusAndHeadersProtectsAuthorization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer protected" {
+			t.Fatalf("Authorization = %q, want protected header", got)
+		}
+		if got := r.Header.Get("X-Custom"); got != "allowed" {
+			t.Fatalf("X-Custom = %q, want user header", got)
+		}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	body, status, err := ExecuteApiRequestWithStatusAndHeaders(
+		context.Background(),
+		http.MethodGet,
+		server.URL,
+		nil,
+		map[string]string{"Authorization": "Bearer attacker", "X-Custom": "allowed"},
+		map[string]string{"Authorization": "Bearer protected"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ExecuteApiRequestWithStatusAndHeaders() error = %v", err)
+	}
+	if status != http.StatusOK || string(body) != `{"ok":true}` {
+		t.Fatalf("ExecuteApiRequestWithStatusAndHeaders() = (%q, %d), want ok", body, status)
+	}
+}
+
+func TestExecuteAPIRequestWithStatusAndHeadersBlocksRedirectToDisallowedHost(t *testing.T) {
+	allowed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "http://disallowed.example.invalid/secret")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer allowed.Close()
+
+	allowedURL, err := url.Parse(allowed.URL)
+	if err != nil {
+		t.Fatalf("url.Parse() error = %v", err)
+	}
+	_, _, err = ExecuteApiRequestWithStatusAndHeaders(
+		context.Background(),
+		http.MethodGet,
+		allowed.URL,
+		nil,
+		nil,
+		nil,
+		func(host string) bool { return host == allowedURL.Hostname() },
+	)
+	if err == nil {
+		t.Fatal("ExecuteApiRequestWithStatusAndHeaders(redirect) error = nil")
+	}
+	if strings.Contains(err.Error(), "disallowed.example.invalid") {
+		t.Fatalf("redirect error leaked target host: %v", err)
 	}
 }
 

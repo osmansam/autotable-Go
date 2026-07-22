@@ -1,11 +1,16 @@
 package middlewares
 
 import (
+	"context"
+	"errors"
 	"log"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isActive bool) error {
@@ -245,6 +250,17 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			authorizeRole = route.AuthorizeRole
 		}
 
+		authHeader := c.Get("Authorization")
+		if authHeader != "" {
+			token := tokenFromAuthorizationHeader(authHeader)
+			if utils.LooksLikeIntegrationToken(token) {
+				if !isActive {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+				}
+				return authenticateIntegrationDynamicRoute(c, token, routeName, schemaName, tenantID, projectID)
+			}
+		}
+
 		if isAuthenticated || !isActive {
 			// Store expected tenant and project IDs in context for validation
 			c.Locals("expectedTenantID", tenantID)
@@ -254,14 +270,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 
 		// Optional Authentication: If token is present, try to parse it to identify the user/role.
 		// This allows Row Access rules to work even on public routes.
-		authHeader := c.Get("Authorization")
 		if authHeader != "" {
-			var token string
-			if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-				token = authHeader[7:]
-			} else {
-				token = authHeader
-			}
+			token := tokenFromAuthorizationHeader(authHeader)
 
 			userID, role, tokenTenantID, tokenProjectID, _, _, err := utils.ParseToken(token)
 			if err == nil {
@@ -287,4 +297,52 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 
 		return c.Next()
 	}
+}
+
+func tokenFromAuthorizationHeader(authHeader string) string {
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		return authHeader[7:]
+	}
+	return authHeader
+}
+
+func authenticateIntegrationDynamicRoute(c *fiber.Ctx, token, routeName, schemaName, tenantID, projectID string) error {
+	required := utils.IntegrationPermissionForDynamicRoute(
+		routeName,
+		schemaName,
+		c.Method(),
+		c.Params("workflowName"),
+		c.Query("apiName"),
+		c.Query("pipelineName"),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var credential models.IntegrationCredential
+	err := configs.GetCollection("integration_credentials").FindOne(ctx, bson.M{
+		"tokenHash": utils.HashIntegrationToken(token),
+	}).Decode(&credential)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid integration token"})
+	}
+
+	if err := utils.ValidateIntegrationCredentialAccess(credential, tenantID, projectID, required, time.Now()); err != nil {
+		status := fiber.StatusForbidden
+		if errors.Is(err, utils.ErrIntegrationTokenExpired) || errors.Is(err, utils.ErrIntegrationTokenRevoked) {
+			status = fiber.StatusUnauthorized
+		}
+		return c.Status(status).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	now := time.Now()
+	_, _ = configs.GetCollection("integration_credentials").UpdateOne(ctx, bson.M{"_id": credential.ID}, bson.M{
+		"$set": bson.M{"lastUsedAt": now},
+	})
+
+	c.Locals("integrationID", credential.ID.Hex())
+	c.Locals("integrationName", credential.Name)
+	c.Locals("tenantID", tenantID)
+	c.Locals("projectID", projectID)
+	return c.Next()
 }
