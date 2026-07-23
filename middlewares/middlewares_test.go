@@ -363,6 +363,29 @@ func TestAuthenticate(t *testing.T) {
 	}
 }
 
+func TestConditionalAuthenticationRequiresTokenForAuthorizedResources(t *testing.T) {
+	tests := []struct {
+		name            string
+		isAuthenticated bool
+		isAuthorized    bool
+		isActive        bool
+		want            bool
+	}{
+		{name: "public active resource", isActive: true},
+		{name: "authenticated resource", isAuthenticated: true, isActive: true, want: true},
+		{name: "authorized resource", isAuthorized: true, isActive: true, want: true},
+		{name: "inactive resource", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := conditionalAuthenticationRequiresToken(tt.isAuthenticated, tt.isAuthorized, tt.isActive); got != tt.want {
+				t.Fatalf("conditionalAuthenticationRequiresToken() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConditionalAuthenticationForPages(t *testing.T) {
 	app := fiber.New()
 	app.Get("/", ConditionalAuthenticationForPages, func(c *fiber.Ctx) error {

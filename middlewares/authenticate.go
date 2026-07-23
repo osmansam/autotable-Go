@@ -261,7 +261,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			}
 		}
 
-		if isAuthenticated || !isActive {
+		if conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive) {
 			// Store expected tenant and project IDs in context for validation
 			c.Locals("expectedTenantID", tenantID)
 			c.Locals("expectedProjectID", projectID)
@@ -297,6 +297,10 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 
 		return c.Next()
 	}
+}
+
+func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive bool) bool {
+	return isAuthenticated || isAuthorized || !isActive
 }
 
 func tokenFromAuthorizationHeader(authHeader string) string {
