@@ -114,6 +114,7 @@ func TestContainerHandlersRejectMissingProjectContext(t *testing.T) {
 		{name: "pipelines", method: http.MethodPatch, path: "/id", handler: UpdatePipelines},
 		{name: "workflows", method: http.MethodPatch, path: "/id", handler: UpdateWorkflows},
 		{name: "functions", method: http.MethodPatch, path: "/id", handler: UpdateDynamicFunctions},
+		{name: "dynamic apis", method: http.MethodPatch, path: "/id", handler: UpdateDynamicApis},
 		{name: "get", method: http.MethodGet, path: "/id", handler: GetContainer},
 		{name: "types", method: http.MethodGet, path: "/", handler: GetAllContainerTypes},
 	}

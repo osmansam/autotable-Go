@@ -75,6 +75,17 @@ func ContainerRoutes(baseUrl string, app *fiber.App) {
 		controllers.UpdateWorkflows,
 	)
 
+	// Update dynamic APIs - requires project admin or developer role
+	containerGroup.Patch("/dynamicApis/:id",
+		// middlewares.TenantAuthorize([]string{
+		// 	models.ProjectRoleAdmin,
+		// 	models.ProjectRoleDeveloper,
+		// }),
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.UpdateDynamicApis,
+	)
+
 	// Get single container - any project member can view
 	containerGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetContainer)
 

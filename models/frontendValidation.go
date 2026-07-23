@@ -306,6 +306,25 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 			}
 		}
 	}
+	for key := range table.ConstantFilters {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			return fmt.Errorf("table constantFilters requires non-empty keys")
+		}
+		if strings.HasPrefix(trimmed, "$") {
+			return fmt.Errorf("table constantFilters key '%s' is invalid", key)
+		}
+	}
+	if table.ConstantSort != nil {
+		if strings.TrimSpace(table.ConstantSort.Sort) == "" {
+			return fmt.Errorf("table constantSort requires sort")
+		}
+		switch value := table.ConstantSort.Asc.(type) {
+		case nil, bool, int, int32, int64, float32, float64, string:
+		default:
+			return fmt.Errorf("table constantSort asc has invalid type %T", value)
+		}
+	}
 	if err := ValidateActionConfigs(table.Actions); err != nil {
 		return fmt.Errorf("table actions: %w", err)
 	}

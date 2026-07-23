@@ -43,6 +43,7 @@ func PrepareCreateItem(tenantID, projectID string, container *models.ContainerMo
 	if err := evaluateEquationFields(tenantID, projectID, container, itemMap); err != nil {
 		return err
 	}
+	convertDateFields(container.Fields, itemMap)
 	if err := utils.ValidateContainerModel(itemMap, *container); err != nil {
 		return err
 	}
@@ -61,6 +62,7 @@ func PrepareCreateItems(tenantID, projectID string, container *models.ContainerM
 			return err
 		}
 
+		convertDateFields(container.Fields, item)
 		if err := utils.ValidateContainerModel(item, *container); err != nil {
 			return fmt.Errorf("validation failed for item at index %d: %w", i, err)
 		}
@@ -75,6 +77,7 @@ func PrepareCreateItems(tenantID, projectID string, container *models.ContainerM
 func PrepareUpdateFields(container *models.ContainerModel, updatedItemMap map[string]interface{}) error {
 	keepAllowedFields(container, updatedItemMap)
 	setUpdateTimestamp(container, updatedItemMap)
+	convertDateFields(container.Fields, updatedItemMap)
 	return utils.ValidatePartialUpdate(updatedItemMap, *container)
 }
 
@@ -102,6 +105,55 @@ func keepAllowedFields(container *models.ContainerModel, itemMap map[string]inte
 			delete(itemMap, key)
 		}
 	}
+}
+
+func convertDateFields(fields []models.Field, itemMap map[string]interface{}) {
+	for _, field := range fields {
+		value, exists := itemMap[field.Name]
+		if !exists {
+			continue
+		}
+
+		switch field.Type {
+		case "date":
+			if converted, ok := parseDateValue(value); ok {
+				itemMap[field.Name] = converted
+			}
+		case "object":
+			if nested, ok := value.(map[string]interface{}); ok {
+				convertDateFields(field.Children, nested)
+			}
+		case "array":
+			if rows, ok := value.([]interface{}); ok {
+				for _, row := range rows {
+					if nested, ok := row.(map[string]interface{}); ok {
+						convertDateFields(field.Children, nested)
+					}
+				}
+			}
+		}
+	}
+}
+
+func parseDateValue(value interface{}) (time.Time, bool) {
+	switch v := value.(type) {
+	case time.Time:
+		return v, true
+	case string:
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return parsed.UTC(), true
+		}
+		if parsed, err := time.Parse("2006-01-02", v); err == nil {
+			return parsed.UTC(), true
+		}
+	case int64:
+		return time.Unix(v, 0).UTC(), true
+	case int:
+		return time.Unix(int64(v), 0).UTC(), true
+	case float64:
+		return time.Unix(int64(v), 0).UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func setUpdateTimestamp(container *models.ContainerModel, itemMap map[string]interface{}) {

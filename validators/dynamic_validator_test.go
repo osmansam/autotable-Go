@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -31,6 +32,48 @@ func TestPrepareCreateItem(t *testing.T) {
 	}
 	if item["createdAt"] == "" || item["updatedAt"] == "" {
 		t.Fatalf("timestamps = (%#v, %#v)", item["createdAt"], item["updatedAt"])
+	}
+}
+
+func TestPrepareCreateItemPreservesDateTime(t *testing.T) {
+	container := &models.ContainerModel{Fields: []models.Field{
+		{Name: "deliveredAt", Type: "date"},
+	}}
+	item := map[string]interface{}{
+		"deliveredAt": "2026-07-17T15:42:13Z",
+	}
+
+	if err := PrepareCreateItem("", "", container, item); err != nil {
+		t.Fatalf("PrepareCreateItem() error = %v", err)
+	}
+	got, ok := item["deliveredAt"].(time.Time)
+	if !ok {
+		t.Fatalf("deliveredAt = %#v, want time.Time", item["deliveredAt"])
+	}
+	want := time.Date(2026, 7, 17, 15, 42, 13, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("deliveredAt = %s, want %s", got.Format(time.RFC3339), want.Format(time.RFC3339))
+	}
+}
+
+func TestPrepareUpdateFieldsPreservesDateTime(t *testing.T) {
+	container := &models.ContainerModel{Fields: []models.Field{
+		{Name: "deliveredAt", Type: "date"},
+	}}
+	item := map[string]interface{}{
+		"deliveredAt": "2026-07-17T15:42:13Z",
+	}
+
+	if err := PrepareUpdateFields(container, item); err != nil {
+		t.Fatalf("PrepareUpdateFields() error = %v", err)
+	}
+	got, ok := item["deliveredAt"].(time.Time)
+	if !ok {
+		t.Fatalf("deliveredAt = %#v, want time.Time", item["deliveredAt"])
+	}
+	want := time.Date(2026, 7, 17, 15, 42, 13, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("deliveredAt = %s, want %s", got.Format(time.RFC3339), want.Format(time.RFC3339))
 	}
 }
 

@@ -25,6 +25,9 @@ import (
 type DynamicFunctionsUpdate struct {
 	DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
 }
+type DynamicApisUpdate struct {
+	DynamicApis []models.DynamicApiModel `json:"dynamicApis"`
+}
 type PipelinesUpdate struct {
 	Pipelines []models.PipelineStage `json:"Pipelines"`
 }
@@ -231,6 +234,13 @@ func applyContainerAuthFlagDefaults(existing models.ContainerModel, updated *mod
 	if !payloadKeys["isGoogleLoginActive"] {
 		updated.IsGoogleLoginActive = existing.IsGoogleLoginActive
 	}
+}
+
+func applyContainerPreservedFields(existing models.ContainerModel, updated *models.ContainerModel) {
+	updated.Pipelines = existing.Pipelines
+	updated.DynamicFunctions = existing.DynamicFunctions
+	updated.Workflows = existing.Workflows
+	updated.DynamicApis = existing.DynamicApis
 }
 
 func containerCacheKeys(tenantID, projectID string, containerIDs []primitive.ObjectID) []string {
@@ -705,9 +715,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 		}
 	}
 
-	updatedContainer.Pipelines = existingContainer.Pipelines
-	updatedContainer.DynamicFunctions = existingContainer.DynamicFunctions
-	updatedContainer.Workflows = existingContainer.Workflows
+	applyContainerPreservedFields(existingContainer, &updatedContainer)
 	updatedContainer.Redis = defaultContainerRedis(updatedContainer.SchemaName, existingContainer.Redis.TriggeredRedisCaches)
 
 	referencedIDs, err := validateObjectReferences(ctx, containerCollection, updatedContainer, updateId)
@@ -976,6 +984,77 @@ func UpdateDynamicFunctions(c *fiber.Ctx) error {
 	return c.Status(http.StatusOK).JSON(fiber.Map{
 		"status":  http.StatusOK,
 		"message": "DynamicFunctions successfully updated",
+		"data":    updateResult,
+	})
+}
+
+// UpdateDynamicApis updates the DynamicApis in the container.
+func UpdateDynamicApis(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Extract tenant and project context from URL slugs with JWT validation
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		log.Printf("Failed to get project context: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+	}
+	if tenantID == "" || projectID == "" {
+		log.Println("Missing tenant or project context")
+		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+	}
+
+	// Get project-specific container collection
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+
+	containerIdStr := c.Params("id")
+	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+	if err != nil {
+		log.Printf("Invalid container ID format: %v", err)
+		return utils.SendErrorResponse(c, err, "Invalid container ID format")
+	}
+
+	log.Println("Parsing request body for UpdateDynamicApis")
+	var update DynamicApisUpdate
+	if err := c.BodyParser(&update); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+	}
+
+	log.Println("Updating DynamicApis in the container")
+	updateResult, err := containerCollection.UpdateOne(
+		ctx,
+		bson.M{"_id": containerId},
+		bson.M{"$set": bson.M{"dynamicApis": update.DynamicApis}},
+	)
+	if err != nil {
+		log.Printf("Failed to update DynamicApis: %v", err)
+		return utils.SendErrorResponse(c, err, "Failed to update DynamicApis")
+	}
+
+	if updateResult.MatchedCount == 0 {
+		log.Println("No container found with the specified ID")
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+			"status":  http.StatusNotFound,
+			"message": "No container found with the specified ID",
+		})
+	}
+
+	// Invalidate Redis cache for all containers and this specific container (project-specific)
+	_ = configs.RedisDelKeys(ctx,
+		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
+	)
+	log.Println("Invalidated containers cache after dynamic APIs update")
+
+	// Emit WebSocket event for container change
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+
+	log.Println("DynamicApis successfully updated")
+	return c.Status(http.StatusOK).JSON(fiber.Map{
+		"status":  http.StatusOK,
+		"message": "DynamicApis successfully updated",
 		"data":    updateResult,
 	})
 }

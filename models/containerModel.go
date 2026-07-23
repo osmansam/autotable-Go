@@ -54,6 +54,7 @@ type ActionFormFieldConfig struct {
 	SourceSchemaName      string                   `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`
 	SourceValueField      string                   `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`
 	SourceLabelField      string                   `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`
+	SourceRequestFilters  map[string]interface{}   `bson:"sourceRequestFilters,omitempty" json:"sourceRequestFilters,omitempty"`
 	SourceFilterCondition string                   `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
 	InvalidateKeys        []string                 `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 	DefaultValue          interface{}              `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
