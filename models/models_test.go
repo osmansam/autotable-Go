@@ -589,6 +589,41 @@ func TestValidatePageTableConfig(t *testing.T) {
 	if err := ValidatePageTableConfig(invalid); err == nil || !strings.Contains(err.Error(), "component 'orders-table': table column 'website': invalid linkType 'javascript'") {
 		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid table link type", err)
 	}
+
+	validConstants := &PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					ConstantFilters: map[string]interface{}{"status": "active"},
+					ConstantSort:    &TableConstantSortConfig{Sort: "createdAt", Asc: 0},
+				},
+			},
+		}},
+	}
+	if err := ValidatePageTableConfig(validConstants); err != nil {
+		t.Fatalf("ValidatePageTableConfig() constants error = %v", err)
+	}
+
+	invalidConstants := &PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					ConstantFilters: map[string]interface{}{"": "active"},
+				},
+			},
+		}},
+	}
+	if err := ValidatePageTableConfig(invalidConstants); err == nil || !strings.Contains(err.Error(), "constantFilters requires non-empty keys") {
+		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid constant filter key", err)
+	}
 }
 
 func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {

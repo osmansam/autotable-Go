@@ -232,6 +232,34 @@ func TestApplyContainerAuthFlagDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyContainerPreservedFieldsKeepsDynamicApis(t *testing.T) {
+	existing := models.ContainerModel{
+		Pipelines:        []models.PipelineStage{{Name: "summary"}},
+		DynamicFunctions: []models.DynamicFunction{{Name: "calculate"}},
+		Workflows:        []models.DynamicWorkflow{{Name: "on-create"}},
+		DynamicApis:      []models.DynamicApiModel{{Name: "status", Url: "https://example.com/status", Method: "GET"}},
+	}
+	updated := models.ContainerModel{
+		SchemaName: "orders",
+		Fields:     []models.Field{{Name: "title", Type: "string"}},
+	}
+
+	applyContainerPreservedFields(existing, &updated)
+
+	if !reflect.DeepEqual(updated.Pipelines, existing.Pipelines) {
+		t.Fatalf("Pipelines = %#v, want %#v", updated.Pipelines, existing.Pipelines)
+	}
+	if !reflect.DeepEqual(updated.DynamicFunctions, existing.DynamicFunctions) {
+		t.Fatalf("DynamicFunctions = %#v, want %#v", updated.DynamicFunctions, existing.DynamicFunctions)
+	}
+	if !reflect.DeepEqual(updated.Workflows, existing.Workflows) {
+		t.Fatalf("Workflows = %#v, want %#v", updated.Workflows, existing.Workflows)
+	}
+	if !reflect.DeepEqual(updated.DynamicApis, existing.DynamicApis) {
+		t.Fatalf("DynamicApis = %#v, want %#v", updated.DynamicApis, existing.DynamicApis)
+	}
+}
+
 func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()

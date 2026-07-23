@@ -56,7 +56,7 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 	mt.Run("find selection", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
 		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "name", Value: "Ada"}}))
-		got, err := repository.FindForSelection(context.Background(), "tenant", "project", "orders", "name")
+		got, err := repository.FindForSelection(context.Background(), "tenant", "project", "orders", "name", bson.M{})
 		if err != nil || len(got) != 1 || got[0]["name"] != "Ada" {
 			t.Fatalf("FindForSelection() = %#v, %v", got, err)
 		}

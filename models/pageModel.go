@@ -220,6 +220,12 @@ type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 }
 
+// TableConstantSortConfig defines a configured table sort sent with requests.
+type TableConstantSortConfig struct {
+	Sort string      `bson:"sort,omitempty" json:"sort,omitempty"`
+	Asc  interface{} `bson:"asc,omitempty" json:"asc,omitempty"`
+}
+
 // TableFilterPanelConfig defines editable filter inputs for a table component.
 type TableFilterPanelConfig struct {
 	Inputs *[]ActionFormFieldConfig `bson:"inputs,omitempty" json:"inputs,omitempty"`
@@ -233,15 +239,17 @@ type TableBulkActionsConfig struct {
 
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	EnableSearch *bool                   `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
-	Columns      []TableColumnConfig     `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows         *TableRowsConfig        `bson:"rows,omitempty" json:"rows,omitempty"`
-	NestedRows   *TableNestedRowsConfig  `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
-	Cache        *TableCacheConfig       `bson:"cache,omitempty" json:"cache,omitempty"`
-	AddButton    *ActionConfig           `bson:"addButton,omitempty" json:"addButton,omitempty"`
-	Actions      []ActionConfig          `bson:"actions,omitempty" json:"actions,omitempty"`
-	BulkActions  *TableBulkActionsConfig `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
-	FilterPanel  *TableFilterPanelConfig `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	EnableSearch    *bool                    `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
+	Columns         []TableColumnConfig      `bson:"columns,omitempty" json:"columns,omitempty"`
+	Rows            *TableRowsConfig         `bson:"rows,omitempty" json:"rows,omitempty"`
+	NestedRows      *TableNestedRowsConfig   `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
+	Cache           *TableCacheConfig        `bson:"cache,omitempty" json:"cache,omitempty"`
+	ConstantFilters map[string]interface{}   `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
+	ConstantSort    *TableConstantSortConfig `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
+	AddButton       *ActionConfig            `bson:"addButton,omitempty" json:"addButton,omitempty"`
+	Actions         []ActionConfig           `bson:"actions,omitempty" json:"actions,omitempty"`
+	BulkActions     *TableBulkActionsConfig  `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
+	FilterPanel     *TableFilterPanelConfig  `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
 }
 
 // FormLayoutConfig controls the layout shell for form components.

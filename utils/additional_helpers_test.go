@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/valyala/fasthttp"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -105,6 +106,29 @@ func TestBuildFilterFromQuery(t *testing.T) {
 				t.Fatalf("app.Test() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestBuildSelectionFilterFromQuery(t *testing.T) {
+	app := fiber.New()
+	c := app.AcquireCtx(&fasthttp.RequestCtx{})
+	defer app.ReleaseCtx(c)
+
+	c.Request().URI().SetQueryString("schemaName=products&fieldName=name&filter.active=true&filter.category=featured")
+	container := &models.ContainerModel{Fields: []models.Field{
+		{Name: "schemaName", Type: "string"},
+		{Name: "active", Type: "boolean"},
+		{Name: "category", Type: "string"},
+	}}
+
+	got, err := BuildSelectionFilterFromQuery(c, container)
+	if err != nil {
+		t.Fatalf("BuildSelectionFilterFromQuery() error = %v", err)
+	}
+
+	want := bson.M{"active": true, "category": "featured"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("BuildSelectionFilterFromQuery() = %#v, want %#v", got, want)
 	}
 }
 

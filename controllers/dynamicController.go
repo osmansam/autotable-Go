@@ -263,6 +263,23 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
 	valueField := c.Query("valueField")
+	filter := map[string]interface{}{}
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	}
+	if container == nil && schemaName != "" {
+		container, err = utils.GetContainerModel(tenantID, projectID, schemaName)
+		if err != nil {
+			return sendDynamicError(c, err, "Failed to load schema configuration")
+		}
+	}
+	if container != nil {
+		filter, err = utils.BuildSelectionFilterFromQuery(c, container)
+		if err != nil {
+			return sendDynamicError(c, err, "Invalid selection filters")
+		}
+	}
 
 	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
@@ -272,6 +289,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		Schema:     schemaName,
 		FieldName:  fieldName,
 		ValueField: valueField,
+		Filter:     filter,
 		UserRole:   userRole,
 	})
 	if err != nil {
