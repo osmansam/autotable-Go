@@ -386,6 +386,47 @@ func TestConditionalAuthenticationRequiresTokenForAuthorizedResources(t *testing
 	}
 }
 
+func TestUsesSourceSpecificAuthenticationForTableSource(t *testing.T) {
+	pipelineTests := []struct {
+		name       string
+		routeName  string
+		sourceType string
+		want       bool
+	}{
+		{name: "direct pipeline route", routeName: "GetPipeline", want: true},
+		{name: "pipeline table source", routeName: "GetTableSource", sourceType: "pipeline", want: true},
+		{name: "schema table source", routeName: "GetTableSource", sourceType: "schema"},
+		{name: "paginated route", routeName: "GetAllDynamicModelItemsWithPagination", sourceType: "pipeline"},
+	}
+
+	for _, tt := range pipelineTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesPipelineAuthentication(tt.routeName, tt.sourceType); got != tt.want {
+				t.Fatalf("usesPipelineAuthentication() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	workflowTests := []struct {
+		name       string
+		routeName  string
+		sourceType string
+		want       bool
+	}{
+		{name: "direct workflow route", routeName: "ExecuteWorkflow", want: true},
+		{name: "workflow table source", routeName: "GetTableSource", sourceType: "workflow", want: true},
+		{name: "schema table source", routeName: "GetTableSource", sourceType: "schema"},
+	}
+
+	for _, tt := range workflowTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesWorkflowAuthentication(tt.routeName, tt.sourceType); got != tt.want {
+				t.Fatalf("usesWorkflowAuthentication() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConditionalAuthenticationForPages(t *testing.T) {
 	app := fiber.New()
 	app.Get("/", ConditionalAuthenticationForPages, func(c *fiber.Ctx) error {

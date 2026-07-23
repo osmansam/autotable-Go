@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -146,10 +147,11 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		}
 		c.Locals("containerModel", container)
 
+		sourceType := c.Query("sourceType")
 		isDynamicFunc := routeName == "ExecuteDynamicCode"
-		isPipeline := routeName == "GetPipeline"
+		isPipeline := usesPipelineAuthentication(routeName, sourceType)
 		isExecuteApi := routeName == "ExecuteDynamicAPI"
-		isExecuteWorkflow := routeName == "ExecuteWorkflow"
+		isExecuteWorkflow := usesWorkflowAuthentication(routeName, sourceType)
 		var isAuthenticated bool
 		var isAuthorized bool
 		var isActive bool
@@ -234,6 +236,8 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 				route = container.Routes.GetDynamicModelItem
 			case "GetAllDynamicModelItemsWithPagination":
 				route = container.Routes.GetAllDynamicModelItemsWithPagination
+			case "GetTableSource":
+				route = container.Routes.GetAllDynamicModelItemsWithPagination
 			case "TestPipeline":
 				route = container.Routes.TestPipeline
 			case "ExportDynamicModelItems":
@@ -303,6 +307,18 @@ func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isAct
 	return isAuthenticated || isAuthorized || !isActive
 }
 
+func usesPipelineAuthentication(routeName, sourceType string) bool {
+	return routeName == "GetPipeline" || (routeName == "GetTableSource" && bindingKindMatches(sourceType, models.BindingKindPipeline))
+}
+
+func usesWorkflowAuthentication(routeName, sourceType string) bool {
+	return routeName == "ExecuteWorkflow" || (routeName == "GetTableSource" && bindingKindMatches(sourceType, models.BindingKindWorkflow))
+}
+
+func bindingKindMatches(sourceType string, kind models.BindingKind) bool {
+	return strings.EqualFold(strings.TrimSpace(sourceType), string(kind))
+}
+
 func tokenFromAuthorizationHeader(authHeader string) string {
 	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 		return authHeader[7:]
@@ -311,11 +327,24 @@ func tokenFromAuthorizationHeader(authHeader string) string {
 }
 
 func authenticateIntegrationDynamicRoute(c *fiber.Ctx, token, routeName, schemaName, tenantID, projectID string) error {
+	sourceType := c.Query("sourceType")
+	permissionRouteName := routeName
+	workflowName := c.Params("workflowName")
+	if usesPipelineAuthentication(routeName, sourceType) {
+		permissionRouteName = "GetPipeline"
+	}
+	if usesWorkflowAuthentication(routeName, sourceType) {
+		permissionRouteName = "ExecuteWorkflow"
+		if workflowName == "" {
+			workflowName = c.Query("workflowName")
+		}
+	}
+
 	required := utils.IntegrationPermissionForDynamicRoute(
-		routeName,
+		permissionRouteName,
 		schemaName,
 		c.Method(),
-		c.Params("workflowName"),
+		workflowName,
 		c.Query("apiName"),
 		c.Query("pipelineName"),
 	)
