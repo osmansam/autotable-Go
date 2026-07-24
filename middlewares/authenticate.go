@@ -51,6 +51,7 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
 
 	c.Locals("userID", userID)
 	c.Locals("userRole", role)
+	c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
 	c.Locals("tenantID", tokenTenantID)
 	c.Locals("projectID", tokenProjectID)
 
@@ -108,6 +109,7 @@ func ConditionalAuthenticationForPages(c *fiber.Ctx) error {
 				// Valid token for this project
 				c.Locals("userID", userID)
 				c.Locals("userRole", role)
+				c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
 				c.Locals("tenantID", tokenTenantID)
 				c.Locals("projectID", tokenProjectID)
 			}
@@ -290,6 +292,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 					// Valid token for this project
 					c.Locals("userID", userID)
 					c.Locals("userRole", role)
+					c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
 					c.Locals("tenantID", tokenTenantID)
 					c.Locals("projectID", tokenProjectID)
 				}

@@ -117,6 +117,7 @@ type Field struct {
 	Unique             bool                `bson:"unique,omitempty"`
 	IsHashed           bool                `bson:"isHashed,omitempty"`
 	IsLoginCredential  bool                `bson:"isLoginCredential,omitempty"`
+	IsAuditIdentity    bool                `bson:"isAuditIdentity,omitempty" json:"isAuditIdentity,omitempty"`
 	IsSearchable       bool                `bson:"isSearchable,omitempty"`
 	Children           []Field             `bson:"children,omitempty"`
 	Frontend           *Frontend           `bson:"frontend,omitempty"`

@@ -1,0 +1,107 @@
+diff --git a/src/components/panelComponents/Modals/AddWorkflowModal.tsx b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+--- a/src/components/panelComponents/Modals/AddWorkflowModal.tsx
++++ b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+@@ -119,6 +119,11 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+       return;
+     }
+ 
++    if (workflowData.trigger === "cron" && !workflowData.schedule?.trim()) {
++      toast.error(t("Schedule is required for cron workflows"));
++      return;
++    }
++
+     const payloadResult = parseJson("Payload", payloadJson, "object");
+     const conditionsResult = parseJson("Conditions", conditionsJson, "array");
+     const stepsResult = parseJson("Steps", stepsJson, "array");
+@@ -139,8 +144,14 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+       name: workflowData.name.trim(),
+       version: workflowData.version,
+       trigger: workflowData.trigger || "manual",
+-      schedule: workflowData.schedule,
+-      timezone: workflowData.timezone,
++      ...(workflowData.trigger === "cron"
++        ? {
++            schedule: workflowData.schedule?.trim(),
++            ...(workflowData.timezone?.trim()
++              ? { timezone: workflowData.timezone.trim() }
++              : {}),
++          }
++        : {}),
+       mode: workflowData.mode || "transactional",
+       isActive: workflowData.isActive ?? true,
+       isAuthenticated: workflowData.isAuthenticated || false,
+@@ -201,6 +207,7 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+             />
+ 
+             <TextInput
++              key={`workflow-description-${formKey}`}
+               label={t("Description")}
+               type="text"
+               value={workflowData.description || ""}
+@@ -212,7 +218,13 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+                 options={triggerOptions}
+                 value={triggerOptions.find((option) => option.value === workflowData.trigger) || triggerOptions[0]}
+                 onChange={(selected) =>
+-                  setWorkflowData({ ...workflowData, trigger: String((selected as OptionType).value) })
++                  setWorkflowData({
++                    ...workflowData,
++                    trigger: String((selected as OptionType).value),
++                    ...(String((selected as OptionType).value) !== "cron"
++                      ? { schedule: undefined, timezone: undefined }
++                      : {}),
++                  })
+                 }
+                 isMultiple={false}
+               />
+@@ -227,8 +239,35 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+               />
+             </div>
+ 
++            {workflowData.trigger === "cron" && (
++              <div className="grid gap-4 sm:grid-cols-2">
++                <TextInput
++                  key={`workflow-schedule-${formKey}`}
++                  label={t("Schedule")}
++                  type="text"
++                  value={workflowData.schedule || ""}
++                  onChange={(value: string) =>
++                    setWorkflowData({ ...workflowData, schedule: value })
++                  }
++                  placeholder="0 * * * *"
++                  requiredField={true}
++                />
++                <TextInput
++                  key={`workflow-timezone-${formKey}`}
++                  label={t("Timezone")}
++                  type="text"
++                  value={workflowData.timezone || ""}
++                  onChange={(value: string) =>
++                    setWorkflowData({ ...workflowData, timezone: value })
++                  }
++                  placeholder="America/Chicago"
++                />
++              </div>
++            )}
++
+             <div className="grid gap-4 sm:grid-cols-2">
+               <TextInput
++                key={`workflow-return-step-${formKey}`}
+                 label={t("Return Step")}
+                 type="text"
+                 value={workflowData.returnStep || ""}
+@@ -236,6 +274,7 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+                 placeholder={t("Optional step id or name")}
+               />
+               <TextInput
++                key={`workflow-output-fields-${formKey}`}
+                 label={t("Output Fields")}
+                 type="text"
+                 value={(workflowData.outputFields || []).join(", ")}
+@@ -251,6 +291,7 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+ 
+             <TextInput
+               label={t("Timeout (seconds)")}
++              key={`workflow-timeout-${formKey}`}
+               type="number"
+               value={workflowData.timeoutSec?.toString() || ""}
+               onChange={(value: string) =>

@@ -27,6 +27,14 @@ func TestGenerateAndParseTokens(t *testing.T) {
 	if _, _, _, _, _, _, err := ParseToken("invalid"); err == nil {
 		t.Fatal("ParseToken(invalid) error = nil")
 	}
+
+	tokens, err = GenerateTokensWithDisplayName("user", "admin", "tenant", "project", "tenant-slug", "project-slug", "Ada")
+	if err != nil {
+		t.Fatalf("GenerateTokensWithDisplayName() error = %v", err)
+	}
+	if got := ParseTokenDisplayName(tokens.AccessToken); got != "Ada" {
+		t.Fatalf("ParseTokenDisplayName() = %q, want Ada", got)
+	}
 }
 
 func TestGenerateAndParseTenantTokens(t *testing.T) {

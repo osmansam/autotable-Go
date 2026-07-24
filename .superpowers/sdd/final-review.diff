@@ -1,0 +1,1266 @@
+# Review package: f3b44ea..HEAD
+
+## Commits
+bd2e0f1 feat: manage workflows in container modal
+09b689b fix: handle cron workflow modal state
+fa687c1 feat: add workflow editor modal
+dc787b9 test: cover workflow update hook contract
+3a0071d feat: add workflow container api hook
+
+## Files changed
+ .../panelComponents/Modals/AddWorkflowModal.tsx    | 389 +++++++++++++++++++++
+ .../Modals/ContainerDetailsModal.tsx               | 232 +++++++++++-
+ src/utils/api/container.test.ts                    | 120 ++++++-
+ src/utils/api/container.ts                         | 115 +++++-
+ 4 files changed, 850 insertions(+), 6 deletions(-)
+
+## Diff
+diff --git a/src/components/panelComponents/Modals/AddWorkflowModal.tsx b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+new file mode 100644
+index 0000000..f7b020f
+--- /dev/null
++++ b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+@@ -0,0 +1,389 @@
++import React, { useEffect, useMemo, useState } from "react";
++import { useTranslation } from "react-i18next";
++import { FiX } from "react-icons/fi";
++import { toast } from "react-toastify";
++import { CheckSwitch } from "../../../common/CheckSwitch";
++import { OptionType } from "../../../types";
++import { DynamicWorkflow } from "../../../utils/api/container";
++import { useRoleItems } from "../../../utils/api/roleInfo";
++import { GenericButton } from "../FormElements/GenericButton";
++import SelectInput from "../FormElements/SelectInput";
++import TextInput from "../FormElements/TextInput";
++
++interface AddWorkflowModalProps {
++  isOpen: boolean;
++  onClose: () => void;
++  onAddWorkflow: (workflow: DynamicWorkflow) => void;
++  editWorkflow?: DynamicWorkflow | null;
++}
++
++const defaultWorkflow: Partial<DynamicWorkflow> = {
++  name: "",
++  trigger: "manual",
++  mode: "transactional",
++  isActive: true,
++  isAuthenticated: false,
++  isAuthorized: false,
++  authorizeRole: [],
++  description: "",
++  returnStep: "",
++  outputFields: [],
++  timeoutSec: 30,
++  stopOnError: true,
++  runInTransaction: false,
++  payload: {},
++  conditions: [],
++  steps: [],
++};
++
++const triggerOptions: OptionType[] = [
++  { value: "manual", label: "Manual" },
++  { value: "before_create", label: "Before Create" },
++  { value: "after_create", label: "After Create" },
++  { value: "before_update", label: "Before Update" },
++  { value: "after_update", label: "After Update" },
++  { value: "before_delete", label: "Before Delete" },
++  { value: "after_delete", label: "After Delete" },
++  { value: "cron", label: "Cron" },
++];
++
++const modeOptions: OptionType[] = [
++  { value: "transactional", label: "Transactional" },
++  { value: "outbox", label: "Outbox" },
++  { value: "hybrid", label: "Hybrid" },
++];
++
++const formatJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
++const formatJsonArray = (value: unknown) =>
++  JSON.stringify(Array.isArray(value) ? value : [], null, 2);
++
++export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
++  isOpen,
++  onClose,
++  onAddWorkflow,
++  editWorkflow = null,
++}) => {
++  const { t } = useTranslation();
++  const { data: roleItems = [] } = useRoleItems();
++  const roleOptions: OptionType[] = useMemo(
++    () => roleItems.map((role) => ({ value: role._id, label: role.name })),
++    [roleItems]
++  );
++
++  const [workflowData, setWorkflowData] =
++    useState<Partial<DynamicWorkflow>>(defaultWorkflow);
++  const [payloadJson, setPayloadJson] = useState("{}");
++  const [conditionsJson, setConditionsJson] = useState("[]");
++  const [stepsJson, setStepsJson] = useState("[]");
++  const [jsonErrors, setJsonErrors] = useState<Record<string, string>>({});
++  const [formKey, setFormKey] = useState(0);
++
++  useEffect(() => {
++    if (!isOpen) return;
++
++    const nextWorkflow = editWorkflow || defaultWorkflow;
++    setWorkflowData({
++      ...defaultWorkflow,
++      ...nextWorkflow,
++      authorizeRole: nextWorkflow.authorizeRole || [],
++      outputFields: nextWorkflow.outputFields || [],
++    });
++    setPayloadJson(formatJson(nextWorkflow.payload || {}));
++    setConditionsJson(formatJsonArray(nextWorkflow.conditions || []));
++    setStepsJson(formatJsonArray(nextWorkflow.steps || []));
++    setJsonErrors({});
++    setFormKey((prev) => prev + 1);
++  }, [editWorkflow, isOpen]);
++
++  const parseJson = (label: string, value: string, expected: "object" | "array") => {
++    try {
++      const parsed = value.trim() ? JSON.parse(value) : expected === "array" ? [] : {};
++      if (expected === "array" && !Array.isArray(parsed)) {
++        return { error: t(`${label} must be a JSON array`) };
++      }
++      if (
++        expected === "object" &&
++        (Array.isArray(parsed) || parsed === null || typeof parsed !== "object")
++      ) {
++        return { error: t(`${label} must be a JSON object`) };
++      }
++      return { value: parsed };
++    } catch {
++      return { error: t(`${label} has invalid JSON`) };
++    }
++  };
++
++  const handleSubmit = () => {
++    if (!workflowData.name?.trim()) {
++      toast.error(t("Workflow name is required"));
++      return;
++    }
++
++    if (workflowData.trigger === "cron" && !workflowData.schedule?.trim()) {
++      toast.error(t("Schedule is required for cron workflows"));
++      return;
++    }
++
++    const payloadResult = parseJson("Payload", payloadJson, "object");
++    const conditionsResult = parseJson("Conditions", conditionsJson, "array");
++    const stepsResult = parseJson("Steps", stepsJson, "array");
++    const errors = {
++      ...(payloadResult.error ? { payload: payloadResult.error } : {}),
++      ...(conditionsResult.error ? { conditions: conditionsResult.error } : {}),
++      ...(stepsResult.error ? { steps: stepsResult.error } : {}),
++    };
++    setJsonErrors(errors);
++
++    if (Object.keys(errors).length > 0) {
++      toast.error(t("Please fix JSON errors before saving"));
++      return;
++    }
++
++    const workflow: DynamicWorkflow = {
++      id: workflowData.id,
++      name: workflowData.name.trim(),
++      version: workflowData.version,
++      trigger: workflowData.trigger || "manual",
++      ...(workflowData.trigger === "cron"
++        ? {
++            schedule: workflowData.schedule?.trim(),
++            ...(workflowData.timezone?.trim()
++              ? { timezone: workflowData.timezone.trim() }
++              : {}),
++          }
++        : {}),
++      mode: workflowData.mode || "transactional",
++      isActive: workflowData.isActive ?? true,
++      isAuthenticated: workflowData.isAuthenticated || false,
++      isAuthorized: workflowData.isAuthorized || false,
++      authorizeRole: workflowData.isAuthorized ? workflowData.authorizeRole || [] : [],
++      description: workflowData.description?.trim() || undefined,
++      payload: payloadResult.value,
++      conditions: conditionsResult.value,
++      steps: stepsResult.value,
++      stopOnError: workflowData.stopOnError ?? true,
++      timeoutSec: workflowData.timeoutSec || undefined,
++      returnStep: workflowData.returnStep?.trim() || undefined,
++      outputFields: (workflowData.outputFields || []).filter(Boolean),
++      runInTransaction: workflowData.runInTransaction || false,
++    };
++
++    onAddWorkflow(workflow);
++    handleClose();
++  };
++
++  const handleClose = () => {
++    setWorkflowData(defaultWorkflow);
++    setPayloadJson("{}");
++    setConditionsJson("[]");
++    setStepsJson("[]");
++    setJsonErrors({});
++    onClose();
++  };
++
++  if (!isOpen) return null;
++
++  return (
++    <div className="fixed inset-0 z-[60] overflow-y-auto">
++      <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
++        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleClose} />
++        <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl sm:p-6">
++          <div className="mb-6 flex items-start justify-between">
++            <h3 className="text-lg font-semibold text-gray-900">
++              {editWorkflow ? t("Edit Workflow") : t("Add New Workflow")}
++            </h3>
++            <button onClick={handleClose} className="text-gray-400 transition-colors hover:text-gray-600">
++              <FiX size={20} />
++            </button>
++          </div>
++
++          <div className="max-h-[70vh] space-y-6 overflow-y-auto">
++            <TextInput
++              key={`workflow-name-${formKey}`}
++              label={t("Workflow Name")}
++              type="text"
++              value={workflowData.name || ""}
++              onChange={(value: string) => setWorkflowData({ ...workflowData, name: value })}
++              placeholder={t("e.g., create-order")}
++              requiredField={true}
++              disabled={!!editWorkflow}
++            />
++
++            <TextInput
++              key={`workflow-description-${formKey}`}
++              label={t("Description")}
++              type="text"
++              value={workflowData.description || ""}
++              onChange={(value: string) => setWorkflowData({ ...workflowData, description: value })}
++              placeholder={t("Optional workflow description")}
++            />
++
++            <div className="grid gap-4 sm:grid-cols-2">
++              <SelectInput
++                label={t("Trigger")}
++                options={triggerOptions}
++                value={triggerOptions.find((option) => option.value === workflowData.trigger) || triggerOptions[0]}
++                onChange={(selected) =>
++                  setWorkflowData({
++                    ...workflowData,
++                    trigger: String((selected as OptionType).value),
++                    ...(String((selected as OptionType).value) !== "cron"
++                      ? { schedule: undefined, timezone: undefined }
++                      : {}),
++                  })
++                }
++                isMultiple={false}
++              />
++              <SelectInput
++                label={t("Mode")}
++                options={modeOptions}
++                value={modeOptions.find((option) => option.value === workflowData.mode) || modeOptions[0]}
++                onChange={(selected) =>
++                  setWorkflowData({ ...workflowData, mode: String((selected as OptionType).value) })
++                }
++                isMultiple={false}
++              />
++            </div>
++
++            {workflowData.trigger === "cron" && (
++              <div className="grid gap-4 sm:grid-cols-2">
++                <TextInput
++                  key={`workflow-schedule-${formKey}`}
++                  label={t("Schedule")}
++                  type="text"
++                  value={workflowData.schedule || ""}
++                  onChange={(value: string) =>
++                    setWorkflowData({ ...workflowData, schedule: value })
++                  }
++                  placeholder="0 * * * *"
++                  requiredField={true}
++                />
++                <TextInput
++                  key={`workflow-timezone-${formKey}`}
++                  label={t("Timezone")}
++                  type="text"
++                  value={workflowData.timezone || ""}
++                  onChange={(value: string) =>
++                    setWorkflowData({ ...workflowData, timezone: value })
++                  }
++                  placeholder="America/Chicago"
++                />
++              </div>
++            )}
++
++            <div className="grid gap-4 sm:grid-cols-2">
++              <TextInput
++                key={`workflow-return-step-${formKey}`}
++                label={t("Return Step")}
++                type="text"
++                value={workflowData.returnStep || ""}
++                onChange={(value: string) => setWorkflowData({ ...workflowData, returnStep: value })}
++                placeholder={t("Optional step id or name")}
++              />
++              <TextInput
++                key={`workflow-output-fields-${formKey}`}
++                label={t("Output Fields")}
++                type="text"
++                value={(workflowData.outputFields || []).join(", ")}
++                onChange={(value: string) =>
++                  setWorkflowData({
++                    ...workflowData,
++                    outputFields: value.split(",").map((field) => field.trim()).filter(Boolean),
++                  })
++                }
++                placeholder={t("fieldA, fieldB")}
++              />
++            </div>
++
++            <TextInput
++              label={t("Timeout (seconds)")}
++              key={`workflow-timeout-${formKey}`}
++              type="number"
++              value={workflowData.timeoutSec?.toString() || ""}
++              onChange={(value: string) =>
++                setWorkflowData({ ...workflowData, timeoutSec: parseInt(value) || undefined })
++              }
++              placeholder="30"
++            />
++
++            {[
++              ["Active", "Enable or disable this workflow", "isActive"],
++              ["Require Authentication", "Users must be logged in to execute this workflow", "isAuthenticated"],
++              ["Require Authorization", "Users must have specific roles to execute this workflow", "isAuthorized"],
++              ["Stop On Error", "Stop workflow execution when a step fails", "stopOnError"],
++              ["Run In Transaction", "Run write workflow steps in a transaction", "runInTransaction"],
++            ].map(([label, description, key]) => (
++              <div key={key} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
++                <div>
++                  <label className="text-sm font-medium text-gray-700">{t(label)}</label>
++                  <p className="text-xs text-gray-500">{t(description)}</p>
++                </div>
++                <CheckSwitch
++                  checked={Boolean((workflowData as any)[key])}
++                  onChange={() =>
++                    setWorkflowData({
++                      ...workflowData,
++                      [key]: !Boolean((workflowData as any)[key]),
++                      ...(key === "isAuthorized" && workflowData.isAuthorized
++                        ? { authorizeRole: [] }
++                        : {}),
++                    })
++                  }
++                />
++              </div>
++            ))}
++
++            {workflowData.isAuthorized && (
++              <SelectInput
++                label={t("Authorized Roles")}
++                options={roleOptions}
++                value={roleOptions.filter((option) =>
++                  workflowData.authorizeRole?.includes(String(option.value))
++                )}
++                onChange={(selected) =>
++                  setWorkflowData({
++                    ...workflowData,
++                    authorizeRole: selected
++                      ? (selected as OptionType[]).map((option) => String(option.value))
++                      : [],
++                  })
++                }
++                placeholder={t("Select roles...")}
++                isMultiple={true}
++              />
++            )}
++
++            {[
++              ["Payload", payloadJson, setPayloadJson, "payload"],
++              ["Conditions", conditionsJson, setConditionsJson, "conditions"],
++              ["Steps", stepsJson, setStepsJson, "steps"],
++            ].map(([label, value, setter, key]) => (
++              <div key={String(key)}>
++                <label className="mb-2 block text-sm font-medium text-gray-700">{t(String(label))}</label>
++                <textarea
++                  value={String(value)}
++                  onChange={(event) => (setter as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
++                  className={`h-40 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
++                    jsonErrors[String(key)] ? "border-red-300 bg-red-50" : "border-gray-300 bg-gray-50"
++                  }`}
++                />
++                {jsonErrors[String(key)] && (
++                  <p className="mt-1 text-xs text-red-600">{jsonErrors[String(key)]}</p>
++                )}
++              </div>
++            ))}
++          </div>
++
++          <div className="mt-6 flex justify-end space-x-3">
++            <GenericButton variant="outline" onClick={handleClose}>
++              {t("Cancel")}
++            </GenericButton>
++            <GenericButton onClick={handleSubmit}>
++              {editWorkflow ? t("Update Workflow") : t("Add Workflow")}
++            </GenericButton>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++};
+diff --git a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+index c1bb396..34f70bf 100644
+--- a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
++++ b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+@@ -3,94 +3,104 @@ import { useTranslation } from "react-i18next";
+ import {
+   FiChevronDown,
+   FiChevronUp,
+   FiClock,
+   FiCode,
+   FiCopy,
+   FiEdit,
+   FiGitBranch,
+   FiGlobe,
+   FiList,
++  FiPlayCircle,
+   FiPlus,
+   FiShield,
+   FiTrash2,
+   FiX,
+ } from "react-icons/fi";
+ import { toast } from "react-toastify";
+ import { CheckSwitch } from "../../../common/CheckSwitch";
+ import { ConfirmationDialog } from "../../../common/ConfirmationDialog";
+ import { useGetSelection } from "../../../utils/dynamic";
+ import {
+   buildAuthUserPayload,
+   canEnableGoogleLogin,
+   getAuthUserFormFields,
+   getAuthUserRoleField,
+ } from "../../../utils/authContainerValidation";
+ import {
+   ContainerModel,
+   DynamicApiModel,
++  DynamicWorkflow,
+   Field,
+   PipelineStage,
+   useCreateProjectAuthUser,
+   useUpdateContainer,
+   useUpdateDynamicApis,
+   useUpdatePipelines,
++  useUpdateWorkflows,
+ } from "../../../utils/api/container";
+ import FieldPermissions from "../../FieldPermissions";
+ import RoutePermissions from "../../RoutePermissions";
+ import {
+   addMissingSystemTimestampFields,
+   hasAllSystemTimestampFields,
+ } from "../../../utils/containerTimestamps";
+ import { GenericButton } from "../FormElements/GenericButton";
+ import { AddDynamicApiModal } from "./AddDynamicApiModal";
+ import { AddFieldModal } from "./AddFieldModal";
+ import { AddPipelineModal } from "./AddPipelineModal";
++import { AddWorkflowModal } from "./AddWorkflowModal";
+ 
+ interface ContainerDetailsModalProps {
+   isOpen: boolean;
+   onClose: () => void;
+   container: ContainerModel | null;
+ }
+ 
+ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+   isOpen,
+   onClose,
+   container,
+ }) => {
+   const { t } = useTranslation();
+   const [viewMode, setViewMode] = useState<
+-    "structured" | "json" | "permissions" | "routes" | "pipelines" | "apis"
++    "structured" | "json" | "permissions" | "routes" | "pipelines" | "workflows" | "apis"
+   >("structured");
+   const [isAddFieldModalOpen, setIsAddFieldModalOpen] = useState(false);
+   const [fieldToDelete, setFieldToDelete] = useState<string | null>(null);
+   const [editingField, setEditingField] = useState<Field | null>(null);
+   const [authUserValues, setAuthUserValues] = useState<Record<string, string>>({});
+   const [authUserRole, setAuthUserRole] = useState("");
+ 
+   // Pipeline management state
+   const [isAddPipelineModalOpen, setIsAddPipelineModalOpen] = useState(false);
+   const [editingPipeline, setEditingPipeline] = useState<PipelineStage | null>(
+     null
+   );
+   const [pipelineToDelete, setPipelineToDelete] = useState<string | null>(null);
++  const [isAddWorkflowModalOpen, setIsAddWorkflowModalOpen] = useState(false);
++  const [editingWorkflow, setEditingWorkflow] =
++    useState<DynamicWorkflow | null>(null);
++  const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null);
+   const [isAddDynamicApiModalOpen, setIsAddDynamicApiModalOpen] =
+     useState(false);
+   const [editingDynamicApi, setEditingDynamicApi] =
+     useState<DynamicApiModel | null>(null);
+   const [dynamicApiToDelete, setDynamicApiToDelete] = useState<string | null>(
+     null
+   );
+ 
+   const { updateContainer, isUpdating } = useUpdateContainer();
+   const { updatePipelines, isUpdating: isPipelinesUpdating } =
+     useUpdatePipelines();
++  const { updateWorkflows, isUpdating: isWorkflowsUpdating } =
++    useUpdateWorkflows();
+   const { updateDynamicApis, isUpdating: isDynamicApisUpdating } =
+     useUpdateDynamicApis();
+   const roleOptions = useGetSelection<Array<{ _id?: string; id?: string; name?: string }>>(
+     container?.isAuthContainer ? "role" : "",
+     container?.isAuthContainer ? "name" : "",
+   );
+   const getRoleOptionId = useCallback(
+     (role?: { _id?: string; id?: string; name?: string }) => role?._id || role?.id || "",
+     [],
+   );
+@@ -409,20 +419,72 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+         (pipeline) => pipeline.name !== pipelineToDelete
+       );
+       updatePipelines({
+         id: container.id,
+         payload: { pipelines: updatedPipelines },
+       });
+       setPipelineToDelete(null);
+     }
+   }, [container, pipelineToDelete, updatePipelines]);
+ 
++  const handleAddWorkflow = useCallback(
++    (workflow: DynamicWorkflow) => {
++      if (!container?.id) return;
++
++      const currentWorkflows = container.workflows || [];
++      if (
++        !editingWorkflow &&
++        currentWorkflows.some((existing) => existing.name === workflow.name)
++      ) {
++        toast.error(t("A workflow with this name already exists"));
++        return;
++      }
++
++      const updatedWorkflows = editingWorkflow
++        ? currentWorkflows.map((existing) =>
++            existing.name === editingWorkflow.name ? workflow : existing
++          )
++        : [...currentWorkflows, workflow];
++
++      updateWorkflows({
++        id: container.id,
++        payload: { Workflows: updatedWorkflows },
++      });
++      setIsAddWorkflowModalOpen(false);
++      setEditingWorkflow(null);
++    },
++    [container, editingWorkflow, t, updateWorkflows]
++  );
++
++  const handleEditWorkflow = useCallback((workflow: DynamicWorkflow) => {
++    setEditingWorkflow(workflow);
++    setIsAddWorkflowModalOpen(true);
++  }, []);
++
++  const handleDeleteWorkflow = useCallback((workflowName: string) => {
++    setWorkflowToDelete(workflowName);
++  }, []);
++
++  const confirmDeleteWorkflow = useCallback(() => {
++    if (!container?.id || !workflowToDelete) return;
++
++    updateWorkflows({
++      id: container.id,
++      payload: {
++        Workflows: (container.workflows || []).filter(
++          (workflow) => workflow.name !== workflowToDelete
++        ),
++      },
++    });
++    setWorkflowToDelete(null);
++  }, [container, updateWorkflows, workflowToDelete]);
++
+   const handleAddDynamicApi = useCallback(
+     (dynamicApi: DynamicApiModel) => {
+       if (!container?.id) return false;
+ 
+       const currentDynamicApis = container.dynamicApis || [];
+       if (
+         !editingDynamicApi &&
+         currentDynamicApis.some((api) => api.name === dynamicApi.name)
+       ) {
+         toast.error(t("A Dynamic API with this name already exists"));
+@@ -521,20 +583,31 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                   onClick={() => setViewMode("pipelines")}
+                   className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
+                     viewMode === "pipelines"
+                       ? "bg-white text-blue-600 shadow-sm"
+                       : "text-gray-600 hover:text-gray-900"
+                   }`}
+                 >
+                   <FiGitBranch size={12} />
+                   <span>{t("Pipelines")}</span>
+                 </button>
++                <button
++                  onClick={() => setViewMode("workflows")}
++                  className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
++                    viewMode === "workflows"
++                      ? "bg-white text-blue-600 shadow-sm"
++                      : "text-gray-600 hover:text-gray-900"
++                  }`}
++                >
++                  <FiPlayCircle size={12} />
++                  <span>{t("Workflows")}</span>
++                </button>
+                 <button
+                   onClick={() => setViewMode("apis")}
+                   className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
+                     viewMode === "apis"
+                       ? "bg-white text-blue-600 shadow-sm"
+                       : "text-gray-600 hover:text-gray-900"
+                   }`}
+                 >
+                   <FiGlobe size={12} />
+                   <span>{t("Dynamic APIs")}</span>
+@@ -581,20 +654,21 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+               </button>
+             </div>
+           </div>
+ 
+           {/* Content */}
+           <div
+             className={
+               viewMode === "permissions" ||
+               viewMode === "routes" ||
+               viewMode === "pipelines" ||
++              viewMode === "workflows" ||
+               viewMode === "apis"
+                 ? "h-[70vh]"
+                 : "max-h-[70vh] overflow-y-auto"
+             }
+           >
+             {viewMode === "permissions" ? (
+               <FieldPermissions containerId={container.id} />
+             ) : viewMode === "routes" ? (
+               <RoutePermissions containerId={container.id} />
+             ) : viewMode === "pipelines" ? (
+@@ -729,20 +803,156 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                         onClick={() => setIsAddPipelineModalOpen(true)}
+                         iconLeft={<FiPlus size={12} />}
+                         className="mt-2"
+                       >
+                         {t("Add Your First Pipeline")}
+                       </GenericButton>
+                     </div>
+                   )}
+                 </div>
+               </div>
++            ) : viewMode === "workflows" ? (
++              <div className="space-y-4 h-full overflow-y-auto">
++                <div className="flex items-center justify-between sticky top-0 bg-white pb-4 border-b">
++                  <div>
++                    <h4 className="text-sm font-medium text-gray-900">
++                      {t("Workflows")} ({(container.workflows || []).length})
++                    </h4>
++                    <p className="text-xs text-gray-500 mt-1">
++                      {t("Manage workflow definitions and access controls for this container")}
++                    </p>
++                  </div>
++                  <GenericButton
++                    variant="outline"
++                    size="sm"
++                    onClick={() => setIsAddWorkflowModalOpen(true)}
++                    iconLeft={<FiPlus size={12} />}
++                    disabled={isWorkflowsUpdating}
++                  >
++                    {t("Add Workflow")}
++                  </GenericButton>
++                </div>
++
++                <div className="space-y-3">
++                  {(container.workflows || []).map((workflow, index) => (
++                    <div
++                      key={workflow.name || index}
++                      className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
++                    >
++                      <div className="flex items-start justify-between">
++                        <div className="flex-1">
++                          <div className="mb-2 flex flex-wrap items-center gap-2">
++                            <span className="font-medium text-gray-900">{workflow.name}</span>
++                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
++                              workflow.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
++                            }`}>
++                              {workflow.isActive ? t("Active") : t("Inactive")}
++                            </span>
++                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800">
++                              {workflow.trigger || "manual"}
++                            </span>
++                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-800">
++                              {workflow.mode || "transactional"}
++                            </span>
++                            {workflow.isAuthenticated && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-800">
++                                {t("Auth Required")}
++                              </span>
++                            )}
++                            {workflow.isAuthorized && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-orange-100 text-orange-800">
++                                {t("Role Check")}
++                              </span>
++                            )}
++                            {!!workflow.outputFields?.length && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-indigo-100 text-indigo-800">
++                                {workflow.outputFields.length} {t("Output Fields")}
++                              </span>
++                            )}
++                          </div>
++
++                          {workflow.description && (
++                            <p className="mb-2 text-xs text-gray-600">{workflow.description}</p>
++                          )}
++
++                          <details className="text-xs">
++                            <summary className="cursor-pointer font-medium text-gray-600 hover:text-gray-900">
++                              {t("View Workflow JSON")}
++                            </summary>
++                            <pre className="mt-2 overflow-x-auto rounded bg-gray-900 p-3 text-xs text-green-400">
++                              {JSON.stringify(
++                                {
++                                  payload: workflow.payload || {},
++                                  conditions: workflow.conditions || [],
++                                  steps: workflow.steps || [],
++                                },
++                                null,
++                                2
++                              )}
++                            </pre>
++                          </details>
++
++                          {workflow.isAuthorized &&
++                            workflow.authorizeRole &&
++                            workflow.authorizeRole.length > 0 && (
++                              <div className="mt-2">
++                                <span className="text-xs text-gray-500">
++                                  {t("Allowed Roles")}: {" "}
++                                </span>
++                                <span className="text-xs text-gray-700">
++                                  {workflow.authorizeRole.join(", ")}
++                                </span>
++                              </div>
++                            )}
++                        </div>
++
++                        <div className="ml-4 flex items-center space-x-2">
++                          <GenericButton
++                            variant="outline"
++                            size="sm"
++                            onClick={() => handleEditWorkflow(workflow)}
++                            iconLeft={<FiEdit size={10} />}
++                            disabled={isWorkflowsUpdating}
++                          >
++                            {t("Edit")}
++                          </GenericButton>
++                          <GenericButton
++                            variant="outline"
++                            size="sm"
++                            onClick={() => handleDeleteWorkflow(workflow.name)}
++                            iconLeft={<FiTrash2 size={10} />}
++                            disabled={isWorkflowsUpdating}
++                          >
++                            {t("Delete")}
++                          </GenericButton>
++                        </div>
++                      </div>
++                    </div>
++                  ))}
++
++                  {(!container.workflows || container.workflows.length === 0) && (
++                    <div className="py-12 text-center text-gray-500">
++                      <FiPlayCircle size={48} className="mx-auto mb-4 text-gray-300" />
++                      <p className="mb-2">{t("No workflows defined for this container")}</p>
++                      <GenericButton
++                        variant="outline"
++                        size="sm"
++                        onClick={() => setIsAddWorkflowModalOpen(true)}
++                        iconLeft={<FiPlus size={12} />}
++                        className="mt-2"
++                      >
++                        {t("Add Your First Workflow")}
++                      </GenericButton>
++                    </div>
++                  )}
++                </div>
++              </div>
+             ) : viewMode === "apis" ? (
+               <div className="h-full space-y-4 overflow-y-auto">
+                 <div className="sticky top-0 flex items-center justify-between border-b bg-white pb-4">
+                   <div>
+                     <h4 className="text-sm font-medium text-gray-900">
+                       {t("Dynamic APIs")} ({(container.dynamicApis || []).length})
+                     </h4>
+                     <p className="mt-1 text-xs text-gray-500">
+                       {t("Manage outbound or proxy APIs for this container")}
+                     </p>
+@@ -1277,20 +1487,30 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+       <AddPipelineModal
+         isOpen={isAddPipelineModalOpen}
+         onClose={() => {
+           setIsAddPipelineModalOpen(false);
+           setEditingPipeline(null);
+         }}
+         onAddPipeline={handleAddPipeline}
+         editPipeline={editingPipeline}
+       />
+ 
++      <AddWorkflowModal
++        isOpen={isAddWorkflowModalOpen}
++        onClose={() => {
++          setIsAddWorkflowModalOpen(false);
++          setEditingWorkflow(null);
++        }}
++        onAddWorkflow={handleAddWorkflow}
++        editWorkflow={editingWorkflow}
++      />
++
+       {/* Add/Edit Dynamic API Modal */}
+       <AddDynamicApiModal
+         isOpen={isAddDynamicApiModalOpen}
+         onClose={() => {
+           setIsAddDynamicApiModalOpen(false);
+           setEditingDynamicApi(null);
+         }}
+         onAddDynamicApi={handleAddDynamicApi}
+         editDynamicApi={editingDynamicApi}
+       />
+@@ -1310,20 +1530,30 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+       <ConfirmationDialog
+         isOpen={!!pipelineToDelete}
+         close={() => setPipelineToDelete(null)}
+         confirm={confirmDeletePipeline}
+         title={t("Delete Pipeline")}
+         text={t(
+           "Are you sure you want to delete this pipeline? This action cannot be undone."
+         )}
+       />
+ 
++      <ConfirmationDialog
++        isOpen={!!workflowToDelete}
++        close={() => setWorkflowToDelete(null)}
++        confirm={confirmDeleteWorkflow}
++        title={t("Delete Workflow")}
++        text={t(
++          "Are you sure you want to delete this workflow? This action cannot be undone."
++        )}
++      />
++
+       {/* Delete Dynamic API Confirmation */}
+       <ConfirmationDialog
+         isOpen={!!dynamicApiToDelete}
+         close={() => setDynamicApiToDelete(null)}
+         confirm={confirmDeleteDynamicApi}
+         title={t("Delete Dynamic API")}
+         text={t(
+           "Are you sure you want to delete this Dynamic API? This action cannot be undone."
+         )}
+       />
+diff --git a/src/utils/api/container.test.ts b/src/utils/api/container.test.ts
+index 6a671ac..883c42a 100644
+--- a/src/utils/api/container.test.ts
++++ b/src/utils/api/container.test.ts
+@@ -1,12 +1,54 @@
+-import { describe, expect, it } from "vitest";
+-import { normalizeDynamicApiModel } from "./container";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++
++const mocks = vi.hoisted(() => ({
++  axiosPatch: vi.fn(),
++  mutationFn: undefined as undefined | ((variables: any) => Promise<unknown>),
++}));
++
++vi.mock("@tanstack/react-query", () => ({
++  useMutation: vi.fn((options) => {
++    mocks.mutationFn = options.mutationFn;
++    return { isPending: false, mutate: vi.fn() };
++  }),
++  useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
++}));
++
++vi.mock("react-i18next", () => ({
++  useTranslation: () => ({ t: (message: string) => message }),
++}));
++
++vi.mock("react-toastify", () => ({
++  toast: { error: vi.fn(), success: vi.fn() },
++}));
++
++vi.mock("../../hooks/useTenant", () => ({
++  useTenant: () => ({ currentTenant: { slug: "acme" } }),
++}));
++
++vi.mock("../../hooks/useCurrentProject", () => ({
++  useCurrentProject: () => ({ currentProject: { slug: "retail" } }),
++}));
++
++vi.mock("./axiosClient", () => ({
++  axiosClient: { patch: mocks.axiosPatch },
++}));
++
++vi.mock("./factory", () => ({
++  useGet: vi.fn(),
++}));
++
++import {
++  normalizeDynamicApiModel,
++  normalizeDynamicWorkflow,
++  useUpdateWorkflows,
++} from "./container";
+ 
+ describe("container API normalization", () => {
+   it("normalizes Dynamic API models returned with Go field names", () => {
+     expect(
+       normalizeDynamicApiModel({
+         Name: "status",
+         Url: "https://api.example.com/status",
+         Method: "POST",
+         Dependencies: ["id", "token"],
+         IsAuthenticated: true,
+@@ -22,11 +64,85 @@ describe("container API normalization", () => {
+       method: "POST",
+       dependencies: ["id", "token"],
+       isAuthenticated: true,
+       isAuthorized: true,
+       authorizeRole: ["admin"],
+       isActive: false,
+       isRedisCached: true,
+       cacheTime: 30,
+     });
+   });
++
++  it("normalizes Dynamic Workflows returned with Go field names", () => {
++    expect(
++      normalizeDynamicWorkflow({
++        ID: "workflow-1",
++        Name: "notify",
++        Version: 2,
++        Trigger: "event",
++        Schedule: "0 * * * *",
++        Timezone: "UTC",
++        Mode: "transactional",
++        IsActive: false,
++        IsAuthenticated: true,
++        IsAuthorized: true,
++        AuthorizeRole: ["admin"],
++        Description: "Send notifications",
++        Payload: { channel: "email" },
++        Conditions: [{ field: "status", operator: "=", value: "ready" }],
++        Steps: [{ name: "send", type: "action" }],
++        StopOnError: false,
++        TimeoutSec: 30,
++        ReturnStep: "send",
++        OutputFields: ["messageId"],
++        RunInTransaction: true,
++      })
++    ).toEqual({
++      id: "workflow-1",
++      name: "notify",
++      version: 2,
++      trigger: "event",
++      schedule: "0 * * * *",
++      timezone: "UTC",
++      mode: "transactional",
++      isActive: false,
++      isAuthenticated: true,
++      isAuthorized: true,
++      authorizeRole: ["admin"],
++      description: "Send notifications",
++      payload: { channel: "email" },
++      conditions: [{ field: "status", operator: "=", value: "ready" }],
++      steps: [{ name: "send", type: "action" }],
++      stopOnError: false,
++      timeoutSec: 30,
++      returnStep: "send",
++      outputFields: ["messageId"],
++      runInTransaction: true,
++    });
++  });
++});
++
++describe("useUpdateWorkflows", () => {
++  beforeEach(() => {
++    mocks.axiosPatch.mockReset();
++    mocks.axiosPatch.mockResolvedValue({ data: {} });
++    mocks.mutationFn = undefined;
++  });
++
++  it("PATCHes the container workflow endpoint with the PascalCase payload", async () => {
++    useUpdateWorkflows();
++
++    const payload = {
++      Workflows: [{ name: "notify", isActive: true }],
++    };
++
++    expect(mocks.mutationFn).toBeTypeOf("function");
++    await mocks.mutationFn!({ id: "container-1", payload });
++
++    expect(mocks.axiosPatch).toHaveBeenCalledWith(
++      "/acme/retail/container/workflows/container-1",
++      {
++        Workflows: [{ name: "notify", isActive: true }],
++      }
++    );
++  });
+ });
+diff --git a/src/utils/api/container.ts b/src/utils/api/container.ts
+index 9b7118a..d7f42d5 100644
+--- a/src/utils/api/container.ts
++++ b/src/utils/api/container.ts
+@@ -114,27 +114,47 @@ export interface WorkflowStep {
+   order?: number;
+   isActive?: boolean;
+   targetSchema?: string;
+   config?: Record<string, any>;
+   steps?: WorkflowStep[];
+   elseSteps?: WorkflowStep[];
+   branches?: { name?: string; steps?: WorkflowStep[] }[];
+ }
+ 
+ export interface DynamicWorkflow {
++  id?: string;
+   name: string;
++  version?: number;
+   trigger?: string;
++  schedule?: string;
++  timezone?: string;
+   mode?: string;
+   isActive: boolean;
++  isAuthenticated?: boolean;
++  isAuthorized?: boolean;
++  authorizeRole?: string[];
++  description?: string;
++  payload?: Record<string, any>;
++  conditions?: WorkflowCondition[];
++  steps?: WorkflowStep[];
++  stopOnError?: boolean;
++  timeoutSec?: number;
+   returnStep?: string;
+   outputFields?: string[];
+-  steps?: WorkflowStep[];
++  runInTransaction?: boolean;
++}
++
++export interface WorkflowCondition {
++  field?: string;
++  operator: string;
++  value?: any;
++  conditions?: WorkflowCondition[];
+ }
+ 
+ /** Dynamic function spec (server-executed code) */
+ export interface DynamicFunction {
+   name: string;
+   codeJson: string; // serialized JSON / code payload
+   isAuthenticated: boolean;
+   isAuthorized: boolean;
+   authorizeRole: string[];
+   isActive: boolean;
+@@ -282,20 +302,24 @@ export interface UpdateDynamicFunctionsPayload {
+ }
+ 
+ export interface UpdateDynamicApisPayload {
+   dynamicApis: DynamicApiModel[];
+ }
+ 
+ export interface UpdatePipelinesPayload {
+   pipelines: PipelineStage[];
+ }
+ 
++export interface UpdateWorkflowsPayload {
++  Workflows: DynamicWorkflow[];
++}
++
+ // Raw payload types matching Go backend struct tags (PascalCase)
+ export interface CreateContainerRawPayload {
+   SchemaName: string;
+   Fields: any[]; // Empty array initially
+   Routes: {
+     CreateDynamicModelItem: {
+       IsAuthenticated: boolean;
+       IsAuthorized: boolean;
+       AuthorizeRole: string[];
+       IsActive: boolean;
+@@ -461,20 +485,47 @@ export function normalizeDynamicApiModel(api: any): DynamicApiModel {
+     isAuthenticated:
+       api.IsAuthenticated ?? api.isAuthenticated ?? false,
+     isAuthorized: api.IsAuthorized ?? api.isAuthorized ?? false,
+     authorizeRole: api.AuthorizeRole || api.authorizeRole || [],
+     isActive: api.IsActive ?? api.isActive ?? true,
+     isRedisCached: api.IsRedisCached ?? api.isRedisCached ?? false,
+     cacheTime: api.CacheTime ?? api.cacheTime ?? 0,
+   };
+ }
+ 
++export function normalizeDynamicWorkflow(workflow: any): DynamicWorkflow {
++  return {
++    id: workflow.ID || workflow.id,
++    name: workflow.Name || workflow.name || "",
++    version: workflow.Version ?? workflow.version,
++    trigger: workflow.Trigger || workflow.trigger || "manual",
++    schedule: workflow.Schedule || workflow.schedule,
++    timezone: workflow.Timezone || workflow.timezone,
++    mode: workflow.Mode || workflow.mode || "transactional",
++    isActive: workflow.IsActive ?? workflow.isActive ?? true,
++    isAuthenticated:
++      workflow.IsAuthenticated ?? workflow.isAuthenticated ?? false,
++    isAuthorized: workflow.IsAuthorized ?? workflow.isAuthorized ?? false,
++    authorizeRole: workflow.AuthorizeRole || workflow.authorizeRole || [],
++    description: workflow.Description || workflow.description,
++    payload: workflow.Payload || workflow.payload,
++    conditions: workflow.Conditions || workflow.conditions || [],
++    steps: workflow.Steps || workflow.steps || [],
++    stopOnError: workflow.StopOnError ?? workflow.stopOnError ?? true,
++    timeoutSec: workflow.TimeoutSec ?? workflow.timeoutSec,
++    returnStep: workflow.ReturnStep || workflow.returnStep,
++    outputFields: workflow.OutputFields || workflow.outputFields || [],
++    runInTransaction:
++      workflow.RunInTransaction ?? workflow.runInTransaction ?? false,
++  };
++}
++
+ // React Query hooks
+ export function useContainers(enabled: boolean = true) {
+   const { tenantSlug, projectSlug } = useContainerContext();
+   const basePath = buildContainerPath(tenantSlug, projectSlug);
+   const projectSpecificQueryKey = ["containers", tenantSlug, projectSlug];
+ 
+   const response = useGet<ContainerModel[]>(
+     basePath,
+     projectSpecificQueryKey,
+     enabled
+@@ -485,21 +536,23 @@ export function useContainers(enabled: boolean = true) {
+   const containers = response || [];
+ 
+   return containers.map((container: any) => ({
+     id: container.ID || container.id,
+     _id: container.ID || container.id,
+     schemaName: container.SchemaName || container.schemaName,
+     fields: container.Fields || container.fields || [],
+     routes: container.Routes || container.routes,
+     redis: container.Redis || container.redis,
+     pipelines: container.Pipelines || container.pipelines || [],
+-    workflows: container.Workflows || container.workflows || [],
++    workflows: (container.Workflows || container.workflows || []).map(
++      normalizeDynamicWorkflow
++    ),
+     dynamicFunctions:
+       container.DynamicFunctions || container.dynamicFunctions || [],
+     dynamicApis: (container.DynamicApis || container.dynamicApis || []).map(
+       normalizeDynamicApiModel
+     ),
+     isAuthContainer:
+       container.IsAuthContainer ?? container.isAuthContainer ?? false,
+     isRegisterActive:
+       container.IsRegisterActive ?? container.isRegisterActive ?? false,
+     isGoogleLoginActive:
+@@ -567,21 +620,23 @@ export function useContainer(id: string, enabled: boolean = true) {
+ 
+   const container: any = actualData;
+   const normalized = {
+     id: container.ID || container.id,
+     _id: container.ID || container.id,
+     schemaName: container.SchemaName || container.schemaName,
+     fields: (container.Fields || container.fields || []).map(normalizeField),
+     routes: container.Routes || container.routes,
+     redis: container.Redis || container.redis,
+     pipelines: container.Pipelines || container.pipelines || [],
+-    workflows: container.Workflows || container.workflows || [],
++    workflows: (container.Workflows || container.workflows || []).map(
++      normalizeDynamicWorkflow
++    ),
+     dynamicFunctions:
+       container.DynamicFunctions || container.dynamicFunctions || [],
+     dynamicApis: (container.DynamicApis || container.dynamicApis || []).map(
+       normalizeDynamicApiModel
+     ),
+     isAuthContainer:
+       container.IsAuthContainer ?? container.isAuthContainer ?? false,
+     isRegisterActive:
+       container.IsRegisterActive ?? container.isRegisterActive ?? false,
+     isGoogleLoginActive:
+@@ -961,20 +1016,74 @@ export function useUpdatePipelines() {
+     updatePipelines: (params: {
+       id: string;
+       payload: UpdatePipelinesPayload;
+     }) => {
+       updateMutation.mutate(params);
+     },
+     isUpdating: updateMutation.isPending,
+   };
+ }
+ 
++// Workflows operations
++export function useUpdateWorkflows() {
++  const queryClient = useQueryClient();
++  const { t } = useTranslation();
++  const { tenantSlug, projectSlug } = useContainerContext();
++
++  const updateMutation = useMutation({
++    mutationFn: async ({
++      id,
++      payload,
++    }: {
++      id: string;
++      payload: UpdateWorkflowsPayload;
++    }) => {
++      const path = buildContainerPath(
++        tenantSlug,
++        projectSlug,
++        `/workflows/${id}`
++      );
++      const response = await axiosClient.patch(path, payload);
++      return response.data;
++    },
++    onSuccess: (response, variables) => {
++      queryClient.invalidateQueries({
++        queryKey: ["containers", tenantSlug, projectSlug],
++      });
++      queryClient.invalidateQueries({
++        queryKey: ["container", tenantSlug, projectSlug, variables.id],
++      });
++
++      const message = response?.message || "Workflows updated successfully";
++      toast.success(t(message));
++    },
++    onError: (error: any) => {
++      console.error("Workflows update failed:", error);
++      const errorMessage =
++        error?.response?.data?.message ||
++        error?.message ||
++        "Failed to update workflows";
++      toast.error(t(errorMessage));
++    },
++  });
++
++  return {
++    updateWorkflows: (params: {
++      id: string;
++      payload: UpdateWorkflowsPayload;
++    }) => {
++      updateMutation.mutate(params);
++    },
++    isUpdating: updateMutation.isPending,
++  };
++}
++
+ // Redis operations
+ export function useResetRedis() {
+   const queryClient = useQueryClient();
+   const { t } = useTranslation();
+   const { tenantSlug, projectSlug } = useContainerContext();
+ 
+   const resetMutation = useMutation({
+     mutationFn: async () => {
+       const path = buildContainerPath(tenantSlug, projectSlug, "/reset-redis");
+       const response = await axiosClient.post(path, {});

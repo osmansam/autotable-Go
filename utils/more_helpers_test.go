@@ -124,8 +124,9 @@ func TestGetUserFromContext(t *testing.T) {
 	app.Get("/valid", func(c *fiber.Ctx) error {
 		c.Locals("userID", id.Hex())
 		c.Locals("userRole", "admin")
+		c.Locals("userDisplayName", "Ada Lovelace")
 		user := GetUserFromContext(c)
-		if user == nil || user.ID != id || !reflect.DeepEqual(user.Roles, []string{"admin"}) {
+		if user == nil || user.ID != id || user.DisplayName != "Ada Lovelace" || !reflect.DeepEqual(user.Roles, []string{"admin"}) {
 			t.Fatalf("GetUserFromContext() = %#v", user)
 		}
 		return nil

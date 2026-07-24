@@ -382,6 +382,46 @@ func TestWorkflowFindRecordsSearchConfigResolvesQueryValue(t *testing.T) {
 	}
 }
 
+func TestWorkflowFindRecordsIsActiveFilterResolvesQueryProp(t *testing.T) {
+	if !workflowFindRecordsIsActiveFilter(map[string]interface{}{}, workflowExecutionPayload{
+		Query: map[string]interface{}{"isActive": true},
+	}) {
+		t.Fatal("workflowFindRecordsIsActiveFilter(query true) = false, want true")
+	}
+
+	if workflowFindRecordsIsActiveFilter(map[string]interface{}{}, workflowExecutionPayload{
+		Query: map[string]interface{}{"isActive": false},
+	}) {
+		t.Fatal("workflowFindRecordsIsActiveFilter(query false) = true, want false")
+	}
+
+	if workflowFindRecordsIsActiveFilter(map[string]interface{}{}, workflowExecutionPayload{
+		Query: map[string]interface{}{},
+	}) {
+		t.Fatal("workflowFindRecordsIsActiveFilter(absent) = true, want false")
+	}
+
+	if !workflowFindRecordsIsActiveFilter(map[string]interface{}{
+		"isActive": "{{query.onlyActive}}",
+	}, workflowExecutionPayload{
+		Query: map[string]interface{}{"onlyActive": "true"},
+	}) {
+		t.Fatal("workflowFindRecordsIsActiveFilter(config template) = false, want true")
+	}
+}
+
+func TestWorkflowAndFilter(t *testing.T) {
+	if got := workflowAndFilter(bson.M{}, bson.M{"isActive": true}); !reflect.DeepEqual(got, bson.M{"isActive": true}) {
+		t.Fatalf("workflowAndFilter(empty) = %#v", got)
+	}
+
+	got := workflowAndFilter(bson.M{"category": "food"}, bson.M{"isActive": true})
+	want := bson.M{"$and": []bson.M{{"category": "food"}, {"isActive": true}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workflowAndFilter(existing) = %#v, want %#v", got, want)
+	}
+}
+
 func TestWorkflowConditions(t *testing.T) {
 	payload := workflowExecutionPayload{
 		Record:    map[string]interface{}{"amount": 20, "state": "done", "status": "open", "tags": []interface{}{"a"}, "nested": map[string]interface{}{"value": 3}, "name": "invoice-001", "empty": "", "dueDate": "2026-06-05", "quantity": 3, "unitPrice": 7, "total": 21, "discount": 4, "discountedTotal": 17},

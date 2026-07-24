@@ -278,6 +278,37 @@ func TestTenantAuthenticateRejectsMissingOrInvalidToken(t *testing.T) {
 	}
 }
 
+func TestTenantAuthenticateAcceptsProjectAuthToken(t *testing.T) {
+	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "acme", "retailerv2")
+	if err != nil {
+		t.Fatalf("GenerateTokens() error = %v", err)
+	}
+
+	app := fiber.New()
+	app.Get("/", TenantAuthenticate, RequireProjectScope, func(c *fiber.Ctx) error {
+		if got := c.Locals("tenantUserID"); got != "user" {
+			t.Fatalf("tenantUserID = %v, want user", got)
+		}
+		if got := c.Locals("tenantID"); got != "tenant" {
+			t.Fatalf("tenantID = %v, want tenant", got)
+		}
+		if got := c.Locals("projectID"); got != "project" {
+			t.Fatalf("projectID = %v, want project", got)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
 func TestTenantAuthorizationMiddleware(t *testing.T) {
 	tests := []struct {
 		name       string

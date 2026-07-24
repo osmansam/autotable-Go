@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 )
@@ -58,4 +59,58 @@ func GetAuditLogs(c *fiber.Ctx) error {
 		"page":       pager.Page,
 		"limit":      pager.Limit,
 	})
+}
+
+func GetAuditLogsConfig(c *fiber.Ctx) error {
+	config, err := utils.GetAuditLogsConfig()
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Error fetching audit logs config.")
+	}
+	tenantID, _ := c.Locals("tenantID").(string)
+	projectID, _ := c.Locals("projectID").(string)
+	authorizeRoleNames := []string{}
+	if tenantID != "" && projectID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		expandedRoles := utils.ExpandRoleIdentifiers(ctx, tenantID, projectID, config.AuthorizeRole)
+		for _, role := range expandedRoles {
+			if !containsString(config.AuthorizeRole, role) {
+				authorizeRoleNames = append(authorizeRoleNames, role)
+			}
+		}
+	}
+	return utils.SendResponse(c, http.StatusOK, "Audit logs config fetched successfully.", fiber.Map{
+		"isAuthorized":       config.IsAuthorized,
+		"authorizeRole":      config.AuthorizeRole,
+		"authorizeRoleNames": authorizeRoleNames,
+	})
+}
+
+func UpdateAuditLogsConfig(c *fiber.Ctx) error {
+	var input models.AuditLogsConfig
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Invalid audit logs config payload.",
+			Data:    nil,
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	config, err := utils.UpdateAuditLogsConfig(ctx, input)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Error updating audit logs config.")
+	}
+	return utils.SendResponse(c, http.StatusOK, "Audit logs config updated successfully.", config)
+}
+
+func containsString(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }

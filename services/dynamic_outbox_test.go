@@ -186,14 +186,16 @@ func TestBuildDynamicAuditLog(t *testing.T) {
 		user      *models.AuditUser
 		wantID    primitive.ObjectID
 		wantEmail string
+		wantName  string
 		wantRoles []string
 	}{
 		{name: "without user"},
 		{
 			name:      "with user",
-			user:      &models.AuditUser{ID: userID, Email: "user@example.com", Roles: []string{"admin"}},
+			user:      &models.AuditUser{ID: userID, Email: "user@example.com", DisplayName: "Ada", Roles: []string{"admin"}},
 			wantID:    userID,
 			wantEmail: "user@example.com",
+			wantName:  "Ada",
 			wantRoles: []string{"admin"},
 		},
 	}
@@ -215,6 +217,9 @@ func TestBuildDynamicAuditLog(t *testing.T) {
 			}
 			if got.UserID != tt.wantID || got.UserEmail != tt.wantEmail || !reflect.DeepEqual(got.Roles, tt.wantRoles) {
 				t.Fatalf("user = (%s, %q, %#v), want (%s, %q, %#v)", got.UserID.Hex(), got.UserEmail, got.Roles, tt.wantID.Hex(), tt.wantEmail, tt.wantRoles)
+			}
+			if got.UserDisplayName != tt.wantName {
+				t.Fatalf("UserDisplayName = %q, want %q", got.UserDisplayName, tt.wantName)
 			}
 			if !reflect.DeepEqual(got.DocumentIDs, []primitive.ObjectID{before["_id"].(primitive.ObjectID)}) {
 				t.Fatalf("DocumentIDs = %#v, want the deduplicated document id", got.DocumentIDs)

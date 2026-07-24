@@ -1,0 +1,111 @@
+# Review package: 09d7873..HEAD
+
+## Commits
+630a0a8 fix: require auth for authorized dynamic resources
+
+## Files changed
+ middlewares/authenticate.go     |  6 +++++-
+ middlewares/middlewares_test.go | 23 +++++++++++++++++++++++
+ 2 files changed, 28 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/middlewares/authenticate.go b/middlewares/authenticate.go
+index 1ab2a95..c8db4f2 100644
+--- a/middlewares/authenticate.go
++++ b/middlewares/authenticate.go
+@@ -254,21 +254,21 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
+ 		if authHeader != "" {
+ 			token := tokenFromAuthorizationHeader(authHeader)
+ 			if utils.LooksLikeIntegrationToken(token) {
+ 				if !isActive {
+ 					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
+ 				}
+ 				return authenticateIntegrationDynamicRoute(c, token, routeName, schemaName, tenantID, projectID)
+ 			}
+ 		}
+ 
+-		if isAuthenticated || !isActive {
++		if conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive) {
+ 			// Store expected tenant and project IDs in context for validation
+ 			c.Locals("expectedTenantID", tenantID)
+ 			c.Locals("expectedProjectID", projectID)
+ 			return Authenticate(c, isAuthorized, authorizeRole, isActive)
+ 		}
+ 
+ 		// Optional Authentication: If token is present, try to parse it to identify the user/role.
+ 		// This allows Row Access rules to work even on public routes.
+ 		if authHeader != "" {
+ 			token := tokenFromAuthorizationHeader(authHeader)
+@@ -292,20 +292,24 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
+ 			} else {
+ 				log.Printf("Optional auth token parse failed: %v", err)
+ 			}
+ 			// If token is invalid, we ignore it and proceed as anonymous.
+ 		}
+ 
+ 		return c.Next()
+ 	}
+ }
+ 
++func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive bool) bool {
++	return isAuthenticated || isAuthorized || !isActive
++}
++
+ func tokenFromAuthorizationHeader(authHeader string) string {
+ 	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+ 		return authHeader[7:]
+ 	}
+ 	return authHeader
+ }
+ 
+ func authenticateIntegrationDynamicRoute(c *fiber.Ctx, token, routeName, schemaName, tenantID, projectID string) error {
+ 	required := utils.IntegrationPermissionForDynamicRoute(
+ 		routeName,
+diff --git a/middlewares/middlewares_test.go b/middlewares/middlewares_test.go
+index dbccee4..7191d56 100644
+--- a/middlewares/middlewares_test.go
++++ b/middlewares/middlewares_test.go
+@@ -356,20 +356,43 @@ func TestAuthenticate(t *testing.T) {
+ 			req := httptest.NewRequest(http.MethodGet, "/", nil)
+ 			req.Header.Set("Authorization", "Bearer "+tt.token)
+ 			resp, err := app.Test(req)
+ 			if err != nil || resp.StatusCode != tt.wantStatus {
+ 				t.Fatalf("status = %v, error = %v; want %d", resp, err, tt.wantStatus)
+ 			}
+ 		})
+ 	}
+ }
+ 
++func TestConditionalAuthenticationRequiresTokenForAuthorizedResources(t *testing.T) {
++	tests := []struct {
++		name            string
++		isAuthenticated bool
++		isAuthorized    bool
++		isActive        bool
++		want            bool
++	}{
++		{name: "public active resource", isActive: true},
++		{name: "authenticated resource", isAuthenticated: true, isActive: true, want: true},
++		{name: "authorized resource", isAuthorized: true, isActive: true, want: true},
++		{name: "inactive resource", want: true},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			if got := conditionalAuthenticationRequiresToken(tt.isAuthenticated, tt.isAuthorized, tt.isActive); got != tt.want {
++				t.Fatalf("conditionalAuthenticationRequiresToken() = %v, want %v", got, tt.want)
++			}
++		})
++	}
++}
++
+ func TestConditionalAuthenticationForPages(t *testing.T) {
+ 	app := fiber.New()
+ 	app.Get("/", ConditionalAuthenticationForPages, func(c *fiber.Ctx) error {
+ 		if c.Locals("expectedTenantID") != "tenant" || c.Locals("expectedProjectID") != "project" {
+ 			t.Fatalf("expected scope locals = %#v, %#v", c.Locals("expectedTenantID"), c.Locals("expectedProjectID"))
+ 		}
+ 		if c.Locals("userID") != nil {
+ 			t.Fatalf("userID = %#v, want anonymous request", c.Locals("userID"))
+ 		}
+ 		return c.SendStatus(http.StatusNoContent)

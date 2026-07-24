@@ -183,6 +183,7 @@ func buildDynamicAuditLog(tenantID, projectID, schemaName, action string, user *
 	if user != nil {
 		auditLog.UserID = user.ID
 		auditLog.UserEmail = user.Email
+		auditLog.UserDisplayName = user.DisplayName
 		auditLog.Roles = user.Roles
 	}
 

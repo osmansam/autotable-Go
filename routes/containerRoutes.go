@@ -11,11 +11,11 @@ import (
 // These routes require tenant authentication and project scope
 func ContainerRoutes(baseUrl string, app *fiber.App) {
 	// All container routes require tenant authentication and project scope
-	app.Get(baseUrl, middlewares.PublicRateLimit(), controllers.GetAllContainers)
+	app.Get(baseUrl, middlewares.TenantAuthenticate, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllContainers)
 	containerGroup := app.Group(baseUrl)
-	// containerGroup.Use(middlewares.TenantAuthenticate)
-	// containerGroup.Use(middlewares.GeneralRateLimit())
-	// containerGroup.Use(middlewares.RequireProjectScope)
+	containerGroup.Use(middlewares.TenantAuthenticate)
+	containerGroup.Use(middlewares.GeneralRateLimit())
+	containerGroup.Use(middlewares.RequireProjectScope)
 
 	// Create container - requires project admin or developer role
 	containerGroup.Post("/",

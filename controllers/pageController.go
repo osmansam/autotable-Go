@@ -179,6 +179,45 @@ func GetAllPages(c *fiber.Ctx) error {
 	return c.JSON(pages)
 }
 
+func getPageRequestUserID(c *fiber.Ctx) string {
+	if userID, ok := c.Locals("userID").(string); ok && userID != "" {
+		return userID
+	}
+	if userID, ok := c.Locals("tenantUserID").(string); ok && userID != "" {
+		return userID
+	}
+	return ""
+}
+
+func getPageRequestRoles(c *fiber.Ctx) []string {
+	roles := []string{}
+	if userRole, ok := c.Locals("userRole").(string); ok && userRole != "" {
+		roles = append(roles, userRole)
+	}
+	switch rawRoles := c.Locals("roles").(type) {
+	case []string:
+		roles = append(roles, rawRoles...)
+	case []interface{}:
+		for _, role := range rawRoles {
+			if roleString, ok := role.(string); ok && roleString != "" {
+				roles = append(roles, roleString)
+			}
+		}
+	}
+	return roles
+}
+
+func pageRequestHasAllowedRole(userRoles []string, allowedRoles []string) bool {
+	for _, userRole := range userRoles {
+		for _, allowedRole := range allowedRoles {
+			if userRole == allowedRole {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetAllPagesPublic retrieves all pages with conditional authentication
 // This allows public access to pages based on their IsAuthenticated settings
 func GetAllPagesPublic(c *fiber.Ctx) error {
@@ -208,9 +247,8 @@ func GetAllPagesPublic(c *fiber.Ctx) error {
 	}
 	defer results.Close(ctx)
 
-	// Get user role from context (may be empty if not authenticated)
-	userRole, _ := c.Locals("userRole").(string)
-	userID, _ := c.Locals("userID").(string)
+	userID := getPageRequestUserID(c)
+	userRoles := getPageRequestRoles(c)
 
 	for results.Next(ctx) {
 		var singlePage models.PageModel
@@ -227,15 +265,7 @@ func GetAllPagesPublic(c *fiber.Ctx) error {
 			}
 			// User is authenticated - now check if specific role authorization is required
 			if singlePage.IsAuthorized {
-				// Check if user has one of the authorized roles
-				isAuthorized := false
-				for _, allowedRole := range singlePage.AuthorizeRole {
-					if allowedRole == userRole {
-						isAuthorized = true
-						break
-					}
-				}
-				if !isAuthorized {
+				if !pageRequestHasAllowedRole(userRoles, singlePage.AuthorizeRole) {
 					continue
 				}
 			}

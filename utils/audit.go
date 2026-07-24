@@ -29,6 +29,7 @@ func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
 	if role != "" {
 		roles = []string{role}
 	}
+	displayName, _ := c.Locals("userDisplayName").(string)
 
 	userID, err := primitive.ObjectIDFromHex(userIDStr)
 	if err != nil {
@@ -40,11 +41,22 @@ func GetUserFromContext(c *fiber.Ctx) *models.AuditUser {
 	}
 
 	return &models.AuditUser{
-		ID:    userID,
-		Roles: roles,
+		ID:          userID,
+		DisplayName: displayName,
+		Roles:       roles,
 		// Email is not in context locals currently, so we leave it empty.
 		// It might be fetched if needed, but for now we stick to what we have efficiently.
 	}
+}
+
+func applyAuditUser(auditLog *models.AuditLog, user *models.AuditUser) {
+	if auditLog == nil || user == nil {
+		return
+	}
+	auditLog.UserID = user.ID
+	auditLog.UserEmail = user.Email
+	auditLog.UserDisplayName = user.DisplayName
+	auditLog.Roles = user.Roles
 }
 
 // LogAudit writes an AuditLog to the audit_logs collection.
@@ -174,11 +186,7 @@ func LogCreateAction(ctx context.Context, tenantID, projectID string, container 
 		After:       createdDoc,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -209,11 +217,7 @@ func LogUpdateAction(ctx context.Context, tenantID, projectID string, container 
 		After:       afterDoc,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -239,11 +243,7 @@ func LogDeleteAction(ctx context.Context, tenantID, projectID string, container 
 		Before:      deletedDoc,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -270,11 +270,7 @@ func LogBulkCreateAction(ctx context.Context, tenantID, projectID string, contai
 		After:       createdDocs,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -302,11 +298,7 @@ func LogBulkUpdateAction(ctx context.Context, tenantID, projectID string, contai
 		After:       afterDocs,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -333,11 +325,7 @@ func LogBulkDeleteAction(ctx context.Context, tenantID, projectID string, contai
 		Before:      deletedDocs,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -352,11 +340,7 @@ func LogLogin(ctx context.Context, tenantID, projectID string, user *models.Audi
 		UserAgent: userAgent,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -371,11 +355,7 @@ func LogLogout(ctx context.Context, tenantID, projectID string, user *models.Aud
 		UserAgent: userAgent,
 	}
 
-	if user != nil {
-		auditLog.UserID = user.ID
-		auditLog.UserEmail = user.Email
-		auditLog.Roles = user.Roles
-	}
+	applyAuditUser(&auditLog, user)
 
 	return LogAudit(ctx, auditLog)
 }
@@ -412,6 +392,10 @@ func BuildAuditLogFilter(c *fiber.Ctx) (bson.M, error) {
 	// Filter by userEmail
 	if userEmail := c.Query("userEmail"); userEmail != "" {
 		filter["userEmail"] = userEmail
+	}
+
+	if userDisplayName := c.Query("userDisplayName"); userDisplayName != "" {
+		filter["userDisplayName"] = userDisplayName
 	}
 
 	// Filter by userId

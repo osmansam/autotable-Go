@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -252,6 +253,9 @@ func GetAuditLogsConfig() (*models.AuditLogsConfig, error) {
 	err := collection.FindOne(ctx, bson.M{"key": "audit_logs"}).Decode(&settings)
 
 	if err == nil && settings.AuditLogs != nil {
+		if settings.AuditLogs.AuthorizeRole == nil {
+			settings.AuditLogs.AuthorizeRole = []string{}
+		}
 		return settings.AuditLogs, nil
 	}
 
@@ -261,4 +265,71 @@ func GetAuditLogsConfig() (*models.AuditLogsConfig, error) {
 		IsAuthorized:  false,
 		AuthorizeRole: []string{},
 	}, nil
+}
+
+func UpdateAuditLogsConfig(ctx context.Context, config models.AuditLogsConfig) (*models.AuditLogsConfig, error) {
+	if config.AuthorizeRole == nil {
+		config.AuthorizeRole = []string{}
+	}
+
+	now := primitiveDateTimeNow()
+	collection := globalCollectionProvider("settings")
+	_, err := collection.UpdateOne(
+		ctx,
+		bson.M{"key": "audit_logs"},
+		bson.M{
+			"$set": bson.M{
+				"auditLogs": config,
+				"updatedAt": now,
+			},
+			"$setOnInsert": bson.M{
+				"key":       "audit_logs",
+				"createdAt": now,
+			},
+		},
+		options.Update().SetUpsert(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func primitiveDateTimeNow() primitive.DateTime {
+	return primitive.NewDateTimeFromTime(time.Now())
+}
+
+func ExpandRoleIdentifiers(ctx context.Context, tenantID, projectID string, roles []string) []string {
+	if len(roles) == 0 {
+		return []string{}
+	}
+
+	expanded := make([]string, 0, len(roles)*2)
+	seen := map[string]bool{}
+	add := func(role string) {
+		if role == "" || seen[role] {
+			return
+		}
+		expanded = append(expanded, role)
+		seen[role] = true
+	}
+
+	for _, role := range roles {
+		add(role)
+		roleID, err := primitive.ObjectIDFromHex(role)
+		if err != nil {
+			continue
+		}
+		roleCollection := GetDynamicCollectionForProject(tenantID, projectID, "role")
+		var roleDoc map[string]interface{}
+		if err := roleCollection.FindOne(ctx, bson.M{"_id": roleID}).Decode(&roleDoc); err != nil {
+			continue
+		}
+		if name, ok := roleDoc["name"].(string); ok {
+			add(name)
+		}
+	}
+
+	return expanded
 }

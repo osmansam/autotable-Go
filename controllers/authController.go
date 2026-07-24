@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -31,6 +32,92 @@ func getProjectAuthContainer(ctx context.Context, tenantID, projectID string) (m
 	return container, nil
 }
 
+type projectLoginConfigField struct {
+	Name              string `json:"name"`
+	Type              string `json:"type"`
+	IsHashed          bool   `json:"isHashed"`
+	IsLoginCredential bool   `json:"isLoginCredential"`
+	DisplayName       string `json:"displayName,omitempty"`
+}
+
+type projectLoginConfig struct {
+	SchemaName          string                    `json:"schemaName"`
+	IsRegisterActive    bool                      `json:"isRegisterActive"`
+	IsGoogleLoginActive bool                      `json:"isGoogleLoginActive"`
+	LoginFields         []projectLoginConfigField `json:"loginFields"`
+	RegisterFields      []projectLoginConfigField `json:"registerFields"`
+}
+
+func buildProjectLoginConfig(container models.ContainerModel) projectLoginConfig {
+	config := projectLoginConfig{
+		SchemaName:          container.SchemaName,
+		IsRegisterActive:    container.IsRegisterActive,
+		IsGoogleLoginActive: container.IsGoogleLoginActive,
+	}
+
+	for _, field := range container.Fields {
+		if isSystemLoginConfigField(field.Name) {
+			continue
+		}
+
+		projected := projectLoginConfigField{
+			Name:              field.Name,
+			Type:              field.Type,
+			IsHashed:          field.IsHashed,
+			IsLoginCredential: field.IsLoginCredential,
+		}
+		if field.Frontend != nil {
+			projected.DisplayName = field.Frontend.DisplayName
+		}
+
+		if field.IsLoginCredential {
+			config.LoginFields = append(config.LoginFields, projected)
+		}
+		config.RegisterFields = append(config.RegisterFields, projected)
+	}
+
+	return config
+}
+
+func isSystemLoginConfigField(name string) bool {
+	switch name {
+	case "_id", "id", "createdAt", "updatedAt":
+		return true
+	default:
+		return false
+	}
+}
+
+func GetProjectLoginConfig(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to get project context: " + err.Error(),
+		})
+	}
+	if tenantID == "" || projectID == "" {
+		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+			Status:  http.StatusBadRequest,
+			Message: "Missing tenant or project context",
+		})
+	}
+
+	container, err := getProjectAuthContainer(ctx, tenantID, projectID)
+	if err != nil {
+		log.Printf("Failed to find auth container for login config: %v", err)
+		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
+			Status:  http.StatusNotFound,
+			Message: "Authentication container not configured.",
+		})
+	}
+
+	return c.JSON(buildProjectLoginConfig(container))
+}
+
 func ensureGoogleLoginActive(ctx context.Context, tenantID, projectID string) error {
 	container, err := getProjectAuthContainer(ctx, tenantID, projectID)
 	if err != nil {
@@ -47,16 +134,55 @@ func resolveAuthRoleName(ctx context.Context, tenantID, projectID string, role i
 	case string:
 		return typed
 	case primitive.ObjectID:
-		roleCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, "role")
-		var roleDoc map[string]interface{}
-		if err := roleCollection.FindOne(ctx, bson.M{"_id": typed}).Decode(&roleDoc); err == nil {
-			if name, ok := roleDoc["name"].(string); ok {
-				return name
-			}
-		}
 		return typed.Hex()
 	default:
 		return ""
+	}
+}
+
+func auditIdentityFieldName(container models.ContainerModel) string {
+	for _, field := range container.Fields {
+		if field.IsAuditIdentity && !field.IsHashed {
+			return field.Name
+		}
+	}
+	for _, field := range container.Fields {
+		if field.IsHashed {
+			continue
+		}
+		name := strings.ToLower(field.Name)
+		fieldType := strings.ToLower(field.Type)
+		if name == "email" || fieldType == "email" {
+			return field.Name
+		}
+	}
+	for _, field := range container.Fields {
+		if field.IsHashed {
+			continue
+		}
+		switch strings.ToLower(field.Name) {
+		case "username", "user_name", "name", "fullname", "full_name":
+			return field.Name
+		}
+	}
+	return ""
+}
+
+func auditIdentityValue(user map[string]interface{}, fieldName string) string {
+	if user == nil || fieldName == "" {
+		return ""
+	}
+	value, ok := user[fieldName]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		return fmt.Sprint(typed)
 	}
 }
 
@@ -337,9 +463,10 @@ func Login(c *fiber.Ctx) error {
 	// Get tenant and project slugs from context
 	tenantSlug, _ := c.Locals("tenantSlug").(string)
 	projectSlug, _ := c.Locals("projectSlug").(string)
+	auditDisplayName := auditIdentityValue(storedUser, auditIdentityFieldName(container))
 
 	// Generate tokens dynamically with tenant and project context
-	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
+	tokenDetails, err := utils.GenerateTokensWithDisplayName(userID, role, tenantID, projectID, tenantSlug, projectSlug, auditDisplayName)
 	if err != nil {
 		log.Println("Could not generate tokens for user:", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -367,6 +494,7 @@ func Login(c *fiber.Ctx) error {
 			}
 			return ""
 		}(),
+		DisplayName: auditDisplayName,
 	}
 	// IP and UserAgent
 	ip := c.IP()
@@ -750,8 +878,10 @@ func GoogleCallback(c *fiber.Ctx) error {
 		}
 	}
 
+	auditDisplayName := auditIdentityValue(existingUser, auditIdentityFieldName(authContainer))
+
 	// Generate JWT tokens with tenant and project context
-	tokenDetails, err := utils.GenerateTokens(userID, role, tenantID, projectID, tenantSlug, projectSlug)
+	tokenDetails, err := utils.GenerateTokensWithDisplayName(userID, role, tenantID, projectID, tenantSlug, projectSlug, auditDisplayName)
 	if err != nil {
 		log.Printf("GoogleCallback: Failed to generate tokens: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -779,6 +909,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 			}
 			return ""
 		}(),
+		DisplayName: auditDisplayName,
 	}
 
 	ip := c.IP()
