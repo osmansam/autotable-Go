@@ -29,20 +29,36 @@ func TenantAuthenticate(c *fiber.Ctx) error {
 
 	// Parse tenant token
 	claims, err := utils.ParseTenantToken(token)
-	if err != nil {
-		log.Printf("Error parsing tenant token: %v", err)
+	if err == nil {
+		// Store user context in locals for downstream handlers
+		c.Locals("tenantUserID", claims.UserID)
+		c.Locals("email", claims.Email)
+		c.Locals("tenantID", claims.TenantID)
+		c.Locals("projectID", claims.ProjectID)
+		c.Locals("roles", claims.Roles)
+		c.Locals("roleScope", claims.RoleScope)
+
+		return c.Next()
+	}
+
+	userID, role, tenantID, projectID, _, _, legacyErr := utils.ParseToken(token)
+	if legacyErr != nil {
+		log.Printf("Error parsing tenant token: %v; project auth token: %v", err, legacyErr)
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "Invalid or expired token",
 		})
 	}
 
-	// Store user context in locals for downstream handlers
-	c.Locals("tenantUserID", claims.UserID)
-	c.Locals("email", claims.Email)
-	c.Locals("tenantID", claims.TenantID)
-	c.Locals("projectID", claims.ProjectID)
-	c.Locals("roles", claims.Roles)
-	c.Locals("roleScope", claims.RoleScope)
+	roles := []string{}
+	if role != "" {
+		roles = append(roles, role)
+	}
+	c.Locals("tenantUserID", userID)
+	c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
+	c.Locals("tenantID", tenantID)
+	c.Locals("projectID", projectID)
+	c.Locals("roles", roles)
+	c.Locals("roleScope", string(models.RoleScopeProject))
 
 	return c.Next()
 }

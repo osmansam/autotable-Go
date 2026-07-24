@@ -1,0 +1,326 @@
+diff --git a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+index c1bb396..88d8212 100644
+--- a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
++++ b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+@@ -10,6 +10,7 @@ import {
+   FiGitBranch,
+   FiGlobe,
+   FiList,
++  FiPlayCircle,
+   FiPlus,
+   FiShield,
+   FiTrash2,
+@@ -28,12 +29,14 @@ import {
+ import {
+   ContainerModel,
+   DynamicApiModel,
++  DynamicWorkflow,
+   Field,
+   PipelineStage,
+   useCreateProjectAuthUser,
+   useUpdateContainer,
+   useUpdateDynamicApis,
+   useUpdatePipelines,
++  useUpdateWorkflows,
+ } from "../../../utils/api/container";
+ import FieldPermissions from "../../FieldPermissions";
+ import RoutePermissions from "../../RoutePermissions";
+@@ -45,6 +48,7 @@ import { GenericButton } from "../FormElements/GenericButton";
+ import { AddDynamicApiModal } from "./AddDynamicApiModal";
+ import { AddFieldModal } from "./AddFieldModal";
+ import { AddPipelineModal } from "./AddPipelineModal";
++import { AddWorkflowModal } from "./AddWorkflowModal";
+ 
+ interface ContainerDetailsModalProps {
+   isOpen: boolean;
+@@ -59,7 +63,7 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+ }) => {
+   const { t } = useTranslation();
+   const [viewMode, setViewMode] = useState<
+-    "structured" | "json" | "permissions" | "routes" | "pipelines" | "apis"
++    "structured" | "json" | "permissions" | "routes" | "pipelines" | "workflows" | "apis"
+   >("structured");
+   const [isAddFieldModalOpen, setIsAddFieldModalOpen] = useState(false);
+   const [fieldToDelete, setFieldToDelete] = useState<string | null>(null);
+@@ -73,6 +77,10 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+     null
+   );
+   const [pipelineToDelete, setPipelineToDelete] = useState<string | null>(null);
++  const [isAddWorkflowModalOpen, setIsAddWorkflowModalOpen] = useState(false);
++  const [editingWorkflow, setEditingWorkflow] =
++    useState<DynamicWorkflow | null>(null);
++  const [workflowToDelete, setWorkflowToDelete] = useState<string | null>(null);
+   const [isAddDynamicApiModalOpen, setIsAddDynamicApiModalOpen] =
+     useState(false);
+   const [editingDynamicApi, setEditingDynamicApi] =
+@@ -84,6 +92,8 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+   const { updateContainer, isUpdating } = useUpdateContainer();
+   const { updatePipelines, isUpdating: isPipelinesUpdating } =
+     useUpdatePipelines();
++  const { updateWorkflows, isUpdating: isWorkflowsUpdating } =
++    useUpdateWorkflows();
+   const { updateDynamicApis, isUpdating: isDynamicApisUpdating } =
+     useUpdateDynamicApis();
+   const roleOptions = useGetSelection<Array<{ _id?: string; id?: string; name?: string }>>(
+@@ -416,6 +426,58 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+     }
+   }, [container, pipelineToDelete, updatePipelines]);
+ 
++  const handleAddWorkflow = useCallback(
++    (workflow: DynamicWorkflow) => {
++      if (!container?.id) return;
++
++      const currentWorkflows = container.workflows || [];
++      if (
++        !editingWorkflow &&
++        currentWorkflows.some((existing) => existing.name === workflow.name)
++      ) {
++        toast.error(t("A workflow with this name already exists"));
++        return;
++      }
++
++      const updatedWorkflows = editingWorkflow
++        ? currentWorkflows.map((existing) =>
++            existing.name === editingWorkflow.name ? workflow : existing
++          )
++        : [...currentWorkflows, workflow];
++
++      updateWorkflows({
++        id: container.id,
++        payload: { Workflows: updatedWorkflows },
++      });
++      setIsAddWorkflowModalOpen(false);
++      setEditingWorkflow(null);
++    },
++    [container, editingWorkflow, t, updateWorkflows]
++  );
++
++  const handleEditWorkflow = useCallback((workflow: DynamicWorkflow) => {
++    setEditingWorkflow(workflow);
++    setIsAddWorkflowModalOpen(true);
++  }, []);
++
++  const handleDeleteWorkflow = useCallback((workflowName: string) => {
++    setWorkflowToDelete(workflowName);
++  }, []);
++
++  const confirmDeleteWorkflow = useCallback(() => {
++    if (!container?.id || !workflowToDelete) return;
++
++    updateWorkflows({
++      id: container.id,
++      payload: {
++        Workflows: (container.workflows || []).filter(
++          (workflow) => workflow.name !== workflowToDelete
++        ),
++      },
++    });
++    setWorkflowToDelete(null);
++  }, [container, updateWorkflows, workflowToDelete]);
++
+   const handleAddDynamicApi = useCallback(
+     (dynamicApi: DynamicApiModel) => {
+       if (!container?.id) return false;
+@@ -539,6 +601,17 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                   <FiGlobe size={12} />
+                   <span>{t("Dynamic APIs")}</span>
+                 </button>
++                <button
++                  onClick={() => setViewMode("workflows")}
++                  className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
++                    viewMode === "workflows"
++                      ? "bg-white text-blue-600 shadow-sm"
++                      : "text-gray-600 hover:text-gray-900"
++                  }`}
++                >
++                  <FiPlayCircle size={12} />
++                  <span>{t("Workflows")}</span>
++                </button>
+                 <button
+                   onClick={() => setViewMode("permissions")}
+                   className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
+@@ -588,6 +661,7 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+               viewMode === "permissions" ||
+               viewMode === "routes" ||
+               viewMode === "pipelines" ||
++              viewMode === "workflows" ||
+               viewMode === "apis"
+                 ? "h-[70vh]"
+                 : "max-h-[70vh] overflow-y-auto"
+@@ -736,6 +810,142 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                   )}
+                 </div>
+               </div>
++            ) : viewMode === "workflows" ? (
++              <div className="space-y-4 h-full overflow-y-auto">
++                <div className="flex items-center justify-between sticky top-0 bg-white pb-4 border-b">
++                  <div>
++                    <h4 className="text-sm font-medium text-gray-900">
++                      {t("Workflows")} ({(container.workflows || []).length})
++                    </h4>
++                    <p className="text-xs text-gray-500 mt-1">
++                      {t("Manage workflow definitions and access controls for this container")}
++                    </p>
++                  </div>
++                  <GenericButton
++                    variant="outline"
++                    size="sm"
++                    onClick={() => setIsAddWorkflowModalOpen(true)}
++                    iconLeft={<FiPlus size={12} />}
++                    disabled={isWorkflowsUpdating}
++                  >
++                    {t("Add Workflow")}
++                  </GenericButton>
++                </div>
++
++                <div className="space-y-3">
++                  {(container.workflows || []).map((workflow, index) => (
++                    <div
++                      key={workflow.name || index}
++                      className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
++                    >
++                      <div className="flex items-start justify-between">
++                        <div className="flex-1">
++                          <div className="mb-2 flex flex-wrap items-center gap-2">
++                            <span className="font-medium text-gray-900">{workflow.name}</span>
++                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
++                              workflow.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
++                            }`}>
++                              {workflow.isActive ? t("Active") : t("Inactive")}
++                            </span>
++                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-800">
++                              {workflow.trigger || "manual"}
++                            </span>
++                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-800">
++                              {workflow.mode || "transactional"}
++                            </span>
++                            {workflow.isAuthenticated && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-800">
++                                {t("Auth Required")}
++                              </span>
++                            )}
++                            {workflow.isAuthorized && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-orange-100 text-orange-800">
++                                {t("Role Check")}
++                              </span>
++                            )}
++                            {!!workflow.outputFields?.length && (
++                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded bg-indigo-100 text-indigo-800">
++                                {workflow.outputFields.length} {t("Output Fields")}
++                              </span>
++                            )}
++                          </div>
++
++                          {workflow.description && (
++                            <p className="mb-2 text-xs text-gray-600">{workflow.description}</p>
++                          )}
++
++                          <details className="text-xs">
++                            <summary className="cursor-pointer font-medium text-gray-600 hover:text-gray-900">
++                              {t("View Workflow JSON")}
++                            </summary>
++                            <pre className="mt-2 overflow-x-auto rounded bg-gray-900 p-3 text-xs text-green-400">
++                              {JSON.stringify(
++                                {
++                                  payload: workflow.payload || {},
++                                  conditions: workflow.conditions || [],
++                                  steps: workflow.steps || [],
++                                },
++                                null,
++                                2
++                              )}
++                            </pre>
++                          </details>
++
++                          {workflow.isAuthorized &&
++                            workflow.authorizeRole &&
++                            workflow.authorizeRole.length > 0 && (
++                              <div className="mt-2">
++                                <span className="text-xs text-gray-500">
++                                  {t("Allowed Roles")}: {" "}
++                                </span>
++                                <span className="text-xs text-gray-700">
++                                  {workflow.authorizeRole.join(", ")}
++                                </span>
++                              </div>
++                            )}
++                        </div>
++
++                        <div className="ml-4 flex items-center space-x-2">
++                          <GenericButton
++                            variant="outline"
++                            size="sm"
++                            onClick={() => handleEditWorkflow(workflow)}
++                            iconLeft={<FiEdit size={10} />}
++                            disabled={isWorkflowsUpdating}
++                          >
++                            {t("Edit")}
++                          </GenericButton>
++                          <GenericButton
++                            variant="outline"
++                            size="sm"
++                            onClick={() => handleDeleteWorkflow(workflow.name)}
++                            iconLeft={<FiTrash2 size={10} />}
++                            disabled={isWorkflowsUpdating}
++                          >
++                            {t("Delete")}
++                          </GenericButton>
++                        </div>
++                      </div>
++                    </div>
++                  ))}
++
++                  {(!container.workflows || container.workflows.length === 0) && (
++                    <div className="py-12 text-center text-gray-500">
++                      <FiPlayCircle size={48} className="mx-auto mb-4 text-gray-300" />
++                      <p className="mb-2">{t("No workflows defined for this container")}</p>
++                      <GenericButton
++                        variant="outline"
++                        size="sm"
++                        onClick={() => setIsAddWorkflowModalOpen(true)}
++                        iconLeft={<FiPlus size={12} />}
++                        className="mt-2"
++                      >
++                        {t("Add Your First Workflow")}
++                      </GenericButton>
++                    </div>
++                  )}
++                </div>
++              </div>
+             ) : viewMode === "apis" ? (
+               <div className="h-full space-y-4 overflow-y-auto">
+                 <div className="sticky top-0 flex items-center justify-between border-b bg-white pb-4">
+@@ -1284,6 +1494,16 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+         editPipeline={editingPipeline}
+       />
+ 
++      <AddWorkflowModal
++        isOpen={isAddWorkflowModalOpen}
++        onClose={() => {
++          setIsAddWorkflowModalOpen(false);
++          setEditingWorkflow(null);
++        }}
++        onAddWorkflow={handleAddWorkflow}
++        editWorkflow={editingWorkflow}
++      />
++
+       {/* Add/Edit Dynamic API Modal */}
+       <AddDynamicApiModal
+         isOpen={isAddDynamicApiModalOpen}
+@@ -1317,6 +1537,16 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+         )}
+       />
+ 
++      <ConfirmationDialog
++        isOpen={!!workflowToDelete}
++        close={() => setWorkflowToDelete(null)}
++        confirm={confirmDeleteWorkflow}
++        title={t("Delete Workflow")}
++        text={t(
++          "Are you sure you want to delete this workflow? This action cannot be undone."
++        )}
++      />
++
+       {/* Delete Dynamic API Confirmation */}
+       <ConfirmationDialog
+         isOpen={!!dynamicApiToDelete}

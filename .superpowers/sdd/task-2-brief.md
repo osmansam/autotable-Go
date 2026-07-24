@@ -1,0 +1,378 @@
+### Task 2: Add Workflow Modal
+
+**Files:**
+- Create: `/Users/osmansamilerdogan/Desktop/tenantPanel/src/components/panelComponents/Modals/AddWorkflowModal.tsx`
+
+**Interfaces:**
+- Consumes: `DynamicWorkflow` from `src/utils/api/container`.
+- Consumes: `useRoleItems` and `SelectInput` role option pattern from `AddPipelineModal`.
+- Produces: `AddWorkflowModal` component with props `{ isOpen: boolean; onClose: () => void; onAddWorkflow: (workflow: DynamicWorkflow) => void; editWorkflow?: DynamicWorkflow | null }`.
+
+- [ ] **Step 1: Create modal component**
+
+Create `src/components/panelComponents/Modals/AddWorkflowModal.tsx` with this structure:
+
+```tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { FiX } from "react-icons/fi";
+import { toast } from "react-toastify";
+import { CheckSwitch } from "../../../common/CheckSwitch";
+import { OptionType } from "../../../types";
+import { DynamicWorkflow } from "../../../utils/api/container";
+import { useRoleItems } from "../../../utils/api/roleInfo";
+import { GenericButton } from "../FormElements/GenericButton";
+import SelectInput from "../FormElements/SelectInput";
+import TextInput from "../FormElements/TextInput";
+
+interface AddWorkflowModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAddWorkflow: (workflow: DynamicWorkflow) => void;
+  editWorkflow?: DynamicWorkflow | null;
+}
+
+const defaultWorkflow: Partial<DynamicWorkflow> = {
+  name: "",
+  trigger: "manual",
+  mode: "transactional",
+  isActive: true,
+  isAuthenticated: false,
+  isAuthorized: false,
+  authorizeRole: [],
+  description: "",
+  returnStep: "",
+  outputFields: [],
+  timeoutSec: 30,
+  stopOnError: true,
+  runInTransaction: false,
+  payload: {},
+  conditions: [],
+  steps: [],
+};
+
+const triggerOptions: OptionType[] = [
+  { value: "manual", label: "Manual" },
+  { value: "before_create", label: "Before Create" },
+  { value: "after_create", label: "After Create" },
+  { value: "before_update", label: "Before Update" },
+  { value: "after_update", label: "After Update" },
+  { value: "before_delete", label: "Before Delete" },
+  { value: "after_delete", label: "After Delete" },
+  { value: "cron", label: "Cron" },
+];
+
+const modeOptions: OptionType[] = [
+  { value: "transactional", label: "Transactional" },
+  { value: "outbox", label: "Outbox" },
+  { value: "hybrid", label: "Hybrid" },
+];
+
+const formatJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
+const formatJsonArray = (value: unknown) =>
+  JSON.stringify(Array.isArray(value) ? value : [], null, 2);
+
+export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+  isOpen,
+  onClose,
+  onAddWorkflow,
+  editWorkflow = null,
+}) => {
+  const { t } = useTranslation();
+  const { data: roleItems = [] } = useRoleItems();
+  const roleOptions: OptionType[] = useMemo(
+    () => roleItems.map((role) => ({ value: role._id, label: role.name })),
+    [roleItems]
+  );
+
+  const [workflowData, setWorkflowData] =
+    useState<Partial<DynamicWorkflow>>(defaultWorkflow);
+  const [payloadJson, setPayloadJson] = useState("{}");
+  const [conditionsJson, setConditionsJson] = useState("[]");
+  const [stepsJson, setStepsJson] = useState("[]");
+  const [jsonErrors, setJsonErrors] = useState<Record<string, string>>({});
+  const [formKey, setFormKey] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const nextWorkflow = editWorkflow || defaultWorkflow;
+    setWorkflowData({
+      ...defaultWorkflow,
+      ...nextWorkflow,
+      authorizeRole: nextWorkflow.authorizeRole || [],
+      outputFields: nextWorkflow.outputFields || [],
+    });
+    setPayloadJson(formatJson(nextWorkflow.payload || {}));
+    setConditionsJson(formatJsonArray(nextWorkflow.conditions || []));
+    setStepsJson(formatJsonArray(nextWorkflow.steps || []));
+    setJsonErrors({});
+    setFormKey((prev) => prev + 1);
+  }, [editWorkflow, isOpen]);
+
+  const parseJson = (label: string, value: string, expected: "object" | "array") => {
+    try {
+      const parsed = value.trim() ? JSON.parse(value) : expected === "array" ? [] : {};
+      if (expected === "array" && !Array.isArray(parsed)) {
+        return { error: t(`${label} must be a JSON array`) };
+      }
+      if (
+        expected === "object" &&
+        (Array.isArray(parsed) || parsed === null || typeof parsed !== "object")
+      ) {
+        return { error: t(`${label} must be a JSON object`) };
+      }
+      return { value: parsed };
+    } catch {
+      return { error: t(`${label} has invalid JSON`) };
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!workflowData.name?.trim()) {
+      toast.error(t("Workflow name is required"));
+      return;
+    }
+
+    const payloadResult = parseJson("Payload", payloadJson, "object");
+    const conditionsResult = parseJson("Conditions", conditionsJson, "array");
+    const stepsResult = parseJson("Steps", stepsJson, "array");
+    const errors = {
+      ...(payloadResult.error ? { payload: payloadResult.error } : {}),
+      ...(conditionsResult.error ? { conditions: conditionsResult.error } : {}),
+      ...(stepsResult.error ? { steps: stepsResult.error } : {}),
+    };
+    setJsonErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      toast.error(t("Please fix JSON errors before saving"));
+      return;
+    }
+
+    const workflow: DynamicWorkflow = {
+      id: workflowData.id,
+      name: workflowData.name.trim(),
+      version: workflowData.version,
+      trigger: workflowData.trigger || "manual",
+      schedule: workflowData.schedule,
+      timezone: workflowData.timezone,
+      mode: workflowData.mode || "transactional",
+      isActive: workflowData.isActive ?? true,
+      isAuthenticated: workflowData.isAuthenticated || false,
+      isAuthorized: workflowData.isAuthorized || false,
+      authorizeRole: workflowData.isAuthorized ? workflowData.authorizeRole || [] : [],
+      description: workflowData.description?.trim() || undefined,
+      payload: payloadResult.value,
+      conditions: conditionsResult.value,
+      steps: stepsResult.value,
+      stopOnError: workflowData.stopOnError ?? true,
+      timeoutSec: workflowData.timeoutSec || undefined,
+      returnStep: workflowData.returnStep?.trim() || undefined,
+      outputFields: (workflowData.outputFields || []).filter(Boolean),
+      runInTransaction: workflowData.runInTransaction || false,
+    };
+
+    onAddWorkflow(workflow);
+    handleClose();
+  };
+
+  const handleClose = () => {
+    setWorkflowData(defaultWorkflow);
+    setPayloadJson("{}");
+    setConditionsJson("[]");
+    setStepsJson("[]");
+    setJsonErrors({});
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto">
+      <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleClose} />
+        <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl sm:p-6">
+          <div className="mb-6 flex items-start justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {editWorkflow ? t("Edit Workflow") : t("Add New Workflow")}
+            </h3>
+            <button onClick={handleClose} className="text-gray-400 transition-colors hover:text-gray-600">
+              <FiX size={20} />
+            </button>
+          </div>
+
+          <div className="max-h-[70vh] space-y-6 overflow-y-auto">
+            <TextInput
+              key={`workflow-name-${formKey}`}
+              label={t("Workflow Name")}
+              type="text"
+              value={workflowData.name || ""}
+              onChange={(value: string) => setWorkflowData({ ...workflowData, name: value })}
+              placeholder={t("e.g., create-order")}
+              requiredField={true}
+              disabled={!!editWorkflow}
+            />
+
+            <TextInput
+              label={t("Description")}
+              type="text"
+              value={workflowData.description || ""}
+              onChange={(value: string) => setWorkflowData({ ...workflowData, description: value })}
+              placeholder={t("Optional workflow description")}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectInput
+                label={t("Trigger")}
+                options={triggerOptions}
+                value={triggerOptions.find((option) => option.value === workflowData.trigger) || triggerOptions[0]}
+                onChange={(selected) =>
+                  setWorkflowData({ ...workflowData, trigger: String((selected as OptionType).value) })
+                }
+                isMultiple={false}
+              />
+              <SelectInput
+                label={t("Mode")}
+                options={modeOptions}
+                value={modeOptions.find((option) => option.value === workflowData.mode) || modeOptions[0]}
+                onChange={(selected) =>
+                  setWorkflowData({ ...workflowData, mode: String((selected as OptionType).value) })
+                }
+                isMultiple={false}
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextInput
+                label={t("Return Step")}
+                type="text"
+                value={workflowData.returnStep || ""}
+                onChange={(value: string) => setWorkflowData({ ...workflowData, returnStep: value })}
+                placeholder={t("Optional step id or name")}
+              />
+              <TextInput
+                label={t("Output Fields")}
+                type="text"
+                value={(workflowData.outputFields || []).join(", ")}
+                onChange={(value: string) =>
+                  setWorkflowData({
+                    ...workflowData,
+                    outputFields: value.split(",").map((field) => field.trim()).filter(Boolean),
+                  })
+                }
+                placeholder={t("fieldA, fieldB")}
+              />
+            </div>
+
+            <TextInput
+              label={t("Timeout (seconds)")}
+              type="number"
+              value={workflowData.timeoutSec?.toString() || ""}
+              onChange={(value: string) =>
+                setWorkflowData({ ...workflowData, timeoutSec: parseInt(value) || undefined })
+              }
+              placeholder="30"
+            />
+
+            {[
+              ["Active", "Enable or disable this workflow", "isActive"],
+              ["Require Authentication", "Users must be logged in to execute this workflow", "isAuthenticated"],
+              ["Require Authorization", "Users must have specific roles to execute this workflow", "isAuthorized"],
+              ["Stop On Error", "Stop workflow execution when a step fails", "stopOnError"],
+              ["Run In Transaction", "Run write workflow steps in a transaction", "runInTransaction"],
+            ].map(([label, description, key]) => (
+              <div key={key} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700">{t(label)}</label>
+                  <p className="text-xs text-gray-500">{t(description)}</p>
+                </div>
+                <CheckSwitch
+                  checked={Boolean((workflowData as any)[key])}
+                  onChange={() =>
+                    setWorkflowData({
+                      ...workflowData,
+                      [key]: !Boolean((workflowData as any)[key]),
+                      ...(key === "isAuthorized" && workflowData.isAuthorized
+                        ? { authorizeRole: [] }
+                        : {}),
+                    })
+                  }
+                />
+              </div>
+            ))}
+
+            {workflowData.isAuthorized && (
+              <SelectInput
+                label={t("Authorized Roles")}
+                options={roleOptions}
+                value={roleOptions.filter((option) =>
+                  workflowData.authorizeRole?.includes(String(option.value))
+                )}
+                onChange={(selected) =>
+                  setWorkflowData({
+                    ...workflowData,
+                    authorizeRole: selected
+                      ? (selected as OptionType[]).map((option) => String(option.value))
+                      : [],
+                  })
+                }
+                placeholder={t("Select roles...")}
+                isMultiple={true}
+              />
+            )}
+
+            {[
+              ["Payload", payloadJson, setPayloadJson, "payload"],
+              ["Conditions", conditionsJson, setConditionsJson, "conditions"],
+              ["Steps", stepsJson, setStepsJson, "steps"],
+            ].map(([label, value, setter, key]) => (
+              <div key={String(key)}>
+                <label className="mb-2 block text-sm font-medium text-gray-700">{t(String(label))}</label>
+                <textarea
+                  value={String(value)}
+                  onChange={(event) => (setter as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
+                  className={`h-40 w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    jsonErrors[String(key)] ? "border-red-300 bg-red-50" : "border-gray-300 bg-gray-50"
+                  }`}
+                />
+                {jsonErrors[String(key)] && (
+                  <p className="mt-1 text-xs text-red-600">{jsonErrors[String(key)]}</p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 flex justify-end space-x-3">
+            <GenericButton variant="outline" onClick={handleClose}>
+              {t("Cancel")}
+            </GenericButton>
+            <GenericButton onClick={handleSubmit}>
+              {editWorkflow ? t("Update Workflow") : t("Add Workflow")}
+            </GenericButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+- [ ] **Step 2: Run type check**
+
+Run:
+
+```bash
+yarn build
+```
+
+Expected: build either passes or reports only integration errors from `ContainerDetailsModal` not importing this component yet.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/panelComponents/Modals/AddWorkflowModal.tsx
+git commit -m "feat: add workflow editor modal"
+```
+
+---
+

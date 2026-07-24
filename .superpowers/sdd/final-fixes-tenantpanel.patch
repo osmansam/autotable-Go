@@ -1,0 +1,219 @@
+diff --git a/src/utils/api/container.ts b/src/utils/api/container.ts
+index d7f42d5..3b9a85c 100644
+--- a/src/utils/api/container.ts
++++ b/src/utils/api/container.ts
+@@ -1075,6 +1075,12 @@ export function useUpdateWorkflows() {
+     }) => {
+       updateMutation.mutate(params);
+     },
++    updateWorkflowsAsync: (params: {
++      id: string;
++      payload: UpdateWorkflowsPayload;
++    }) => {
++      return updateMutation.mutateAsync(params);
++    },
+     isUpdating: updateMutation.isPending,
+   };
+ }
+diff --git a/src/components/panelComponents/Modals/AddWorkflowModal.tsx b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+index f7b020f..9c36b9f 100644
+--- a/src/components/panelComponents/Modals/AddWorkflowModal.tsx
++++ b/src/components/panelComponents/Modals/AddWorkflowModal.tsx
+@@ -14,7 +14,7 @@ import TextInput from "../FormElements/TextInput";
+ interface AddWorkflowModalProps {
+   isOpen: boolean;
+   onClose: () => void;
+-  onAddWorkflow: (workflow: DynamicWorkflow) => void;
++  onAddWorkflow: (workflow: DynamicWorkflow) => boolean | Promise<boolean>;
+   editWorkflow?: DynamicWorkflow | null;
+ }
+ 
+@@ -112,7 +112,7 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+     }
+   };
+ 
+-  const handleSubmit = () => {
++  const handleSubmit = async () => {
+     if (!workflowData.name?.trim()) {
+       toast.error(t("Workflow name is required"));
+       return;
+@@ -153,9 +153,9 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+           }
+         : {}),
+       mode: workflowData.mode || "transactional",
+       isActive: workflowData.isActive ?? true,
+-      isAuthenticated: workflowData.isAuthenticated || false,
++      isAuthenticated: Boolean(workflowData.isAuthenticated || workflowData.isAuthorized),
+       isAuthorized: workflowData.isAuthorized || false,
+       authorizeRole: workflowData.isAuthorized ? workflowData.authorizeRole || [] : [],
+       description: workflowData.description?.trim() || undefined,
+@@ -168,8 +168,10 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+       runInTransaction: workflowData.runInTransaction || false,
+     };
+ 
+-    onAddWorkflow(workflow);
+-    handleClose();
++    const saved = await onAddWorkflow(workflow);
++    if (saved !== false) {
++      handleClose();
++    }
+   };
+ 
+   const handleClose = () => {
+@@ -309,15 +311,28 @@ export const AddWorkflowModal: React.FC<AddWorkflowModalProps> = ({
+                   checked={Boolean((workflowData as any)[key])}
+                   onChange={() =>
+                     setWorkflowData({
+                       ...workflowData,
+-                      [key]: !Boolean((workflowData as any)[key]),
+-                      ...(key === "isAuthorized" && workflowData.isAuthorized
+-                        ? { authorizeRole: [] }
+-                        : {}),
++                      ...(key === "isAuthenticated"
++                        ? {
++                            isAuthenticated: !workflowData.isAuthenticated,
++                            ...(!workflowData.isAuthenticated
++                              ? {}
++                              : { isAuthorized: false, authorizeRole: [] }),
++                          }
++                        : key === "isAuthorized"
++                          ? {
++                              isAuthenticated: !workflowData.isAuthorized
++                                ? true
++                                : workflowData.isAuthenticated,
++                              isAuthorized: !workflowData.isAuthorized,
++                              ...(workflowData.isAuthorized
++                                ? { authorizeRole: [] }
++                                : {}),
++                            }
++                          : { [key]: !Boolean((workflowData as any)[key]) }),
+                     })
+                   }
+                 />
+               </div>
+diff --git a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+index 2c261c7..5ff4307 100644
+--- a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
++++ b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+@@ -89,7 +89,7 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+   const { updatePipelines, isUpdating: isPipelinesUpdating } =
+     useUpdatePipelines();
+-  const { updateWorkflows, isUpdating: isWorkflowsUpdating } =
++  const { updateWorkflowsAsync, isUpdating: isWorkflowsUpdating } =
+     useUpdateWorkflows();
+   const { updateDynamicApis, isUpdating: isDynamicApisUpdating } =
+     useUpdateDynamicApis();
+@@ -427,20 +427,20 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+ 
+   const handleAddWorkflow = useCallback(
+-    (workflow: DynamicWorkflow) => {
+-      if (!container?.id) return;
++    async (workflow: DynamicWorkflow) => {
++      if (!container?.id) return false;
+ 
+       const currentWorkflows = container.workflows || [];
+       if (
+         !editingWorkflow &&
+         currentWorkflows.some((existing) => existing.name === workflow.name)
+       ) {
+         toast.error(t("A workflow with this name already exists"));
+-        return;
++        return false;
+       }
+ 
+       const updatedWorkflows = editingWorkflow
+         ? currentWorkflows.map((existing) =>
+             existing.name === editingWorkflow.name ? workflow : existing
+@@ -448,17 +448,22 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+         : [...currentWorkflows, workflow];
+ 
+-      updateWorkflows({
+-        id: container.id,
+-        payload: { Workflows: updatedWorkflows },
+-      });
+-      setIsAddWorkflowModalOpen(false);
+-      setEditingWorkflow(null);
++      try {
++        await updateWorkflowsAsync({
++          id: container.id,
++          payload: { Workflows: updatedWorkflows },
++        });
++        setIsAddWorkflowModalOpen(false);
++        setEditingWorkflow(null);
++        return true;
++      } catch {
++        return false;
++      }
+     },
+-    [container, editingWorkflow, t, updateWorkflows]
++    [container, editingWorkflow, t, updateWorkflowsAsync]
+   );
+diff --git a/src/components/panelComponents/Modals/AddPipelineModal.tsx b/src/components/panelComponents/Modals/AddPipelineModal.tsx
+index 9c1dccd..26feec9 100644
+--- a/src/components/panelComponents/Modals/AddPipelineModal.tsx
++++ b/src/components/panelComponents/Modals/AddPipelineModal.tsx
+@@ -106,7 +106,7 @@ export const AddPipelineModal: React.FC<AddPipelineModalProps> = ({
+       pipelineJson: pipelineData.pipelineJson!,
+-      isAuthenticated: pipelineData.isAuthenticated || false,
++      isAuthenticated: Boolean(pipelineData.isAuthenticated || pipelineData.isAuthorized),
+       isAuthorized: pipelineData.isAuthorized || false,
+       authorizeRole: pipelineData.authorizeRole || [],
+       isActive:
+@@ -285,7 +285,11 @@ export const AddPipelineModal: React.FC<AddPipelineModalProps> = ({
+                 onChange={() =>
+                   setPipelineData({
+                     ...pipelineData,
+                     isAuthenticated: !pipelineData.isAuthenticated,
++                    ...(!pipelineData.isAuthenticated
++                      ? {}
++                      : { isAuthorized: false, authorizeRole: [] }),
+                   })
+                 }
+                 checked={pipelineData.isAuthenticated || false}
+@@ -309,7 +313,12 @@ export const AddPipelineModal: React.FC<AddPipelineModalProps> = ({
+                 onChange={() =>
+                   setPipelineData({
+                     ...pipelineData,
+                     isAuthorized: !pipelineData.isAuthorized,
++                    isAuthenticated: !pipelineData.isAuthorized
++                      ? true
++                      : pipelineData.isAuthenticated,
++                    ...(pipelineData.isAuthorized ? { authorizeRole: [] } : {}),
+                   })
+                 }
+                 checked={pipelineData.isAuthorized || false}
+diff --git a/src/components/panelComponents/Modals/AddDynamicApiModal.tsx b/src/components/panelComponents/Modals/AddDynamicApiModal.tsx
+index 6095d99..11d0782 100644
+--- a/src/components/panelComponents/Modals/AddDynamicApiModal.tsx
++++ b/src/components/panelComponents/Modals/AddDynamicApiModal.tsx
+@@ -114,7 +114,7 @@ export const AddDynamicApiModal: React.FC<AddDynamicApiModalProps> = ({
+       name: apiData.name.trim(),
+       url: apiData.url.trim(),
+       method: apiData.method || "GET",
+       dependencies: normalizedDependencies,
+-      isAuthenticated: apiData.isAuthenticated || false,
++      isAuthenticated: Boolean(apiData.isAuthenticated || apiData.isAuthorized),
+       isAuthorized: apiData.isAuthorized || false,
+       authorizeRole: apiData.authorizeRole || [],
+       isActive: apiData.isActive ?? true,
+@@ -246,6 +246,10 @@ export const AddDynamicApiModal: React.FC<AddDynamicApiModalProps> = ({
+                   setApiData({
+                     ...apiData,
+                     isAuthenticated: !apiData.isAuthenticated,
++                    ...(!apiData.isAuthenticated
++                      ? {}
++                      : { isAuthorized: false, authorizeRole: [] }),
+                   })
+                 }
+                 checked={apiData.isAuthenticated || false}
+@@ -270,6 +274,11 @@ export const AddDynamicApiModal: React.FC<AddDynamicApiModalProps> = ({
+                   setApiData({
+                     ...apiData,
+                     isAuthorized: !apiData.isAuthorized,
++                    isAuthenticated: !apiData.isAuthorized
++                      ? true
++                      : apiData.isAuthenticated,
++                    ...(apiData.isAuthorized ? { authorizeRole: [] } : {}),
+                   })
+                 }
+                 checked={apiData.isAuthorized || false}

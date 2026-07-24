@@ -1,0 +1,40 @@
+diff --git a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+index 2c261c7..2c261c7 100644
+--- a/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
++++ b/src/components/panelComponents/Modals/ContainerDetailsModal.tsx
+@@ -588,6 +588,17 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                   <FiGitBranch size={12} />
+                   <span>{t("Pipelines")}</span>
+                 </button>
++                <button
++                  onClick={() => setViewMode("workflows")}
++                  className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
++                    viewMode === "workflows"
++                      ? "bg-white text-blue-600 shadow-sm"
++                      : "text-gray-600 hover:text-gray-900"
++                  }`}
++                >
++                  <FiPlayCircle size={12} />
++                  <span>{t("Workflows")}</span>
++                </button>
+                 <button
+                   onClick={() => setViewMode("apis")}
+                   className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
+@@ -601,17 +612,6 @@ export const ContainerDetailsModal: React.FC<ContainerDetailsModalProps> = ({
+                   <FiGlobe size={12} />
+                   <span>{t("Dynamic APIs")}</span>
+                 </button>
+-                <button
+-                  onClick={() => setViewMode("workflows")}
+-                  className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${
+-                    viewMode === "workflows"
+-                      ? "bg-white text-blue-600 shadow-sm"
+-                      : "text-gray-600 hover:text-gray-900"
+-                  }`}
+-                >
+-                  <FiPlayCircle size={12} />
+-                  <span>{t("Workflows")}</span>
+-                </button>
+                 <button
+                   onClick={() => setViewMode("permissions")}
+                   className={`flex items-center space-x-1 px-3 py-1 text-xs font-medium rounded ${

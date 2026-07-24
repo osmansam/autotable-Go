@@ -278,6 +278,37 @@ func TestTenantAuthenticateRejectsMissingOrInvalidToken(t *testing.T) {
 	}
 }
 
+func TestTenantAuthenticateAcceptsProjectAuthToken(t *testing.T) {
+	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "acme", "retailerv2")
+	if err != nil {
+		t.Fatalf("GenerateTokens() error = %v", err)
+	}
+
+	app := fiber.New()
+	app.Get("/", TenantAuthenticate, RequireProjectScope, func(c *fiber.Ctx) error {
+		if got := c.Locals("tenantUserID"); got != "user" {
+			t.Fatalf("tenantUserID = %v, want user", got)
+		}
+		if got := c.Locals("tenantID"); got != "tenant" {
+			t.Fatalf("tenantID = %v, want tenant", got)
+		}
+		if got := c.Locals("projectID"); got != "project" {
+			t.Fatalf("projectID = %v, want project", got)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
 func TestTenantAuthorizationMiddleware(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -358,6 +389,70 @@ func TestAuthenticate(t *testing.T) {
 			resp, err := app.Test(req)
 			if err != nil || resp.StatusCode != tt.wantStatus {
 				t.Fatalf("status = %v, error = %v; want %d", resp, err, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestConditionalAuthenticationRequiresTokenForAuthorizedResources(t *testing.T) {
+	tests := []struct {
+		name            string
+		isAuthenticated bool
+		isAuthorized    bool
+		isActive        bool
+		want            bool
+	}{
+		{name: "public active resource", isActive: true},
+		{name: "authenticated resource", isAuthenticated: true, isActive: true, want: true},
+		{name: "authorized resource", isAuthorized: true, isActive: true, want: true},
+		{name: "inactive resource", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := conditionalAuthenticationRequiresToken(tt.isAuthenticated, tt.isAuthorized, tt.isActive); got != tt.want {
+				t.Fatalf("conditionalAuthenticationRequiresToken() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUsesSourceSpecificAuthenticationForTableSource(t *testing.T) {
+	pipelineTests := []struct {
+		name       string
+		routeName  string
+		sourceType string
+		want       bool
+	}{
+		{name: "direct pipeline route", routeName: "GetPipeline", want: true},
+		{name: "pipeline table source", routeName: "GetTableSource", sourceType: "pipeline", want: true},
+		{name: "schema table source", routeName: "GetTableSource", sourceType: "schema"},
+		{name: "paginated route", routeName: "GetAllDynamicModelItemsWithPagination", sourceType: "pipeline"},
+	}
+
+	for _, tt := range pipelineTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesPipelineAuthentication(tt.routeName, tt.sourceType); got != tt.want {
+				t.Fatalf("usesPipelineAuthentication() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+	workflowTests := []struct {
+		name       string
+		routeName  string
+		sourceType string
+		want       bool
+	}{
+		{name: "direct workflow route", routeName: "ExecuteWorkflow", want: true},
+		{name: "workflow table source", routeName: "GetTableSource", sourceType: "workflow", want: true},
+		{name: "schema table source", routeName: "GetTableSource", sourceType: "schema"},
+	}
+
+	for _, tt := range workflowTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesWorkflowAuthentication(tt.routeName, tt.sourceType); got != tt.want {
+				t.Fatalf("usesWorkflowAuthentication() = %v, want %v", got, tt.want)
 			}
 		})
 	}

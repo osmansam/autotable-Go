@@ -1,0 +1,83 @@
+--- a/src/utils/api/container.test.ts
++++ b/src/utils/api/container.test.ts
+@@ -1,6 +1,48 @@
+-import { describe, expect, it } from "vitest";
+-import { normalizeDynamicApiModel, normalizeDynamicWorkflow } from "./container";
++import { beforeEach, describe, expect, it, vi } from "vitest";
+ 
++const mocks = vi.hoisted(() => ({
++  axiosPatch: vi.fn(),
++  mutationFn: undefined as undefined | ((variables: any) => Promise<unknown>),
++}));
++
++vi.mock("@tanstack/react-query", () => ({
++  useMutation: vi.fn((options) => {
++    mocks.mutationFn = options.mutationFn;
++    return { isPending: false, mutate: vi.fn() };
++  }),
++  useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
++}));
++
++vi.mock("react-i18next", () => ({
++  useTranslation: () => ({ t: (message: string) => message }),
++}));
++
++vi.mock("react-toastify", () => ({
++  toast: { error: vi.fn(), success: vi.fn() },
++}));
++
++vi.mock("../../hooks/useTenant", () => ({
++  useTenant: () => ({ currentTenant: { slug: "acme" } }),
++}));
++
++vi.mock("../../hooks/useCurrentProject", () => ({
++  useCurrentProject: () => ({ currentProject: { slug: "retail" } }),
++}));
++
++vi.mock("./axiosClient", () => ({
++  axiosClient: { patch: mocks.axiosPatch },
++}));
++
++vi.mock("./factory", () => ({
++  useGet: vi.fn(),
++}));
++
++import {
++  normalizeDynamicApiModel,
++  normalizeDynamicWorkflow,
++  useUpdateWorkflows,
++} from "./container";
++
+ describe("container API normalization", () => {
+   it("normalizes Dynamic API models returned with Go field names", () => {
+     expect(
+@@ -78,3 +120,29 @@
+     });
+   });
+ });
++
++describe("useUpdateWorkflows", () => {
++  beforeEach(() => {
++    mocks.axiosPatch.mockReset();
++    mocks.axiosPatch.mockResolvedValue({ data: {} });
++    mocks.mutationFn = undefined;
++  });
++
++  it("PATCHes the container workflow endpoint with the PascalCase payload", async () => {
++    useUpdateWorkflows();
++
++    const payload = {
++      Workflows: [{ name: "notify", isActive: true }],
++    };
++
++    expect(mocks.mutationFn).toBeTypeOf("function");
++    await mocks.mutationFn!({ id: "container-1", payload });
++
++    expect(mocks.axiosPatch).toHaveBeenCalledWith(
++      "/acme/retail/container/workflows/container-1",
++      {
++        Workflows: [{ name: "notify", isActive: true }],
++      }
++    );
++  });
++});

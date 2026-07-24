@@ -632,6 +632,9 @@ func (s *DynamicService) workflowFindRecords(ctx context.Context, step models.Dy
 		filter = bson.M{}
 	}
 	normalizeWorkflowFilterIDs(targetContainer, filter)
+	if workflowFindRecordsIsActiveFilter(step.Config, payload) {
+		filter = workflowAndFilter(filter, bson.M{"isActive": true})
+	}
 
 	searchKey := workflowFindRecordsSearchKey(step.Config, payload)
 	searchFields := workflowFindRecordsSearchFields(step.Config, payload)
@@ -2485,6 +2488,51 @@ func workflowFindRecordsSearchKey(config map[string]interface{}, payload workflo
 	}
 
 	return workflowResolvedStringConfig(config, "searchKey", payload)
+}
+
+func workflowFindRecordsIsActiveFilter(config map[string]interface{}, payload workflowExecutionPayload) bool {
+	if raw, ok := config["isActive"]; ok {
+		return workflowBoolValue(resolveWorkflowTemplates(raw, payload), false)
+	}
+	if raw, ok := config["activeOnly"]; ok {
+		return workflowBoolValue(resolveWorkflowTemplates(raw, payload), false)
+	}
+	if raw, ok := payload.Query["isActive"]; ok {
+		return workflowBoolValue(raw, false)
+	}
+	return false
+}
+
+func workflowBoolValue(value interface{}, fallback bool) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		normalized := strings.TrimSpace(typed)
+		if normalized == "" || normalized == "<nil>" {
+			return fallback
+		}
+		parsed, err := strconv.ParseBool(normalized)
+		if err == nil {
+			return parsed
+		}
+	case int:
+		return typed != 0
+	case int32:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case float64:
+		return typed != 0
+	}
+	return fallback
+}
+
+func workflowAndFilter(existing bson.M, additional bson.M) bson.M {
+	if len(existing) == 0 {
+		return additional
+	}
+	return bson.M{"$and": []bson.M{existing, additional}}
 }
 
 func workflowMapConfig(value interface{}) (map[string]interface{}, bool) {

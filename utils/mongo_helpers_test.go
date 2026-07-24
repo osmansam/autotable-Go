@@ -163,15 +163,29 @@ func TestMongoBackedUtilityHelpers(t *testing.T) {
 		mt.AddMockResponses(
 			mtest.CreateCursorResponse(0, namespace(mt.Coll), mtest.FirstBatch, bson.D{
 				{Key: "key", Value: "audit_logs"},
-				{Key: "auditLogs", Value: bson.D{{Key: "isAuthorized", Value: true}, {Key: "authorizeRole", Value: bson.A{"admin"}}}},
+				{Key: "auditLogs", Value: bson.D{{Key: "isAuthorized", Value: true}, {Key: "authorizeRole", Value: bson.A{"role-id-1"}}}},
 			}),
 			mtest.CreateCursorResponse(0, namespace(mt.Coll), mtest.FirstBatch),
 		)
-		if got, err := GetAuditLogsConfig(); err != nil || !got.IsAuthorized || !reflect.DeepEqual(got.AuthorizeRole, []string{"admin"}) {
+		if got, err := GetAuditLogsConfig(); err != nil || !got.IsAuthorized || !reflect.DeepEqual(got.AuthorizeRole, []string{"role-id-1"}) {
 			t.Fatalf("GetAuditLogsConfig() = %#v, %v", got, err)
 		}
 		if got, err := GetAuditLogsConfig(); err != nil || got.IsAuthorized || len(got.AuthorizeRole) != 0 {
 			t.Fatalf("GetAuditLogsConfig(default) = %#v, %v", got, err)
+		}
+	})
+
+	mt.Run("updates audit logs config", func(mt *mtest.T) {
+		restore := useMockCollections(mt.Coll)
+		defer restore()
+		mt.AddMockResponses(mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}, bson.E{Key: "nModified", Value: 1}))
+		config := models.AuditLogsConfig{IsAuthorized: true, AuthorizeRole: []string{"role-id-1", "role-id-2"}}
+		got, err := UpdateAuditLogsConfig(context.Background(), config)
+		if err != nil {
+			t.Fatalf("UpdateAuditLogsConfig() error = %v", err)
+		}
+		if !got.IsAuthorized || !reflect.DeepEqual(got.AuthorizeRole, []string{"role-id-1", "role-id-2"}) {
+			t.Fatalf("UpdateAuditLogsConfig() = %#v", got)
 		}
 	})
 

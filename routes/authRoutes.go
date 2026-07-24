@@ -8,6 +8,7 @@ import (
 
 func AuthRoutes(baseUrl string, app *fiber.App) {
 	authGroup := app.Group(baseUrl)
+	authGroup.Get("/login-config", middlewares.PublicRateLimit(), controllers.GetProjectLoginConfig)
 	authGroup.Post("/register", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.Register)
 	authGroup.Post("/login", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.Login)
 	// authGroup.Post("/refresh", controllers.Refresh)

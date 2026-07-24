@@ -68,6 +68,57 @@ func TestSanitizeFieldName(t *testing.T) {
 	}
 }
 
+func TestResolveAuthRoleNameKeepsRoleObjectID(t *testing.T) {
+	roleID := primitive.NewObjectID()
+	if got := resolveAuthRoleName(context.Background(), "tenant", "project", roleID); got != roleID.Hex() {
+		t.Fatalf("resolveAuthRoleName(ObjectID) = %q, want %q", got, roleID.Hex())
+	}
+}
+
+func TestAuditIdentityFieldName(t *testing.T) {
+	container := models.ContainerModel{Fields: []models.Field{
+		{Name: "email", Type: "email"},
+		{Name: "username", Type: "string", IsAuditIdentity: true},
+	}}
+	if got := auditIdentityFieldName(container); got != "username" {
+		t.Fatalf("auditIdentityFieldName(selected) = %q, want username", got)
+	}
+
+	container = models.ContainerModel{Fields: []models.Field{
+		{Name: "emailAddress", Type: "email"},
+		{Name: "username", Type: "string"},
+	}}
+	if got := auditIdentityFieldName(container); got != "emailAddress" {
+		t.Fatalf("auditIdentityFieldName(email fallback) = %q, want emailAddress", got)
+	}
+
+	container = models.ContainerModel{Fields: []models.Field{{Name: "username", Type: "string"}}}
+	if got := auditIdentityFieldName(container); got != "username" {
+		t.Fatalf("auditIdentityFieldName(username fallback) = %q, want username", got)
+	}
+
+	container = models.ContainerModel{Fields: []models.Field{
+		{Name: "password", Type: "string", IsHashed: true, IsAuditIdentity: true},
+		{Name: "username", Type: "string"},
+	}}
+	if got := auditIdentityFieldName(container); got != "username" {
+		t.Fatalf("auditIdentityFieldName(hashed selected) = %q, want username", got)
+	}
+}
+
+func TestAuditIdentityValue(t *testing.T) {
+	user := map[string]interface{}{"username": "ada", "count": 3}
+	if got := auditIdentityValue(user, "username"); got != "ada" {
+		t.Fatalf("auditIdentityValue(string) = %q, want ada", got)
+	}
+	if got := auditIdentityValue(user, "count"); got != "3" {
+		t.Fatalf("auditIdentityValue(number) = %q, want 3", got)
+	}
+	if got := auditIdentityValue(user, "missing"); got != "" {
+		t.Fatalf("auditIdentityValue(missing) = %q, want empty", got)
+	}
+}
+
 func TestAnalyzeExcelData(t *testing.T) {
 	got, err := analyzeExcelData(
 		[]string{"Name", "", "Age", "Enabled"},
@@ -229,6 +280,73 @@ func TestApplyContainerAuthFlagDefaults(t *testing.T) {
 	}
 	if !updated.IsGoogleLoginActive {
 		t.Fatal("IsGoogleLoginActive = false, want preserved true")
+	}
+}
+
+func TestBuildProjectLoginConfigLimitsAuthContainerMetadata(t *testing.T) {
+	config := buildProjectLoginConfig(models.ContainerModel{
+		SchemaName:          "users",
+		IsAuthContainer:     true,
+		IsRegisterActive:    true,
+		IsGoogleLoginActive: true,
+		Fields: []models.Field{
+			{Name: "_id", Type: "objectID"},
+			{Name: "email", Type: "string", IsLoginCredential: true, Frontend: &models.Frontend{DisplayName: "Email"}},
+			{Name: "password", Type: "string", IsLoginCredential: true, IsHashed: true},
+			{Name: "role", Type: "objectId", ObjectSchemaName: "role"},
+			{Name: "createdAt", Type: "date"},
+		},
+		Pipelines: []models.PipelineStage{{Name: "private-pipeline"}},
+		Routes: models.Routes{
+			GetAllDynamicModelItems: models.RouteSpec{IsAuthenticated: true},
+		},
+	})
+
+	if config.SchemaName != "users" || !config.IsRegisterActive || !config.IsGoogleLoginActive {
+		t.Fatalf("login config flags = %#v", config)
+	}
+	if !reflect.DeepEqual(config.LoginFields, []projectLoginConfigField{
+		{Name: "email", Type: "string", IsLoginCredential: true, DisplayName: "Email"},
+		{Name: "password", Type: "string", IsHashed: true, IsLoginCredential: true},
+	}) {
+		t.Fatalf("LoginFields = %#v", config.LoginFields)
+	}
+	if !reflect.DeepEqual(config.RegisterFields, []projectLoginConfigField{
+		{Name: "email", Type: "string", IsLoginCredential: true, DisplayName: "Email"},
+		{Name: "password", Type: "string", IsHashed: true, IsLoginCredential: true},
+		{Name: "role", Type: "objectId"},
+	}) {
+		t.Fatalf("RegisterFields = %#v", config.RegisterFields)
+	}
+}
+
+func TestPageRequestAuthHelpersReadTenantAuthenticateLocals(t *testing.T) {
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		c.Locals("tenantUserID", "user-1")
+		c.Locals("roles", []string{"viewer", "manager"})
+
+		if got := getPageRequestUserID(c); got != "user-1" {
+			t.Fatalf("getPageRequestUserID() = %q, want user-1", got)
+		}
+		if got := getPageRequestRoles(c); !reflect.DeepEqual(got, []string{"viewer", "manager"}) {
+			t.Fatalf("getPageRequestRoles() = %#v", got)
+		}
+		if !pageRequestHasAllowedRole(getPageRequestRoles(c), []string{"manager"}) {
+			t.Fatal("pageRequestHasAllowedRole() = false, want true")
+		}
+		if pageRequestHasAllowedRole(getPageRequestRoles(c), []string{"admin"}) {
+			t.Fatal("pageRequestHasAllowedRole() = true, want false")
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
 }
 
