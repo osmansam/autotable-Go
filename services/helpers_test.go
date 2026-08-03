@@ -1836,6 +1836,48 @@ func TestAdditionalServiceErrorMappings(t *testing.T) {
 	}
 }
 
+func TestValidationServiceErrorUsesSpecificDisplayName(t *testing.T) {
+	container := &models.ContainerModel{Fields: []models.Field{{
+		Name: "email",
+		Frontend: &models.Frontend{
+			DisplayName: "Email Address",
+		},
+	}}}
+
+	got := validationServiceError(container, errors.New("Field email should be a valid email address"))
+
+	if got.Status != http.StatusBadRequest {
+		t.Fatalf("Status = %d, want %d", got.Status, http.StatusBadRequest)
+	}
+	if got.Message != "Email Address should be a valid email address" {
+		t.Fatalf("Message = %q, want %q", got.Message, "Email Address should be a valid email address")
+	}
+}
+
+func TestValidationServiceErrorPreservesCustomMessage(t *testing.T) {
+	got := validationServiceError(nil, errors.New("Please enter a company email address"))
+
+	if got.Status != http.StatusBadRequest {
+		t.Fatalf("Status = %d, want %d", got.Status, http.StatusBadRequest)
+	}
+	if got.Message != "Please enter a company email address" {
+		t.Fatalf("Message = %q, want custom validation message", got.Message)
+	}
+}
+
+func TestValidationServiceErrorDoesNotReplaceFieldNamePrefixes(t *testing.T) {
+	container := &models.ContainerModel{Fields: []models.Field{
+		{Name: "email", Frontend: &models.Frontend{DisplayName: "Email"}},
+		{Name: "emailAddress", Frontend: &models.Frontend{DisplayName: "Work Email"}},
+	}}
+
+	got := validationServiceError(container, errors.New("Field emailAddress is required but not provided"))
+
+	if got.Message != "Work Email is required but not provided" {
+		t.Fatalf("Message = %q, want exact field display name", got.Message)
+	}
+}
+
 func TestAdditionalExportFormatting(t *testing.T) {
 	if got := formatExportArray([]interface{}{"a", 2}); got != "a,2" {
 		t.Fatalf("formatExportArray(interface) = %#v", got)
