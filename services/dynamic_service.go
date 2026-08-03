@@ -364,7 +364,7 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 	if err != nil {
 		log.Printf("Failed to parse create request for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
+			Status:  http.StatusBadRequest,
 			Message: parseCreateErrorMessage(err),
 			Err:     err,
 		}
@@ -387,19 +387,16 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 		if err := validators.PrepareCreateItem(input.TenantID, input.ProjectID, container, itemMap); err != nil {
 			log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
-			status := http.StatusInternalServerError
-			message := "Validation failed."
 			var equationErr *validators.EquationFieldError
 			if errors.As(err, &equationErr) {
-				status = http.StatusBadRequest
-				message = fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName)
+				return &ServiceError{
+					Status:  http.StatusBadRequest,
+					Message: fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName),
+					Data:    err.Error(),
+					Err:     err,
+				}
 			}
-			return &ServiceError{
-				Status:  status,
-				Message: message,
-				Data:    err.Error(),
-				Err:     err,
-			}
+			return validationServiceError(container, err)
 		}
 		if err := s.applyAutoIncrementFields(txCtx, input.Schema, container, itemMap); err != nil {
 			log.Printf("Failed to generate autoIncrement id for schema: %s, error: %v", input.Schema, err)
@@ -579,7 +576,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 	if err != nil {
 		log.Printf("Failed to parse update request for schema: %s, error: %v", input.Schema, err)
 		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
+			Status:  http.StatusBadRequest,
 			Message: parseUpdateErrorMessage(err),
 			Err:     err,
 		}
@@ -587,11 +584,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 
 	if err := validators.PrepareUpdateFields(container, updatedItemMap); err != nil {
 		log.Printf("Validation failed for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Validation failed",
-			Err:     err,
-		}
+		return nil, validationServiceError(container, err)
 	}
 
 	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID)
@@ -611,19 +604,16 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 
 	if err := validators.PrepareMergedUpdateItem(input.TenantID, input.ProjectID, container, existingItem, updatedItemMap); err != nil {
 		log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
-		status := http.StatusInternalServerError
-		message := "Validation failed"
 		var equationErr *validators.EquationFieldError
 		if errors.As(err, &equationErr) {
-			status = http.StatusBadRequest
-			message = fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName)
+			return nil, &ServiceError{
+				Status:  http.StatusBadRequest,
+				Message: fmt.Sprintf("Error evaluating equation for field %s", equationErr.FieldName),
+				Data:    err.Error(),
+				Err:     err,
+			}
 		}
-		return nil, &ServiceError{
-			Status:  status,
-			Message: message,
-			Data:    err.Error(),
-			Err:     err,
-		}
+		return nil, validationServiceError(container, err)
 	}
 
 	var updateResult *mongo.UpdateResult
@@ -2580,6 +2570,37 @@ func duplicateKeyServiceError(container *models.ContainerModel, err error) *Serv
 
 	return &ServiceError{
 		Status:  http.StatusConflict,
+		Message: message,
+		Data:    nil,
+		Err:     err,
+	}
+}
+
+func validationServiceError(container *models.ContainerModel, err error) *ServiceError {
+	message := "Validation failed"
+	if err != nil && strings.TrimSpace(err.Error()) != "" {
+		message = err.Error()
+	}
+
+	if container != nil {
+		const fieldPrefix = "Field "
+		if remainder := strings.TrimPrefix(message, fieldPrefix); remainder != message {
+			fieldName := remainder
+			if boundary := strings.IndexAny(remainder, " :"); boundary >= 0 {
+				fieldName = remainder[:boundary]
+			}
+			for _, field := range container.Fields {
+				if field.Name != fieldName || field.Frontend == nil || strings.TrimSpace(field.Frontend.DisplayName) == "" {
+					continue
+				}
+				message = field.Frontend.DisplayName + remainder[len(fieldName):]
+				break
+			}
+		}
+	}
+
+	return &ServiceError{
+		Status:  http.StatusBadRequest,
 		Message: message,
 		Data:    nil,
 		Err:     err,
