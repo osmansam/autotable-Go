@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/google/uuid"
+	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -19,8 +21,13 @@ type TenantTokenClaims struct {
 	ProjectID string   `json:"project_id,omitempty"` // Optional, for project-scoped operations
 	Roles     []string `json:"roles"`                // Can be tenant or project roles
 	RoleScope string   `json:"role_scope"`           // "tenant" or "project"
+	TokenType string   `json:"token_type"`
+	Scope     string   `json:"scope"`
+	FamilyID  string   `json:"family_id"`
 	jwt.StandardClaims
 }
+
+const TenantTokenAudience = "autoapi-tenant"
 
 // TenantTokenDetails holds both access and refresh tokens for tenant users
 type TenantTokenDetails struct {
@@ -34,14 +41,22 @@ type TenantTokenDetails struct {
 // For tenant-level access, pass empty string for projectID
 // For project-level access, pass the projectID
 func GenerateTenantTokens(userID, email, tenantID, projectID string, roles []string, roleScope string) (*TenantTokenDetails, error) {
+	return GenerateTenantTokensForFamily(userID, email, tenantID, projectID, roles, roleScope, uuid.NewString())
+}
+
+func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, roles []string, roleScope, familyID string) (*TenantTokenDetails, error) {
 	// Validate tenant JWT secret
 	if len(tenantJwtSecret) == 0 {
 		return nil, errors.New("TENANT_JWT_SECRET not set in environment")
 	}
 
 	td := &TenantTokenDetails{}
-	td.ATExpires = time.Now().Add(time.Hour * 24).Unix()       // 24 hours
-	td.RTExpires = time.Now().Add(time.Hour * 24 * 7).Unix()   // 7 days
+	td.ATExpires = time.Now().Add(time.Hour * 24).Unix()     // 24 hours
+	td.RTExpires = time.Now().Add(time.Hour * 24 * 7).Unix() // 7 days
+	scope := TokenScopeTenant
+	if roleScope == string(models.RoleScopeProject) {
+		scope = TokenScopeProject
+	}
 
 	// Access Token
 	atClaims := TenantTokenClaims{
@@ -51,8 +66,13 @@ func GenerateTenantTokens(userID, email, tenantID, projectID string, roles []str
 		ProjectID: projectID,
 		Roles:     roles,
 		RoleScope: roleScope,
+		TokenType: TokenTypeAccess,
+		Scope:     scope,
+		FamilyID:  familyID,
 		StandardClaims: jwt.StandardClaims{
+			Audience:  TenantTokenAudience,
 			ExpiresAt: td.ATExpires,
+			Id:        uuid.NewString(),
 			IssuedAt:  time.Now().Unix(),
 		},
 	}
@@ -72,8 +92,13 @@ func GenerateTenantTokens(userID, email, tenantID, projectID string, roles []str
 		ProjectID: projectID,
 		Roles:     roles,
 		RoleScope: roleScope,
+		TokenType: TokenTypeRefresh,
+		Scope:     scope,
+		FamilyID:  familyID,
 		StandardClaims: jwt.StandardClaims{
+			Audience:  TenantTokenAudience,
 			ExpiresAt: td.RTExpires,
+			Id:        uuid.NewString(),
 			IssuedAt:  time.Now().Unix(),
 		},
 	}
@@ -90,6 +115,14 @@ func GenerateTenantTokens(userID, email, tenantID, projectID string, roles []str
 
 // ParseTenantToken validates and parses a tenant user JWT token
 func ParseTenantToken(tokenString string) (*TenantTokenClaims, error) {
+	return parseTenantToken(tokenString, TokenTypeAccess)
+}
+
+func ParseTenantRefreshToken(tokenString string) (*TenantTokenClaims, error) {
+	return parseTenantToken(tokenString, TokenTypeRefresh)
+}
+
+func parseTenantToken(tokenString, expectedType string) (*TenantTokenClaims, error) {
 	if len(tenantJwtSecret) == 0 {
 		return nil, errors.New("TENANT_JWT_SECRET not set in environment")
 	}
@@ -109,6 +142,18 @@ func ParseTenantToken(tokenString string) (*TenantTokenClaims, error) {
 	claims, ok := token.Claims.(*TenantTokenClaims)
 	if !ok || !token.Valid {
 		return nil, errors.New("invalid token")
+	}
+	if claims.TokenType != expectedType {
+		return nil, errors.New("invalid token type")
+	}
+	if claims.Scope != TokenScopeTenant && claims.Scope != TokenScopeProject {
+		return nil, errors.New("invalid token scope")
+	}
+	if claims.Audience != TenantTokenAudience {
+		return nil, errors.New("invalid token audience")
+	}
+	if claims.Id == "" || claims.FamilyID == "" {
+		return nil, errors.New("token identifiers are missing")
 	}
 
 	return claims, nil

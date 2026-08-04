@@ -9,7 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -56,11 +58,6 @@ type TenantLoginInput struct {
 // ProjectSwitchInput represents switching to a project context
 type ProjectSwitchInput struct {
 	ProjectID string `json:"projectId" validate:"required"`
-}
-
-// TenantRefreshInput represents the refresh token payload
-type TenantRefreshInput struct {
-	RefreshToken string `json:"refreshToken" validate:"required"`
 }
 
 // TenantRegister creates a new user and tenant (organization)
@@ -210,16 +207,14 @@ func TenantRegister(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
+	if err := startTenantAuthSession(ctx, tokens); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status: http.StatusInternalServerError, Message: "Failed to create login session",
+		})
+	}
 
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "User and tenant created successfully",
-		Data: &fiber.Map{
-			"user":         newUser,
-			"tenant":       newTenant,
-			"accessToken":  tokens.AccessToken,
-			"refreshToken": tokens.RefreshToken,
-		},
+	return sendScopedAuthResponse(c, http.StatusCreated, "User and tenant created successfully", utils.TokenScopeTenant, tenantCookieTokens(tokens), &fiber.Map{
+		"user": newUser, "tenant": newTenant, "roles": []string{models.TenantRoleOwner}, "allTenants": []models.Tenant{newTenant},
 	})
 }
 
@@ -370,6 +365,11 @@ func TenantLogin(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
+	if err := startTenantAuthSession(ctx, tokens); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status: http.StatusInternalServerError, Message: "Failed to create login session",
+		})
+	}
 
 	// Get all tenants the user belongs to
 	var tenantIDs []primitive.ObjectID
@@ -384,21 +384,15 @@ func TenantLogin(c *fiber.Ctx) error {
 		tenantCursor.Close(ctx)
 	}
 
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Login successful",
-		Data: &fiber.Map{
-			"accessToken":  tokens.AccessToken,
-			"refreshToken": tokens.RefreshToken,
-			"user": fiber.Map{
-				"id":    userID.Hex(),
-				"email": email,
-				"name":  userDoc["name"],
-			},
-			"tenant":     tenant,
-			"roles":      selectedMembership.Roles,
-			"allTenants": userTenants,
+	return sendScopedAuthResponse(c, http.StatusOK, "Login successful", utils.TokenScopeTenant, tenantCookieTokens(tokens), &fiber.Map{
+		"user": fiber.Map{
+			"id":    userID.Hex(),
+			"email": email,
+			"name":  userDoc["name"],
 		},
+		"tenant":     tenant,
+		"roles":      selectedMembership.Roles,
+		"allTenants": userTenants,
 	})
 }
 
@@ -487,76 +481,39 @@ func SwitchToProject(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"error": err.Error()},
 		})
 	}
-
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Switched to project context",
-		Data: &fiber.Map{
-			"accessToken":  tokens.AccessToken,
-			"refreshToken": tokens.RefreshToken,
-			"project":      project,
-			"roles":        projectMembership.Roles,
-		},
-	})
+	if err := startTenantAuthSession(ctx, tokens); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to create project session"})
+	}
+	return sendProjectAuthResponse(c, http.StatusOK, "Switched to project context", project.TenantSlug, project.Slug, tenantCookieTokens(tokens), &fiber.Map{"project": project, "roles": projectMembership.Roles})
 }
 
 // TenantRefreshToken refreshes the access token using a valid refresh token
 func TenantRefreshToken(c *fiber.Ctx) error {
-	var input TenantRefreshInput
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Invalid request body",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
+	if err := requireAuthMutationOrigin(c); err != nil {
+		return err
 	}
-
-	// Parse and validate refresh token
-	claims, err := utils.ParseTenantToken(input.RefreshToken)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, tokens, err := rotateTenantCookieSession(c, ctx)
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(responses.GeneralResponse{
-			Status:  http.StatusUnauthorized,
-			Message: "Invalid refresh token",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
+		utils.ClearAuthCookies(c, utils.TokenScopeTenant)
+		return refreshErrorResponse(c, err)
 	}
-
-	// Generate new tokens
-	tokens, err := utils.GenerateTenantTokens(
-		claims.UserID,
-		claims.Email,
-		claims.TenantID,
-		claims.ProjectID,
-		claims.Roles,
-		claims.RoleScope,
-	)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to generate tokens",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
-	}
-
-	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Token refreshed successfully",
-		Data: &fiber.Map{
-			"accessToken":  tokens.AccessToken,
-			"refreshToken": tokens.RefreshToken,
-		},
-	})
+	return sendScopedAuthResponse(c, http.StatusOK, "Session refreshed successfully", utils.TokenScopeTenant, tenantCookieTokens(tokens), nil)
 }
 
 // TenantLogout logs out the user (client should discard tokens)
 func TenantLogout(c *fiber.Ctx) error {
+	if err := requireAuthMutationOrigin(c); err != nil {
+		return err
+	}
 	// In a stateless JWT system, logout is handled client-side by removing tokens
 	// Here we can log the logout event for audit purposes
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	userID := c.Locals("tenantUserID").(string)
-	email := c.Locals("email").(string)
+	userID, _ := c.Locals("tenantUserID").(string)
+	email, _ := c.Locals("email").(string)
 
 	userOID, _ := primitive.ObjectIDFromHex(userID)
 
@@ -572,6 +529,13 @@ func TenantLogout(c *fiber.Ctx) error {
 	if err := utils.LogLogout(ctx, "", "", auditUser, ip, userAgent); err != nil {
 		log.Printf("Failed to log logout: %v", err)
 	}
+	if token := c.Cookies(utils.AuthCookieName(utils.TokenScopeTenant, "refresh")); token != "" {
+		if claims, err := utils.ParseTenantRefreshToken(token); err == nil {
+			_ = services.NewAuthSessionService(repositories.NewAuthSessionRepository()).RevokeFamily(ctx, claims.FamilyID)
+		}
+	}
+	utils.ClearAuthCookies(c, utils.TokenScopeTenant)
+	setAuthNoStoreHeaders(c)
 
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,

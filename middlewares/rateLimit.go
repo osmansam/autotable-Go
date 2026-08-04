@@ -13,18 +13,18 @@ import (
 )
 
 const (
-	GeneralLimitPerMinute = 100
-	PublicLimitPerMinute  = 30
-	AuthLimitPerMinute    = 5
-	SearchLimitPerMinute  = 60
-	WriteLimitPerMinute   = 30
-	BulkLimitPerMinute    = 5
-	ExportLimitPerMinute  = 2
-	UploadLimitPerMinute  = 10
-	ExecuteLimitPerMinute = 5
+	GeneralLimitPerMinute = 400
+	PublicLimitPerMinute  = 120
+	AuthLimitPerMinute    = 20
+	SearchLimitPerMinute  = 240
+	WriteLimitPerMinute   = 120
+	BulkLimitPerMinute    = 20
+	ExportLimitPerMinute  = 8
+	UploadLimitPerMinute  = 40
+	ExecuteLimitPerMinute = 20
 
-	AuthLimitPerHour   = 20
-	ExportLimitPerHour = 10
+	AuthLimitPerHour   = 80
+	ExportLimitPerHour = 40
 )
 
 type RateLimitSubject string

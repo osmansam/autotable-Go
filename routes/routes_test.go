@@ -154,6 +154,11 @@ func testProjectJWT(t *testing.T, role string) string {
 		"project_id":   "project-id",
 		"tenant_slug":  "tenant",
 		"project_slug": "project",
+		"token_type":   "access",
+		"scope":        "project",
+		"aud":          "autoapi-project",
+		"jti":          "test-jti",
+		"family_id":    "test-family",
 		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte{})

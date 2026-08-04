@@ -72,6 +72,12 @@ func TestCorsFromConfig(t *testing.T) {
 	if err != nil || resp.Header.Get("Access-Control-Allow-Origin") != "https://example.com" {
 		t.Fatalf("CORS response = %#v, %v", resp.Header, err)
 	}
+	if resp.Header.Get("Access-Control-Allow-Credentials") != "true" {
+		t.Fatalf("Allow-Credentials = %q", resp.Header.Get("Access-Control-Allow-Credentials"))
+	}
+	if resp.Header.Get("Vary") != "Origin" {
+		t.Fatalf("Vary = %q, want Origin", resp.Header.Get("Vary"))
+	}
 }
 
 func TestIsProduction(t *testing.T) {

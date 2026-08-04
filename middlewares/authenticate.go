@@ -15,19 +15,15 @@ import (
 )
 
 func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isActive bool) error {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing Authorization header"})
+	credential, err := ResolveProjectCredential(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing or invalid authentication credential"})
+	}
+	if credential.Source == AuthSourceCookie && !isSafeMethod(c.Method()) && !IsTrustedOrigin(c.Get(fiber.HeaderOrigin), configs.GetAppConfig().CorsWhitelist) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Untrusted request origin"})
 	}
 
-	var token string
-	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		token = authHeader[7:]
-	} else {
-		token = authHeader // fallback if no "Bearer " prefix
-	}
-
-	userID, role, tokenTenantID, tokenProjectID, _, _, err := utils.ParseToken(token)
+	userID, role, tokenTenantID, tokenProjectID, _, _, err := utils.ParseToken(credential.Token)
 	if err != nil {
 		log.Printf("Error parsing token: %v", err)
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
@@ -51,7 +47,7 @@ func Authenticate(c *fiber.Ctx, isAuthorized bool, authorizeRole []string, isAct
 
 	c.Locals("userID", userID)
 	c.Locals("userRole", role)
-	c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
+	c.Locals("userDisplayName", utils.ParseTokenDisplayName(credential.Token))
 	c.Locals("tenantID", tokenTenantID)
 	c.Locals("projectID", tokenProjectID)
 
@@ -92,15 +88,10 @@ func ConditionalAuthenticationForPages(c *fiber.Ctx) error {
 
 	// Optional Authentication: If token is present, try to parse it to identify the user/role
 	// This allows pages with IsAuthenticated/IsAuthorized to be filtered properly
-	authHeader := c.Get("Authorization")
+	credential, credentialErr := ResolveProjectCredential(c)
 
-	if authHeader != "" {
-		var token string
-		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-			token = authHeader[7:]
-		} else {
-			token = authHeader
-		}
+	if credentialErr == nil {
+		token := credential.Token
 
 		userID, role, tokenTenantID, tokenProjectID, _, _, err := utils.ParseToken(token)
 		if err == nil {

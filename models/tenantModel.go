@@ -88,8 +88,27 @@ type Project struct {
 	TemplateScope        string             `bson:"templateScope,omitempty" json:"templateScope,omitempty"`
 	TemplateIncludeItems bool               `bson:"templateIncludeItems,omitempty" json:"templateIncludeItems,omitempty"`
 	TemplateDescription  string             `bson:"templateDescription,omitempty" json:"templateDescription,omitempty"`
+	SourceLocale         string             `bson:"sourceLocale,omitempty" json:"sourceLocale,omitempty"`
+	DefaultLocale        string             `bson:"defaultLocale,omitempty" json:"defaultLocale,omitempty"`
+	EnabledLocales       []string           `bson:"enabledLocales,omitempty" json:"enabledLocales,omitempty"`
+	LocalizationVersion  int64              `bson:"localizationVersion,omitempty" json:"localizationVersion,omitempty"`
 	CreatedAt            time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt            time.Time          `bson:"updatedAt" json:"updatedAt"`
+}
+
+func (p *Project) ApplyLocaleDefaults() {
+	if p.SourceLocale == "" {
+		p.SourceLocale = "en"
+	}
+	if p.DefaultLocale == "" {
+		p.DefaultLocale = p.SourceLocale
+	}
+	if len(p.EnabledLocales) == 0 {
+		p.EnabledLocales = []string{p.SourceLocale}
+	}
+	if p.LocalizationVersion == 0 {
+		p.LocalizationVersion = 1
+	}
 }
 
 /*

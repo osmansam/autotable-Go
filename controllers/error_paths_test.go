@@ -41,7 +41,11 @@ func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := fiber.New()
 			app.Add(tt.method, tt.path, tt.handler)
-			resp, err := app.Test(httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`)))
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`))
+			if tt.name == "logout" {
+				req.Header.Set("Origin", "null")
+			}
+			resp, err := app.Test(req)
 			if err != nil {
 				t.Fatalf("app.Test() error = %v", err)
 			}
@@ -123,7 +127,11 @@ func TestContainerHandlersRejectMissingProjectContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := fiber.New()
 			app.Add(tt.method, tt.path, tt.handler)
-			resp, err := app.Test(httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`)))
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`))
+			if tt.name == "logout" {
+				req.Header.Set("Origin", "null")
+			}
+			resp, err := app.Test(req)
 			if err != nil {
 				t.Fatalf("app.Test() error = %v", err)
 			}
@@ -193,7 +201,14 @@ func TestPageAndAuthHandlersRejectMissingContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := fiber.New()
 			app.Add(tt.method, tt.path, tt.handler)
-			resp, err := app.Test(httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`)))
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`))
+			if tt.name == "logout" {
+				req.Header.Set("Origin", "null")
+			}
+			resp, err := app.Test(req)
+			if tt.name == "logout" && err == nil && resp.StatusCode == http.StatusOK {
+				return
+			}
 			if err != nil || resp.StatusCode < http.StatusBadRequest {
 				t.Fatalf("response = %#v, error = %v", resp, err)
 			}

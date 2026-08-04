@@ -2,9 +2,9 @@ package middlewares
 
 import (
 	"log"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
 )
@@ -12,20 +12,16 @@ import (
 // TenantAuthenticate middleware validates tenant user JWT tokens
 // This is used for container and page routes (NOT for dynamic routes)
 func TenantAuthenticate(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
+	credential, credentialErr := ResolveTenantCredential(c)
+	if credentialErr != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Missing Authorization header",
+			"error": "Missing or invalid authentication credential",
 		})
 	}
-
-	// Extract token from "Bearer <token>"
-	var token string
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		token = authHeader[7:]
-	} else {
-		token = authHeader
+	if credential.Source == AuthSourceCookie && !isSafeMethod(c.Method()) && !IsTrustedOrigin(c.Get(fiber.HeaderOrigin), configs.GetAppConfig().CorsWhitelist) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Untrusted request origin"})
 	}
+	token := credential.Token
 
 	// Parse tenant token
 	claims, err := utils.ParseTenantToken(token)

@@ -53,7 +53,8 @@ func main() {
 	}()
 
 	app := fiber.New(fiber.Config{
-		BodyLimit: configs.GetMaxRequestBodySizeLimit(),
+		BodyLimit:      configs.GetMaxRequestBodySizeLimit(),
+		ReadBufferSize: 32 * 1024,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			return utils.SendErrorResponse(c, err, "Internal server error")
 		},
@@ -87,14 +88,29 @@ func main() {
 	configs.InitDB()
 
 	//websocket wiring
-	app.Use("/ws", func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
-			return c.Next()
+	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {
+		if !websocket.IsWebSocketUpgrade(c) {
+			return fiber.ErrUpgradeRequired
 		}
-		return fiber.ErrUpgradeRequired
+		if !middlewares.IsTrustedOrigin(c.Get(fiber.HeaderOrigin), appConfig.CorsWhitelist) {
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+		requestedTenant := c.Params("tenantSlug")
+		requestedProject := c.Params("projectSlug")
+		token := c.Cookies(utils.ProjectAuthCookieName(requestedTenant, requestedProject, "access"))
+		_, _, _, _, tenantSlug, projectSlug, err := utils.ParseToken(token)
+		if err != nil || tenantSlug == "" || projectSlug == "" {
+			return c.SendStatus(fiber.StatusUnauthorized)
+		}
+		if requestedTenant != "" && (requestedTenant != tenantSlug || requestedProject != projectSlug) {
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+		c.Locals("tenantSlug", tenantSlug)
+		c.Locals("projectSlug", projectSlug)
+		return c.Next()
 	})
 	// WS endpoint
-	app.Get("/ws", websocket.New(ws.HandleWS))
+	app.Get("/api/v1/:tenantSlug/:projectSlug/ws", websocket.New(ws.HandleWS))
 	go ws.RunBroadcaster(appCtx)
 	go ws.RunRedisSubscriber(appCtx)
 	go services.StartDynamicOutboxProcessor(appCtx)
@@ -122,6 +138,7 @@ func main() {
 	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
 	routes.IntegrationRoutes("api/v1/:tenantSlug/:projectSlug/integrations", app)
 	routes.NotificationRoutes("api/v1/:tenantSlug/:projectSlug/notifications", app)
+	routes.LocalizationRoutes(app)
 	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
@@ -173,7 +190,8 @@ func corsFromConfig(cfg *configs.Config) fiber.Handler {
 			_, ok := allowedOrigins[origin]
 			return ok
 		},
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, Idempotency-Key",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, Idempotency-Key, X-AutoTable-Client",
+		AllowCredentials: true,
 	})
 }
 

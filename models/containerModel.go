@@ -31,6 +31,7 @@ type ActionFieldConfig struct {
 }
 
 type ActionFormOptionConfig struct {
+	ID    string      `bson:"id,omitempty" json:"id,omitempty"`
 	Value interface{} `bson:"value" json:"value"`
 	Label string      `bson:"label" json:"label"`
 }
