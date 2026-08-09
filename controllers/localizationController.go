@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -186,7 +187,11 @@ func UpdateProjectTranslation(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(responses.GeneralResponse{Status: 400, Message: err.Error()})
 	}
-	locale, key := c.Params("locale"), c.Params("key")
+	locale := c.Params("locale")
+	key, err := decodeTranslationKeyParam(c.Params("key"))
+	if err != nil {
+		return c.Status(400).JSON(responses.GeneralResponse{Status: 400, Message: "Invalid translation key"})
+	}
 	repository := repositories.NewLocalizationRepository()
 	entry, err := repository.GetTranslation(c.Context(), tenantID, projectID, locale, key)
 	if err != nil {
@@ -206,6 +211,10 @@ func UpdateProjectTranslation(c *fiber.Ctx) error {
 		return c.Status(500).JSON(responses.GeneralResponse{Status: 500, Message: "Failed to update translation"})
 	}
 	return c.JSON(responses.GeneralResponse{Status: 200, Message: "Translation updated", Data: entry})
+}
+
+func decodeTranslationKeyParam(key string) (string, error) {
+	return url.PathUnescape(key)
 }
 
 func validateProjectLocaleInput(input projectLocaleInput) error {

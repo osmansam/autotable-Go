@@ -77,6 +77,13 @@ type ActionSubmitConfig struct {
 	FunctionName   string                 `bson:"functionName,omitempty" json:"functionName,omitempty"`
 }
 
+type ActionFormLayoutConfig struct {
+	Columns          int    `bson:"columns,omitempty" json:"columns,omitempty"`
+	AllowOverflow    *bool  `bson:"allowOverflow,omitempty" json:"allowOverflow,omitempty"`
+	TopClassName     string `bson:"topClassName,omitempty" json:"topClassName,omitempty"`
+	GeneralClassName string `bson:"generalClassName,omitempty" json:"generalClassName,omitempty"`
+}
+
 type ActionConfig struct {
 	ID                 string                   `bson:"id,omitempty" json:"id,omitempty"`
 	Key                string                   `bson:"key" json:"key"`
@@ -103,6 +110,7 @@ type ActionConfig struct {
 	DisabledConditions []string                 `bson:"disabledConditions,omitempty" json:"disabledConditions,omitempty"`
 	RequiredConditions []string                 `bson:"requiredConditions,omitempty" json:"requiredConditions,omitempty"`
 	FormFields         *[]ActionFormFieldConfig `bson:"formFields,omitempty" json:"formFields,omitempty"`
+	FormLayout         *ActionFormLayoutConfig  `bson:"formLayout,omitempty" json:"formLayout,omitempty"`
 	FieldOverrides     []ActionFieldConfig      `bson:"fieldOverrides,omitempty" json:"fieldOverrides,omitempty"`
 	ConstantValues     map[string]interface{}   `bson:"constantValues,omitempty" json:"constantValues,omitempty"`
 	Submit             ActionSubmitConfig       `bson:"submit,omitempty" json:"submit,omitempty"`

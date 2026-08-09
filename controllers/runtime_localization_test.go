@@ -29,3 +29,15 @@ func TestRuntimeTranslationCatalogUsesCurrentActiveTranslations(t *testing.T) {
 		t.Fatalf("resource = %#v", resources[0])
 	}
 }
+
+func TestDecodeTranslationKeyParam(t *testing.T) {
+	encoded := "container%3A69542a0d.field%3Aemail.displayName"
+	want := "container:69542a0d.field:email.displayName"
+	got, err := decodeTranslationKeyParam(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("decoded key = %q, want %q", got, want)
+	}
+}

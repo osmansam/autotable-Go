@@ -833,6 +833,52 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableActionFormLayoutRoundTrip(t *testing.T) {
+	allowOverflow := false
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					AddButton: &ActionConfig{
+						Kind: "create",
+						FormLayout: &ActionFormLayoutConfig{
+							Columns:          3,
+							AllowOverflow:    &allowOverflow,
+							TopClassName:     "items-start",
+							GeneralClassName: "w-full",
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	layout := got.Sections[0].Component.Table.AddButton.FormLayout
+	if layout == nil {
+		t.Fatal("FormLayout = nil, want persisted per-action layout")
+	}
+	if layout.Columns != 3 || layout.TopClassName != "items-start" || layout.GeneralClassName != "w-full" {
+		t.Fatalf("FormLayout = %#v, want all class and column settings", layout)
+	}
+	if layout.AllowOverflow == nil || *layout.AllowOverflow {
+		t.Fatalf("AllowOverflow = %#v, want explicit false", layout.AllowOverflow)
+	}
+}
+
 func TestFormComponentConfigRoundTrip(t *testing.T) {
 	minimum := 1.0
 	page := PageModel{Name: "Sales", Sections: []Section{{

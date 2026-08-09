@@ -382,13 +382,31 @@ func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	mt.Run("rejects self reference", func(mt *mtest.T) {
+	mt.Run("allows self reference while updating a container", func(mt *mtest.T) {
 		container := models.ContainerModel{
-			SchemaName: "orders",
-			Fields:     []models.Field{{Name: "parent", Type: "objectIdArray", ObjectSchemaName: "orders"}},
+			SchemaName: "location",
+			Fields:     []models.Field{{Name: "fallbackStockLocation", Type: "objectId", ObjectSchemaName: "location"}},
 		}
-		if _, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NilObjectID); err == nil {
-			t.Fatal("validateObjectReferences() error = nil")
+		got, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NewObjectID())
+		if err != nil {
+			t.Fatalf("validateObjectReferences() error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("validateObjectReferences() = %#v, want no external references", got)
+		}
+	})
+
+	mt.Run("allows self reference while creating a container", func(mt *mtest.T) {
+		container := models.ContainerModel{
+			SchemaName: "location",
+			Fields:     []models.Field{{Name: "fallbackStockLocations", Type: "objectIdArray", ObjectSchemaName: "location"}},
+		}
+		got, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NilObjectID)
+		if err != nil {
+			t.Fatalf("validateObjectReferences() error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("validateObjectReferences() = %#v, want no external references", got)
 		}
 	})
 
