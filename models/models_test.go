@@ -879,6 +879,107 @@ func TestPageTableActionFormLayoutRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableTogglesRoundTrip(t *testing.T) {
+	visible := true
+	page := PageModel{
+		Name: "Inventory",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "inventory-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					Drag: &TableDragConfig{Enabled: true, OrderField: "order"},
+					Toggles: []TableToggleConfig{{
+						ID:           "showInactive",
+						Label:        "Show inactive",
+						DefaultValue: false,
+						Request: &TableToggleRequestConfig{
+							Off: &ToggleRequestEffect{Type: "set", Field: "deleted", Value: false},
+							On:  &ToggleRequestEffect{Type: "omit"},
+						},
+					}},
+					Columns: []TableColumnConfig{{
+						Field:                "active",
+						Type:                 "booleanSwitch",
+						VisibilityToggle:     &ToggleBinding{ToggleID: "showInactive", When: true},
+						BooleanEditToggle:    &ToggleBinding{ToggleID: "showInactive", When: false},
+						BooleanDisplayToggle: &ToggleBinding{ToggleID: "showInactive", When: true},
+					}},
+					GeneratedRelationColumns: []GeneratedRelationColumnsConfig{{
+						ID: "locations", ArrayField: "locations", SourceSchemaName: "location",
+						SourceIDField: "_id", SourceLabelField: "name", SourceLimit: 50,
+						VisibilityToggle:  &ToggleBinding{ToggleID: "showInactive", When: true},
+						BooleanEditToggle: &ToggleBinding{ToggleID: "showInactive", When: false},
+					}},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	table := got.Sections[0].Component.Table
+	if table.Drag == nil || !table.Drag.Enabled || table.Drag.OrderField != "order" {
+		t.Fatalf("Drag = %#v, want enabled order-field configuration", table.Drag)
+	}
+	if len(table.Toggles) != 1 || table.Toggles[0].ID != "showInactive" {
+		t.Fatalf("Toggles = %#v, want persisted showInactive toggle", table.Toggles)
+	}
+	if table.Toggles[0].Request == nil || table.Toggles[0].Request.Off == nil || table.Toggles[0].Request.Off.Value != false {
+		t.Fatalf("Request = %#v, want OFF deleted=false", table.Toggles[0].Request)
+	}
+	column := table.Columns[0]
+	if column.VisibilityToggle == nil || !column.VisibilityToggle.When {
+		t.Fatalf("VisibilityToggle = %#v, want visible when ON", column.VisibilityToggle)
+	}
+	if column.BooleanEditToggle == nil || column.BooleanEditToggle.When {
+		t.Fatalf("BooleanEditToggle = %#v, want editable when OFF", column.BooleanEditToggle)
+	}
+	if column.BooleanDisplayToggle == nil || !column.BooleanDisplayToggle.When {
+		t.Fatalf("BooleanDisplayToggle = %#v, want switch presentation when ON", column.BooleanDisplayToggle)
+	}
+	group := table.GeneratedRelationColumns[0]
+	if group.ID != "locations" || group.ArrayField != "locations" || group.SourceLimit != 50 {
+		t.Fatalf("GeneratedRelationColumns = %#v, want persisted locations group", table.GeneratedRelationColumns)
+	}
+	if group.BooleanEditToggle == nil || group.BooleanEditToggle.When {
+		t.Fatalf("BooleanEditToggle = %#v, want generated switches editable when OFF", group.BooleanEditToggle)
+	}
+	if group.VisibilityToggle == nil || group.VisibilityToggle.ToggleID != "showInactive" || group.VisibilityToggle.When != visible {
+		t.Fatalf("VisibilityToggle = %#v, want generated columns visible when ON", group.VisibilityToggle)
+	}
+}
+
+func TestTableToggleExplicitLowerPlacementJSONRoundTrip(t *testing.T) {
+	var toggle TableToggleConfig
+	if err := json.Unmarshal(
+		[]byte(`{"id":"locations","label":"Locations","defaultValue":false,"isUpperSide":false}`),
+		&toggle,
+	); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	data, err := json.Marshal(toggle)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal(output) error = %v", err)
+	}
+	if value, ok := got["isUpperSide"]; !ok || value != false {
+		t.Fatalf("isUpperSide = %#v, present = %v, want explicit false", value, ok)
+	}
+}
+
 func TestFormComponentConfigRoundTrip(t *testing.T) {
 	minimum := 1.0
 	page := PageModel{Name: "Sales", Sections: []Section{{

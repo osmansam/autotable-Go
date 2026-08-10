@@ -148,17 +148,39 @@ type TableLinkConfig struct {
 	Type       string `bson:"type,omitempty" json:"type,omitempty"` // external | internal | email | phone | file
 }
 
+// ToggleBinding connects a column behavior to a table-local toggle state.
+type ToggleBinding struct {
+	ToggleID string `bson:"toggleId" json:"toggleId"`
+	When     bool   `bson:"when" json:"when"`
+}
+
 // TableColumnConfig defines display and cell behavior for one table column.
 type TableColumnConfig struct {
-	Field              string                   `bson:"field" json:"field"`
-	Type               string                   `bson:"type,omitempty" json:"type,omitempty"`
-	DisplayName        string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
-	Lookup             *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
-	ComputedLabelRules []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
-	FallbackValue      string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
-	ProgressBar        *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
-	CellClassName      []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
-	Link               *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+	Field                string                   `bson:"field" json:"field"`
+	Type                 string                   `bson:"type,omitempty" json:"type,omitempty"`
+	DisplayName          string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	Lookup               *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
+	ComputedLabelRules   []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
+	FallbackValue        string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
+	ProgressBar          *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
+	CellClassName        []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
+	Link                 *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+	VisibilityToggle     *ToggleBinding           `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	BooleanEditToggle    *ToggleBinding           `bson:"booleanEditToggle,omitempty" json:"booleanEditToggle,omitempty"`
+	BooleanDisplayToggle *ToggleBinding           `bson:"booleanDisplayToggle,omitempty" json:"booleanDisplayToggle,omitempty"`
+}
+
+// GeneratedRelationColumnsConfig expands records from a reference schema into
+// Boolean membership columns backed by an array field on each table row.
+type GeneratedRelationColumnsConfig struct {
+	ID                string         `bson:"id" json:"id"`
+	ArrayField        string         `bson:"arrayField" json:"arrayField"`
+	SourceSchemaName  string         `bson:"sourceSchemaName" json:"sourceSchemaName"`
+	SourceIDField     string         `bson:"sourceIdField,omitempty" json:"sourceIdField,omitempty"`
+	SourceLabelField  string         `bson:"sourceLabelField" json:"sourceLabelField"`
+	SourceLimit       int            `bson:"sourceLimit,omitempty" json:"sourceLimit,omitempty"`
+	VisibilityToggle  *ToggleBinding `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	BooleanEditToggle *ToggleBinding `bson:"booleanEditToggle,omitempty" json:"booleanEditToggle,omitempty"`
 }
 
 // TableLookupLabelConfig defines display-only lookup rendering for a table column.
@@ -237,19 +259,50 @@ type TableBulkActionsConfig struct {
 	Delete *ActionConfig `bson:"delete,omitempty" json:"delete,omitempty"`
 }
 
+// ToggleRequestEffect contributes one optional request-filter value for a toggle state.
+type ToggleRequestEffect struct {
+	Type  string      `bson:"type" json:"type"`
+	Field string      `bson:"field,omitempty" json:"field,omitempty"`
+	Value interface{} `bson:"value,omitempty" json:"value,omitempty"`
+}
+
+// TableToggleRequestConfig defines the request effect for both toggle states.
+type TableToggleRequestConfig struct {
+	On  *ToggleRequestEffect `bson:"on,omitempty" json:"on,omitempty"`
+	Off *ToggleRequestEffect `bson:"off,omitempty" json:"off,omitempty"`
+}
+
+// TableToggleConfig defines one local table mode control.
+type TableToggleConfig struct {
+	ID           string                    `bson:"id" json:"id"`
+	Label        string                    `bson:"label,omitempty" json:"label,omitempty"`
+	DefaultValue bool                      `bson:"defaultValue" json:"defaultValue"`
+	IsUpperSide  *bool                     `bson:"isUpperSide,omitempty" json:"isUpperSide,omitempty"`
+	Request      *TableToggleRequestConfig `bson:"request,omitempty" json:"request,omitempty"`
+}
+
+// TableDragConfig controls manual row ordering for a table.
+type TableDragConfig struct {
+	Enabled    bool   `bson:"enabled" json:"enabled"`
+	OrderField string `bson:"orderField" json:"orderField"`
+}
+
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	EnableSearch    *bool                    `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
-	Columns         []TableColumnConfig      `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows            *TableRowsConfig         `bson:"rows,omitempty" json:"rows,omitempty"`
-	NestedRows      *TableNestedRowsConfig   `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
-	Cache           *TableCacheConfig        `bson:"cache,omitempty" json:"cache,omitempty"`
-	ConstantFilters map[string]interface{}   `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
-	ConstantSort    *TableConstantSortConfig `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
-	AddButton       *ActionConfig            `bson:"addButton,omitempty" json:"addButton,omitempty"`
-	Actions         []ActionConfig           `bson:"actions,omitempty" json:"actions,omitempty"`
-	BulkActions     *TableBulkActionsConfig  `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
-	FilterPanel     *TableFilterPanelConfig  `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	EnableSearch             *bool                            `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
+	Columns                  []TableColumnConfig              `bson:"columns,omitempty" json:"columns,omitempty"`
+	GeneratedRelationColumns []GeneratedRelationColumnsConfig `bson:"generatedRelationColumns,omitempty" json:"generatedRelationColumns,omitempty"`
+	Rows                     *TableRowsConfig                 `bson:"rows,omitempty" json:"rows,omitempty"`
+	NestedRows               *TableNestedRowsConfig           `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
+	Cache                    *TableCacheConfig                `bson:"cache,omitempty" json:"cache,omitempty"`
+	ConstantFilters          map[string]interface{}           `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
+	ConstantSort             *TableConstantSortConfig         `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
+	AddButton                *ActionConfig                    `bson:"addButton,omitempty" json:"addButton,omitempty"`
+	Actions                  []ActionConfig                   `bson:"actions,omitempty" json:"actions,omitempty"`
+	BulkActions              *TableBulkActionsConfig          `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
+	FilterPanel              *TableFilterPanelConfig          `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	Toggles                  []TableToggleConfig              `bson:"toggles,omitempty" json:"toggles,omitempty"`
+	Drag                     *TableDragConfig                 `bson:"drag,omitempty" json:"drag,omitempty"`
 }
 
 // FormLayoutConfig controls the layout shell for form components.

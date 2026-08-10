@@ -68,6 +68,27 @@ func TestSanitizeFieldName(t *testing.T) {
 	}
 }
 
+func TestParseSelectionLimit(t *testing.T) {
+	tests := []struct {
+		raw     string
+		want    int64
+		wantErr bool
+	}{
+		{raw: "", want: 0},
+		{raw: "25", want: 25},
+		{raw: "0", wantErr: true},
+		{raw: "-1", wantErr: true},
+		{raw: "101", wantErr: true},
+		{raw: "many", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := parseSelectionLimit(tt.raw)
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Fatalf("parseSelectionLimit(%q) = %d, %v; want %d, error=%v", tt.raw, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
 func TestResolveAuthRoleNameKeepsRoleObjectID(t *testing.T) {
 	roleID := primitive.NewObjectID()
 	if got := resolveAuthRoleName(context.Background(), "tenant", "project", roleID); got != roleID.Hex() {

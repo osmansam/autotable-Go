@@ -150,6 +150,7 @@ type GetItemsForSelectionInput struct {
 	Schema     string
 	FieldName  string
 	ValueField string
+	Limit      int64
 	Filter     map[string]interface{}
 	UserRole   string
 }
@@ -1113,7 +1114,7 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.Filter, input.ValueField)
+	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.Filter, input.Limit, input.ValueField)
 	if err != nil {
 		log.Printf("Failed to query collection %s: %v", input.Schema, err)
 		return nil, &ServiceError{

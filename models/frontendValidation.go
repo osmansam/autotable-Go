@@ -280,9 +280,99 @@ func validateFormArea(area string) error {
 	}
 }
 
+func validateToggleRequestEffect(effect *ToggleRequestEffect) error {
+	if effect == nil {
+		return nil
+	}
+	switch effect.Type {
+	case "set":
+		if strings.TrimSpace(effect.Field) == "" {
+			return fmt.Errorf("set effect requires field")
+		}
+	case "omit":
+		if strings.TrimSpace(effect.Field) != "" || effect.Value != nil {
+			return fmt.Errorf("omit effect cannot define field or value")
+		}
+	default:
+		return fmt.Errorf("invalid request effect type '%s'", effect.Type)
+	}
+	return nil
+}
+
+func validateTableToggles(table *TableComponentConfig) error {
+	toggleIDs := make(map[string]bool, len(table.Toggles))
+	for index, toggle := range table.Toggles {
+		id := strings.TrimSpace(toggle.ID)
+		if id == "" {
+			return fmt.Errorf("table toggle %d requires id", index)
+		}
+		if toggleIDs[id] {
+			return fmt.Errorf("table toggle id '%s' must be unique", id)
+		}
+		toggleIDs[id] = true
+		if toggle.Request != nil {
+			if err := validateToggleRequestEffect(toggle.Request.On); err != nil {
+				return fmt.Errorf("table toggle '%s' on: %w", id, err)
+			}
+			if err := validateToggleRequestEffect(toggle.Request.Off); err != nil {
+				return fmt.Errorf("table toggle '%s' off: %w", id, err)
+			}
+		}
+	}
+
+	for _, column := range table.Columns {
+		bindings := []struct {
+			name    string
+			binding *ToggleBinding
+		}{
+			{name: "visibilityToggle", binding: column.VisibilityToggle},
+			{name: "booleanEditToggle", binding: column.BooleanEditToggle},
+			{name: "booleanDisplayToggle", binding: column.BooleanDisplayToggle},
+		}
+		for _, candidate := range bindings {
+			if candidate.binding == nil {
+				continue
+			}
+			if !toggleIDs[strings.TrimSpace(candidate.binding.ToggleID)] {
+				return fmt.Errorf("table column '%s' %s references unknown toggle '%s'", column.Field, candidate.name, candidate.binding.ToggleID)
+			}
+		}
+	}
+	groupIDs := make(map[string]bool, len(table.GeneratedRelationColumns))
+	for index, group := range table.GeneratedRelationColumns {
+		id := strings.TrimSpace(group.ID)
+		if id == "" {
+			return fmt.Errorf("generated relation column group %d requires id", index)
+		}
+		if groupIDs[id] {
+			return fmt.Errorf("generated relation column group id '%s' must be unique", id)
+		}
+		groupIDs[id] = true
+		if strings.TrimSpace(group.ArrayField) == "" || strings.TrimSpace(group.SourceSchemaName) == "" || strings.TrimSpace(group.SourceLabelField) == "" {
+			return fmt.Errorf("generated relation column group '%s' requires arrayField, sourceSchemaName, and sourceLabelField", id)
+		}
+		if group.SourceLimit < 0 || group.SourceLimit > 100 {
+			return fmt.Errorf("generated relation column group '%s' sourceLimit must be between 1 and 100", id)
+		}
+		if group.VisibilityToggle != nil && !toggleIDs[strings.TrimSpace(group.VisibilityToggle.ToggleID)] {
+			return fmt.Errorf("generated relation column group '%s' visibilityToggle references unknown toggle '%s'", id, group.VisibilityToggle.ToggleID)
+		}
+		if group.BooleanEditToggle != nil && !toggleIDs[strings.TrimSpace(group.BooleanEditToggle.ToggleID)] {
+			return fmt.Errorf("generated relation column group '%s' booleanEditToggle references unknown toggle '%s'", id, group.BooleanEditToggle.ToggleID)
+		}
+	}
+	return nil
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
+	}
+	if table.Drag != nil && table.Drag.Enabled && strings.TrimSpace(table.Drag.OrderField) == "" {
+		return fmt.Errorf("enabled table drag configuration requires orderField")
+	}
+	if err := validateTableToggles(table); err != nil {
+		return err
 	}
 
 	for _, column := range table.Columns {

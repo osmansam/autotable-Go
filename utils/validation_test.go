@@ -102,6 +102,22 @@ func TestValidatePartialUpdateAndLoginCredential(t *testing.T) {
 	}
 }
 
+func TestValidateContainerModelAllowsOmittedOptionalStructuredFields(t *testing.T) {
+	container := models.ContainerModel{Fields: []models.Field{
+		{Name: "name", Type: "string"},
+		{Name: "products", Type: "array", Children: []models.Field{{Name: "product", Type: "objectId"}}},
+		{Name: "metadata", Type: "object", Children: []models.Field{{Name: "label", Type: "string"}}},
+	}}
+	if err := ValidateContainerModel(map[string]interface{}{"name": "test"}, container); err != nil {
+		t.Fatalf("ValidateContainerModel() error = %v, want omitted optional structured fields accepted", err)
+	}
+
+	required := models.ContainerModel{Fields: []models.Field{{Name: "products", Type: "array", Tag: "required"}}}
+	if err := ValidateContainerModel(map[string]interface{}{}, required); err == nil {
+		t.Fatal("ValidateContainerModel() error = nil, want omitted required array rejected")
+	}
+}
+
 func TestValidationRuleHelpers(t *testing.T) {
 	rules := extractValidationRules(`required,minlength=2,maxlength=5,enum="red|blue",min=1,max=4,minDate=2026-01-01,maxDate=2026-12-31,auto`)
 	if rules["required"] != true || rules["auto"] != true || rules["minlength"] != 2 || rules["maxlength"] != 5 {
