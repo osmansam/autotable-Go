@@ -368,6 +368,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
 	}
+	if table.DataMode != "" && table.DataMode != "paginated" && table.DataMode != "all" {
+		return fmt.Errorf("invalid table dataMode %q", table.DataMode)
+	}
 	if table.Drag != nil && table.Drag.Enabled && strings.TrimSpace(table.Drag.OrderField) == "" {
 		return fmt.Errorf("enabled table drag configuration requires orderField")
 	}

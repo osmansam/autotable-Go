@@ -289,6 +289,7 @@ type TableDragConfig struct {
 
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
+	DataMode                 string                           `bson:"dataMode,omitempty" json:"dataMode,omitempty"`
 	EnableSearch             *bool                            `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
 	Columns                  []TableColumnConfig              `bson:"columns,omitempty" json:"columns,omitempty"`
 	GeneratedRelationColumns []GeneratedRelationColumnsConfig `bson:"generatedRelationColumns,omitempty" json:"generatedRelationColumns,omitempty"`

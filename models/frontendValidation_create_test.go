@@ -1,6 +1,56 @@
 package models
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestValidateTableComponentConfigDataMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    string
+		wantErr bool
+	}{
+		{name: "omitted"},
+		{name: "paginated", mode: "paginated"},
+		{name: "all", mode: "all"},
+		{name: "unknown", mode: "future", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTableComponentConfig(&TableComponentConfig{DataMode: tt.mode})
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "invalid table dataMode") {
+					t.Fatalf("ValidateTableComponentConfig() error = %v, want invalid table dataMode", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateTableComponentConfig() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestTableComponentConfigDataModeJSON(t *testing.T) {
+	encoded, err := json.Marshal(TableComponentConfig{DataMode: "all"})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(encoded), `"dataMode":"all"`) {
+		t.Fatalf("json.Marshal() = %s, want dataMode", encoded)
+	}
+
+	var decoded TableComponentConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.DataMode != "all" {
+		t.Fatalf("decoded.DataMode = %q, want all", decoded.DataMode)
+	}
+}
 
 func TestValidateTableComponentConfigAllowsCreateAction(t *testing.T) {
 	table := &TableComponentConfig{
