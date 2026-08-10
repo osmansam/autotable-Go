@@ -23,40 +23,43 @@ Add this optional field to `TableComponentConfig` in the Go model and both front
 dataMode?: "paginated" | "all"
 ```
 
-The absent or unrecognized runtime value resolves to `paginated`. This makes existing page documents backward-compatible and prevents malformed metadata from silently issuing an unbounded request.
+Every runtime resolver uses the fail-closed rule `dataMode === "all" ? "all" : "paginated"`. The absent, malformed, future, or otherwise unrecognized runtime value therefore resolves to `paginated`. This makes existing page documents backward-compatible and prevents malformed metadata from silently issuing an unbounded request.
 
-Tenant Panel saves `dataMode` only as part of table configuration. The table configuration cleaner preserves valid values and normalizes invalid values to the paginated default. Backend frontend-metadata validation accepts `paginated`, `all`, or an omitted value and rejects any other non-empty value.
+Tenant Panel saves `dataMode` only as part of table configuration. The frontend table-configuration cleaner preserves valid values and normalizes invalid values to `paginated`. Backend frontend-metadata validation does not normalize persisted input: it accepts `paginated`, `all`, or an omitted value and rejects any other non-empty value.
 
 ## Tenant Panel Editing
 
 The table create/edit interface includes a **Data loading** selector when the table source is `schema`:
 
 - **Paginated** — the default; retrieves one page and displays pagination controls.
-- **All items** — retrieves every matching dynamic item and displays no pagination controls.
+- **All items** — retrieves the schema's all-items response in one request and displays no pagination controls. Its help text says: “Loads the all-items response in one request. Use with care for large schemas.” The backend's existing maximum unbounded-read limit still applies.
 
-The selector is hidden for pipeline and workflow sources. Changing a table from schema to pipeline or workflow does not alter those sources' current execution behavior. If the component later returns to a schema source, the saved schema-table choice may be restored; while a non-schema source is active, runtime dispatch always uses the existing paginated source component.
+The selector is hidden for pipeline and workflow sources. Changing a table from schema to pipeline or workflow does not delete or overwrite `table.dataMode`; the field becomes dormant. If the component later returns to a schema source, its prior schema-table choice is restored. While a non-schema source is active, runtime dispatch always uses the existing paginated source component.
 
 The selector belongs in the table request settings because it controls the data request rather than table presentation.
 
 ## Runtime Dispatch and Data Flow
 
-Tenant Panel preview and React Template use the same resolution rule:
+Tenant Panel preview and React Template use the same resolution rule, centralized in one small pure dispatch helper within each frontend rather than repeated as nested component checks:
 
 1. Resolve the component data binding.
-2. If the binding kind is `schema` and `table.dataMode` is `all`, render `GenericUnpaginatedPage`.
-3. Otherwise render `GenericPaginatedPage`.
+2. Normalize the mode with `table.dataMode === "all" ? "all" : "paginated"`.
+3. If the binding kind is `schema` and the normalized mode is `all`, render `GenericUnpaginatedPage`.
+4. Otherwise render `GenericPaginatedPage`.
 
-`GenericUnpaginatedPage` uses the existing `useGetDynamicItems` hook and `GET /dynamic`. It receives the table configuration and schema name needed for the same columns, filters, actions, nested rows, toggles, and row behavior already supported by that component.
+`GenericUnpaginatedPage` uses the existing `useGetDynamicItems` hook and `GET /dynamic`. It intrinsically renders without pagination controls; callers do not hide controls around a paginated component. It receives the existing table configuration and schema name so current unpaginated columns, actions, nested rows, toggles, and row behavior remain available.
 
 `GenericPaginatedPage` remains responsible for schema pagination and for all pipeline/workflow table sources. No pipeline or workflow request is routed to `GET /dynamic`.
 
-Both data modes continue using schema-scoped query keys and the existing mutation invalidation behavior so create, edit, delete, bulk actions, and websocket invalidation refresh the active table data.
+Both data modes continue using schema-scoped query keys and the existing mutation invalidation behavior so create, edit, delete, bulk actions, and websocket invalidation refresh the active table data. The current keys cannot collide: the all-items hook uses the `['dynamic', schemaName, 'all', ...]` family, while paginated table-source requests use the `['dynamic', schemaName, 'table-source', ...]` family.
 
-## Filtering and Search
+## Filtering, Search, and Sort
 
-All-items mode sends configured constant filters, active filter-panel values, toggle request effects, and supported search/sort values through the existing unpaginated schema hook and component behavior. Filtering and sorting remain server-driven where already supported by `GET /dynamic`; the feature does not introduce client-side filtering as a substitute.
+The existing `GET /dynamic` controller reads `schemaName` but does not parse filter, search, or sort query parameters. All-items mode therefore loads the route's existing unfiltered response and does not promise request-feature parity with `/dynamic/page` or `/dynamic/table-source`. This feature does not add backend filter/search/sort support or client-side pagination.
 
-Switching modes in saved configuration creates a different query shape and therefore cannot reuse a paginated response as an all-items response.
+The existing unpaginated component may retain its current client presentation controls, but tests for this feature must not claim that configured request filters, server search, or server sort affect the all-items response. Extending that endpoint contract is separate work.
+
+Switching modes in saved configuration uses distinct query-key families and therefore cannot reuse a paginated response as an all-items response.
 
 ## Error Handling and Safety
 
@@ -81,16 +84,17 @@ Tenant Panel tests cover:
 - the selector is available for schema tables and excluded from pipeline/workflow behavior;
 - preview dispatches schema `all` to the unpaginated component;
 - omitted mode and schema `paginated` dispatch to the paginated component;
-- pipeline/workflow dispatch remains paginated even if stale metadata contains `all`.
+- pipeline/workflow dispatch remains paginated even if stale metadata contains `all`;
+- a schema table saved as `all` can change to a pipeline source without deleting `dataMode`, uses the existing pipeline path while dormant, and resumes all-items mode after changing back to schema.
 
-React Template tests cover the same runtime dispatch rules and verify the selected path uses the existing all-items query contract without changing pipeline/workflow requests.
+React Template tests cover the same runtime dispatch rules, the fail-closed normalization helper, and the distinct query-key families. They verify that the selected path uses the existing unfiltered all-items query contract without changing pipeline/workflow requests.
 
 ## Acceptance Criteria
 
 - An administrator can select Paginated or All items while creating or editing a schema-backed table.
 - The setting persists with the page component.
 - Existing tables continue to use paginated requests.
-- A schema table configured for All items calls the all-items dynamic route and shows all returned rows without pagination controls.
+- A schema table configured for All items calls the all-items dynamic route and shows the route's returned rows without pagination controls.
 - Schema tables configured for Paginated continue to call the paginated route.
 - Pipeline and workflow table behavior is unchanged.
 - Tenant Panel preview and React Template runtime behave consistently.
