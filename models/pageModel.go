@@ -327,6 +327,22 @@ type TableComponentConfig struct {
 	Drag                     *TableDragConfig                 `bson:"drag,omitempty" json:"drag,omitempty"`
 }
 
+// RelationMatrixConfig renders records from one schema as rows and records
+// from another schema as Boolean membership columns backed by an embedded array.
+type RelationMatrixConfig struct {
+	RowSchemaName        string         `bson:"rowSchemaName" json:"rowSchemaName"`
+	RowIDField           string         `bson:"rowIdField" json:"rowIdField"`
+	RowLabelField        string         `bson:"rowLabelField" json:"rowLabelField"`
+	ColumnSchemaName     string         `bson:"columnSchemaName" json:"columnSchemaName"`
+	ColumnIDField        string         `bson:"columnIdField" json:"columnIdField"`
+	ColumnLabelField     string         `bson:"columnLabelField" json:"columnLabelField"`
+	TargetArrayField     string         `bson:"targetArrayField" json:"targetArrayField"`
+	TargetItemMatchField string         `bson:"targetItemMatchField" json:"targetItemMatchField"`
+	ColumnLimit          int            `bson:"columnLimit,omitempty" json:"columnLimit,omitempty"`
+	VisibilityToggle     *ToggleBinding `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	EditToggle           *ToggleBinding `bson:"editToggle,omitempty" json:"editToggle,omitempty"`
+}
+
 // FormLayoutConfig controls the layout shell for form components.
 type FormLayoutConfig struct {
 	Variant string           `bson:"variant,omitempty" json:"variant,omitempty"`
@@ -429,6 +445,7 @@ const (
 	ComponentTypeCustom             ComponentType = "custom"
 	ComponentTypeInfoBlocks         ComponentType = "infoBlocks"
 	ComponentTypeDistributionBlocks ComponentType = "distributionBlocks"
+	ComponentTypeRelationMatrix     ComponentType = "relationMatrix"
 
 	// Chart Types - Specific chart components
 	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
@@ -494,20 +511,21 @@ type TabPanelTab struct {
 
 // ComponentBlock represents a single component with its data binding and configuration
 type ComponentBlock struct {
-	ID            string                      `bson:"id" json:"id"`
-	StateKey      string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
-	Type          ComponentType               `bson:"type" json:"type"`
-	Title         string                      `bson:"title,omitempty" json:"title,omitempty"`
-	Order         int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
-	DataBinding   *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
-	Outputs       []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
-	GroupBy       *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
-	Table         *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
-	Form          *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
-	IsAuthorized  bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
-	AuthorizeRole []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
-	Props         map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
-	Tabs          []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                   // For tabPanel type components
+	ID             string                      `bson:"id" json:"id"`
+	StateKey       string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
+	Type           ComponentType               `bson:"type" json:"type"`
+	Title          string                      `bson:"title,omitempty" json:"title,omitempty"`
+	Order          int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
+	DataBinding    *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
+	Outputs        []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
+	GroupBy        *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`               // Grouping configuration for table components
+	Table          *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                   // Table-specific display, row, link, and cache config
+	RelationMatrix *RelationMatrixConfig       `bson:"relationMatrix,omitempty" json:"relationMatrix,omitempty"` // Inverse array-membership matrix config
+	Form           *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                     // Form-specific field layout, actions, and embedded object lists
+	IsAuthorized   bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`     // Component-level auth (optional)
+	AuthorizeRole  []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`   // Component-level roles
+	Props          map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                   // Free-form config (columns, chart type, etc.)
+	Tabs           []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                     // For tabPanel type components
 }
 
 // GridCell represents a cell in a grid layout

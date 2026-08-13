@@ -626,6 +626,81 @@ func TestValidatePageTableConfig(t *testing.T) {
 	}
 }
 
+func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
+	validConfig := &RelationMatrixConfig{
+		RowSchemaName:        "product",
+		RowIDField:           "_id",
+		RowLabelField:        "name",
+		ColumnSchemaName:     "countList",
+		ColumnIDField:        "_id",
+		ColumnLabelField:     "name",
+		TargetArrayField:     "products",
+		TargetItemMatchField: "product",
+		ColumnLimit:          100,
+		VisibilityToggle:     &ToggleBinding{ToggleID: "show-count-lists", When: true},
+		EditToggle:           &ToggleBinding{ToggleID: "edit-count-lists", When: true},
+	}
+	page := PageModel{
+		Name: "Product matrix",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:             "product-countlists",
+				Type:           ComponentType("relationMatrix"),
+				RelationMatrix: validConfig,
+			},
+		}},
+	}
+
+	jsonData, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var jsonPage PageModel
+	if err := json.Unmarshal(jsonData, &jsonPage); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := jsonPage.Sections[0].Component.RelationMatrix; !reflect.DeepEqual(got, validConfig) {
+		t.Fatalf("JSON relationMatrix = %#v, want %#v", got, validConfig)
+	}
+
+	bsonData, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var bsonPage PageModel
+	if err := bson.Unmarshal(bsonData, &bsonPage); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if got := bsonPage.Sections[0].Component.RelationMatrix; !reflect.DeepEqual(got, validConfig) {
+		t.Fatalf("BSON relationMatrix = %#v, want %#v", got, validConfig)
+	}
+
+	if err := ValidatePageTableConfig(&page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() valid matrix error = %v", err)
+	}
+
+	missingMatch := page
+	missingConfig := *validConfig
+	missingConfig.TargetItemMatchField = ""
+	missingMatch.Sections = []Section{{Type: SectionTypeComponent, Component: &ComponentBlock{
+		ID: "missing-match", Type: ComponentType("relationMatrix"), RelationMatrix: &missingConfig,
+	}}}
+	if err := ValidatePageTableConfig(&missingMatch); err == nil || !strings.Contains(err.Error(), "targetItemMatchField") {
+		t.Fatalf("ValidatePageTableConfig() missing match error = %v", err)
+	}
+
+	tooMany := page
+	limitConfig := *validConfig
+	limitConfig.ColumnLimit = 101
+	tooMany.Sections = []Section{{Type: SectionTypeComponent, Component: &ComponentBlock{
+		ID: "too-many", Type: ComponentType("relationMatrix"), RelationMatrix: &limitConfig,
+	}}}
+	if err := ValidatePageTableConfig(&tooMany); err == nil || !strings.Contains(err.Error(), "columnLimit") {
+		t.Fatalf("ValidatePageTableConfig() column limit error = %v", err)
+	}
+}
+
 func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {
 	page := PageModel{
 		Name: "Inventory",

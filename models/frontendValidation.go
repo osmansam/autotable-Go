@@ -498,6 +498,11 @@ func ValidateComponentTableConfig(component *ComponentBlock) error {
 			return fmt.Errorf("component '%s': %w", component.ID, err)
 		}
 	}
+	if component.Type == ComponentTypeRelationMatrix {
+		if err := ValidateRelationMatrixConfig(component.RelationMatrix); err != nil {
+			return fmt.Errorf("component '%s': %w", component.ID, err)
+		}
+	}
 
 	for i := range component.Tabs {
 		for j := range component.Tabs[i].Components {
@@ -507,6 +512,33 @@ func ValidateComponentTableConfig(component *ComponentBlock) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateRelationMatrixConfig ensures inverse membership matrices have a
+// complete row, column, and embedded-array contract before persistence.
+func ValidateRelationMatrixConfig(config *RelationMatrixConfig) error {
+	if config == nil {
+		return fmt.Errorf("relationMatrix configuration is required")
+	}
+	required := map[string]string{
+		"rowSchemaName":        config.RowSchemaName,
+		"rowIdField":           config.RowIDField,
+		"rowLabelField":        config.RowLabelField,
+		"columnSchemaName":     config.ColumnSchemaName,
+		"columnIdField":        config.ColumnIDField,
+		"columnLabelField":     config.ColumnLabelField,
+		"targetArrayField":     config.TargetArrayField,
+		"targetItemMatchField": config.TargetItemMatchField,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("relationMatrix %s is required", field)
+		}
+	}
+	if config.ColumnLimit < 0 || config.ColumnLimit > 100 {
+		return fmt.Errorf("relationMatrix columnLimit must be between 1 and 100")
+	}
 	return nil
 }
 
