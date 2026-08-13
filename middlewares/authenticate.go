@@ -128,7 +128,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get project context: " + err.Error()})
 		}
 
-		schemaName := c.Query("schemaName")
+		schemaName := conditionalSchemaName(c)
 		if schemaName == "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schema name is required"})
 		}
@@ -295,6 +295,13 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 
 		return c.Next()
 	}
+}
+
+func conditionalSchemaName(c *fiber.Ctx) string {
+	if schemaName := c.Query("schemaName"); schemaName != "" {
+		return schemaName
+	}
+	return c.Params("schema")
 }
 
 func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive bool) bool {
