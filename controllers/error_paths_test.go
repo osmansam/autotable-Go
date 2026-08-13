@@ -35,6 +35,10 @@ func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 		{name: "execute api", method: http.MethodPost, path: "/", handler: ExecuteDynamicAPI},
 		{name: "execute workflow", method: http.MethodPost, path: "/", handler: ExecuteWorkflow},
 		{name: "export", method: http.MethodPost, path: "/", handler: ExportDynamicModelItems},
+		{name: "add array row", method: http.MethodPost, path: "/checklist/id/array/duties", handler: AddDynamicArrayRow},
+		{name: "update array row", method: http.MethodPatch, path: "/checklist/id/array/duties/Open", handler: UpdateDynamicArrayRow},
+		{name: "delete array row", method: http.MethodDelete, path: "/checklist/id/array/duties/Open", handler: DeleteDynamicArrayRow},
+		{name: "reorder array rows", method: http.MethodPatch, path: "/checklist/id/array/duties/reorder", handler: ReorderDynamicArrayRows},
 	}
 
 	for _, tt := range tests {
@@ -53,6 +57,24 @@ func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 				t.Fatalf("status = %d, want error status", resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestDynamicArrayHandlerRejectsMalformedBody(t *testing.T) {
+	app := fiber.New()
+	app.Post("/:schema/:id/array/:field", AddDynamicArrayRow)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/checklist/6a7d31f77024197f5f2a25c4/array/duties?tenantID=tenant&projectID=project",
+		strings.NewReader(`{"rowIdentityField":"duty","unknown":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 }
 

@@ -12,6 +12,7 @@ type ArrayMutationOperation string
 const (
 	ArrayMutationAdd    ArrayMutationOperation = "add"
 	ArrayMutationUpdate ArrayMutationOperation = "update"
+	ArrayMutationDelete ArrayMutationOperation = "delete"
 )
 
 type ArrayRowMutationRequest struct {
@@ -65,6 +66,10 @@ func ParseArrayRowMutation(reader io.Reader, operation ArrayMutationOperation) (
 		}
 		if request.Item != nil {
 			return request, fmt.Errorf("item is not allowed for update")
+		}
+	case ArrayMutationDelete:
+		if request.Item != nil || request.Updates != nil {
+			return request, fmt.Errorf("item and updates are not allowed for delete")
 		}
 	default:
 		return request, fmt.Errorf("unsupported array mutation operation %q", operation)

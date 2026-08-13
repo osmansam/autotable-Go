@@ -13,6 +13,7 @@ func TestParseArrayRowMutationAcceptsAddAndUpdate(t *testing.T) {
 	}{
 		{name: "add", operation: ArrayMutationAdd, body: `{"rowIdentityField":"duty","item":{"duty":"Clean","order":0}}`},
 		{name: "update", operation: ArrayMutationUpdate, body: `{"rowIdentityField":"duty","updates":{"description":"Closing task"}}`},
+		{name: "delete", operation: ArrayMutationDelete, body: `{"rowIdentityField":"duty"}`},
 	}
 
 	for _, tt := range tests {
