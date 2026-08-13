@@ -330,17 +330,18 @@ type TableComponentConfig struct {
 // RelationMatrixConfig renders records from one schema as rows and records
 // from another schema as Boolean membership columns backed by an embedded array.
 type RelationMatrixConfig struct {
-	RowSchemaName        string         `bson:"rowSchemaName" json:"rowSchemaName"`
-	RowIDField           string         `bson:"rowIdField" json:"rowIdField"`
-	RowLabelField        string         `bson:"rowLabelField" json:"rowLabelField"`
-	ColumnSchemaName     string         `bson:"columnSchemaName" json:"columnSchemaName"`
-	ColumnIDField        string         `bson:"columnIdField" json:"columnIdField"`
-	ColumnLabelField     string         `bson:"columnLabelField" json:"columnLabelField"`
-	TargetArrayField     string         `bson:"targetArrayField" json:"targetArrayField"`
-	TargetItemMatchField string         `bson:"targetItemMatchField" json:"targetItemMatchField"`
-	ColumnLimit          int            `bson:"columnLimit,omitempty" json:"columnLimit,omitempty"`
-	VisibilityToggle     *ToggleBinding `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
-	EditToggle           *ToggleBinding `bson:"editToggle,omitempty" json:"editToggle,omitempty"`
+	RowSchemaName        string              `bson:"rowSchemaName" json:"rowSchemaName"`
+	RowIDField           string              `bson:"rowIdField" json:"rowIdField"`
+	RowLabelField        string              `bson:"rowLabelField" json:"rowLabelField"`
+	ColumnSchemaName     string              `bson:"columnSchemaName" json:"columnSchemaName"`
+	ColumnIDField        string              `bson:"columnIdField" json:"columnIdField"`
+	ColumnLabelField     string              `bson:"columnLabelField" json:"columnLabelField"`
+	TargetArrayField     string              `bson:"targetArrayField" json:"targetArrayField"`
+	TargetItemMatchField string              `bson:"targetItemMatchField" json:"targetItemMatchField"`
+	ColumnLimit          int                 `bson:"columnLimit,omitempty" json:"columnLimit,omitempty"`
+	Toggles              []TableToggleConfig `bson:"toggles,omitempty" json:"toggles,omitempty"`
+	VisibilityToggle     *ToggleBinding      `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	EditToggle           *ToggleBinding      `bson:"editToggle,omitempty" json:"editToggle,omitempty"`
 }
 
 // FormLayoutConfig controls the layout shell for form components.
