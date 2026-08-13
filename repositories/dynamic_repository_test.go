@@ -131,6 +131,46 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		}
 	})
 
+	mt.Run("update by filter preserves compare condition", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		parentID := primitive.NewObjectID()
+		priorDuties := bson.A{bson.M{"duty": "Open", "order": 0}}
+		mt.AddMockResponses(mtest.CreateSuccessResponse(
+			bson.E{Key: "n", Value: 1},
+			bson.E{Key: "nModified", Value: 1},
+		))
+
+		_, err := repository.UpdateByFilter(
+			context.Background(),
+			"tenant",
+			"project",
+			"checklist",
+			bson.M{"_id": parentID, "duties": priorDuties},
+			bson.M{"$set": bson.M{"duties": bson.A{bson.M{"duty": "Clean", "order": 0}}}},
+		)
+		if err != nil {
+			t.Fatalf("UpdateByFilter() error = %v", err)
+		}
+
+		started := mt.GetStartedEvent()
+		updates, ok := started.Command.Lookup("updates").ArrayOK()
+		if !ok {
+			t.Fatalf("update command missing updates array: %v", started.Command)
+		}
+		firstUpdate := updates.Index(0).Value().Document()
+		query := firstUpdate.Lookup("q").Document()
+		if got := query.Lookup("_id"); got.Type != bson.TypeObjectID || got.ObjectID() != parentID {
+			t.Fatalf("compare filter _id = %v, want %s", got, parentID.Hex())
+		}
+		if got := query.Lookup("duties"); got.Type != bson.TypeArray {
+			t.Fatalf("compare filter duties = %v, want array", got)
+		}
+		update := firstUpdate.Lookup("u").Document()
+		if got := update.Lookup("$set"); got.Type != bson.TypeEmbeddedDocument {
+			t.Fatalf("update = %v, want $set document", update)
+		}
+	})
+
 	mt.Run("count variants", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
 		namespace := mt.Coll.Database().Name() + "." + mt.Coll.Name()

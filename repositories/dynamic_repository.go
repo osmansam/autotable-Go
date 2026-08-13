@@ -465,6 +465,13 @@ func (r *DynamicRepository) UpdateByID(ctx context.Context, tenantID, projectID,
 	return result, err
 }
 
+func (r *DynamicRepository) UpdateByFilter(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M, update bson.M) (*mongo.UpdateResult, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("update_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).UpdateOne(ctx, filter, update)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
+}
+
 func (r *DynamicRepository) UpdateMany(ctx context.Context, tenantID, projectID, schemaName string, filter interface{}, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("update_many", schemaName)...)
 	result, err := r.GetCollection(tenantID, projectID, schemaName).UpdateMany(ctx, filter, update, opts...)
