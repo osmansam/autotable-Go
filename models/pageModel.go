@@ -238,11 +238,22 @@ type TableNestedRowsConfig struct {
 	Columns []TableNestedRowColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
 }
 
-// TableArraySourceConfig turns an array field on the fetched records into table rows.
+// TableArrayAutoGenerateConfig records which array-table elements the designer generated.
+type TableArrayAutoGenerateConfig struct {
+	Columns bool `bson:"columns" json:"columns"`
+	Add     bool `bson:"add" json:"add"`
+	Edit    bool `bson:"edit" json:"edit"`
+	Delete  bool `bson:"delete" json:"delete"`
+	Reorder bool `bson:"reorder" json:"reorder"`
+}
+
+// TableArraySourceConfig turns an array field on one fetched parent record into table rows.
 type TableArraySourceConfig struct {
-	Enabled          bool   `bson:"enabled,omitempty" json:"enabled,omitempty"`
-	Field            string `bson:"field,omitempty" json:"field,omitempty"`
-	RowIdentityField string `bson:"rowIdentityField,omitempty" json:"rowIdentityField,omitempty"`
+	Enabled          bool                          `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Field            string                        `bson:"field,omitempty" json:"field,omitempty"`
+	RowIdentityField string                        `bson:"rowIdentityField,omitempty" json:"rowIdentityField,omitempty"`
+	ParentID         *ParameterBinding             `bson:"parentId,omitempty" json:"parentId,omitempty"`
+	AutoGenerate     *TableArrayAutoGenerateConfig `bson:"autoGenerate,omitempty" json:"autoGenerate,omitempty"`
 }
 
 // TableCacheConfig defines cache invalidation behavior for table mutations.

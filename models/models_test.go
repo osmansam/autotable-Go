@@ -812,6 +812,7 @@ func TestPageTableNestedRowsRoundTrip(t *testing.T) {
 }
 
 func TestPageTableArraySourceRoundTrip(t *testing.T) {
+	parentID := ParameterBinding{Source: ParameterBindingSourceStatic, Value: "{{route.id}}"}
 	page := PageModel{
 		Name: "Count Lists",
 		Sections: []Section{{
@@ -825,6 +826,13 @@ func TestPageTableArraySourceRoundTrip(t *testing.T) {
 						Enabled:          true,
 						Field:            "products",
 						RowIdentityField: "product",
+						ParentID:         &parentID,
+						AutoGenerate: &TableArrayAutoGenerateConfig{
+							Columns: true,
+							Add:     true,
+							Edit:    true,
+							Delete:  true,
+						},
 					},
 					GeneratedRelationColumns: []GeneratedRelationColumnsConfig{{
 						ID:               "locations",
@@ -854,6 +862,12 @@ func TestPageTableArraySourceRoundTrip(t *testing.T) {
 	arraySource := got.Sections[0].Component.Table.ArraySource
 	if arraySource == nil || !arraySource.Enabled || arraySource.Field != "products" || arraySource.RowIdentityField != "product" {
 		t.Fatalf("ArraySource = %#v, want products array source keyed by product", arraySource)
+	}
+	if arraySource.ParentID == nil || arraySource.ParentID.Source != ParameterBindingSourceStatic || arraySource.ParentID.Value != "{{route.id}}" {
+		t.Fatalf("ArraySource.ParentID = %#v, want static route binding", arraySource.ParentID)
+	}
+	if arraySource.AutoGenerate == nil || !arraySource.AutoGenerate.Columns || !arraySource.AutoGenerate.Add || !arraySource.AutoGenerate.Edit || !arraySource.AutoGenerate.Delete || arraySource.AutoGenerate.Reorder {
+		t.Fatalf("ArraySource.AutoGenerate = %#v, want generated CRUD without reorder", arraySource.AutoGenerate)
 	}
 }
 

@@ -386,6 +386,14 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 		if strings.TrimSpace(table.ArraySource.RowIdentityField) == "" {
 			return fmt.Errorf("table arraySource requires rowIdentityField")
 		}
+		autoGenerate := table.ArraySource.AutoGenerate
+		writable := autoGenerate != nil && (autoGenerate.Add || autoGenerate.Edit || autoGenerate.Delete || autoGenerate.Reorder)
+		if writable && table.ArraySource.ParentID == nil {
+			return fmt.Errorf("writable table arraySource requires parentId")
+		}
+		if autoGenerate != nil && autoGenerate.Reorder && (table.Drag == nil || !table.Drag.Enabled || strings.TrimSpace(table.Drag.OrderField) == "") {
+			return fmt.Errorf("generated array reorder requires enabled table drag with orderField")
+		}
 	}
 	dataFields := map[string]struct{}{}
 	for _, field := range table.DataFields {

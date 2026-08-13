@@ -40,6 +40,7 @@ func TestValidateTableComponentConfigDataMode(t *testing.T) {
 }
 
 func TestValidateTableComponentConfigRejectsInvalidArraySource(t *testing.T) {
+	parentID := &ParameterBinding{Source: ParameterBindingSourceStatic, Value: "{{route.id}}"}
 	tests := []struct {
 		name  string
 		table *TableComponentConfig
@@ -59,6 +60,27 @@ func TestValidateTableComponentConfigRejectsInvalidArraySource(t *testing.T) {
 			name:  "enabled array source requires identity",
 			table: &TableComponentConfig{ArraySource: &TableArraySourceConfig{Enabled: true, Field: "products"}},
 			want:  "table arraySource requires rowIdentityField",
+		},
+		{
+			name: "generated mutations require parent binding",
+			table: &TableComponentConfig{ArraySource: &TableArraySourceConfig{
+				Enabled:          true,
+				Field:            "products",
+				RowIdentityField: "product",
+				AutoGenerate:     &TableArrayAutoGenerateConfig{Edit: true},
+			}},
+			want: "writable table arraySource requires parentId",
+		},
+		{
+			name: "generated reorder requires drag order field",
+			table: &TableComponentConfig{ArraySource: &TableArraySourceConfig{
+				Enabled:          true,
+				Field:            "products",
+				RowIdentityField: "product",
+				ParentID:         parentID,
+				AutoGenerate:     &TableArrayAutoGenerateConfig{Reorder: true},
+			}},
+			want: "generated array reorder requires enabled table drag with orderField",
 		},
 	}
 
