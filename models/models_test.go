@@ -674,6 +674,40 @@ func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableTemplateColumnRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "People",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "people-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field:       "fullName",
+					Type:        "template",
+					DisplayName: "Full Name",
+					Template:    "{{name}} {{surname}}",
+				}}},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	column := got.Sections[0].Component.Table.Columns[0]
+	if column.Type != "template" || column.Template != "{{name}} {{surname}}" {
+		t.Fatalf("column = %#v, want persisted template column", column)
+	}
+}
+
 func TestPageTableProgressBarColumnRoundTrip(t *testing.T) {
 	showValue := true
 	page := PageModel{
@@ -777,6 +811,52 @@ func TestPageTableNestedRowsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableArraySourceRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Count Lists",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "count-list-products",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					DataMode: "arrayField",
+					ArraySource: &TableArraySourceConfig{
+						Enabled:          true,
+						Field:            "products",
+						RowIdentityField: "product",
+					},
+					GeneratedRelationColumns: []GeneratedRelationColumnsConfig{{
+						ID:               "locations",
+						ArrayField:       "locations",
+						SourceSchemaName: "location",
+						SourceIDField:    "_id",
+						SourceLabelField: "name",
+					}},
+				},
+			},
+		}},
+	}
+
+	if err := ValidatePageTableConfig(&page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() error = %v", err)
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	arraySource := got.Sections[0].Component.Table.ArraySource
+	if arraySource == nil || !arraySource.Enabled || arraySource.Field != "products" || arraySource.RowIdentityField != "product" {
+		t.Fatalf("ArraySource = %#v, want products array source keyed by product", arraySource)
+	}
+}
+
 func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	isNumberButtonsActive := true
 	isDisabled := true
@@ -796,9 +876,10 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 				Type: ComponentTypeTable,
 				Table: &TableComponentConfig{
 					Actions: []ActionConfig{{
-						Kind:       "update",
-						ButtonName: "Save stock",
-						FormFields: &formFields,
+						Kind:           "update",
+						ButtonName:     "Save stock",
+						FormFields:     &formFields,
+						ConstantValues: map[string]interface{}{"status": "ACTIVE", "enabled": false, "count": 0, "parent": nil},
 					}},
 				},
 			},
@@ -830,6 +911,42 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	}
 	if gotButtonName := got.Sections[0].Component.Table.Actions[0].ButtonName; gotButtonName != "Save stock" {
 		t.Fatalf("ButtonName = %q, want %q", gotButtonName, "Save stock")
+	}
+	gotConstants := got.Sections[0].Component.Table.Actions[0].ConstantValues
+	if gotConstants["status"] != "ACTIVE" || gotConstants["enabled"] != false || gotConstants["count"] != int32(0) {
+		t.Fatalf("ConstantValues = %#v, want string, false, and zero values", gotConstants)
+	}
+	if parent, ok := gotConstants["parent"]; !ok || parent != nil {
+		t.Fatalf("ConstantValues[parent] = %#v (present %v), want present nil", parent, ok)
+	}
+}
+
+func TestPageTableAdditionalDataFieldsRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					Columns:    []TableColumnConfig{{Field: "name"}},
+					DataFields: []string{"status", "internalCategory"},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Sections[0].Component.Table.DataFields, []string{"status", "internalCategory"}) {
+		t.Fatalf("DataFields = %#v, want status and internalCategory", got.Sections[0].Component.Table.DataFields)
 	}
 }
 
@@ -876,6 +993,30 @@ func TestPageTableActionFormLayoutRoundTrip(t *testing.T) {
 	}
 	if layout.AllowOverflow == nil || *layout.AllowOverflow {
 		t.Fatalf("AllowOverflow = %#v, want explicit false", layout.AllowOverflow)
+	}
+}
+
+func TestValidateActionConfigConstantValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]interface{}
+		wantErr string
+	}{
+		{name: "string value", values: map[string]interface{}{"status": "ACTIVE"}},
+		{name: "falsy and null values", values: map[string]interface{}{"enabled": false, "count": 0, "note": "", "parent": nil}},
+		{name: "blank key", values: map[string]interface{}{"   ": "ACTIVE"}, wantErr: "constantValues requires non-empty keys"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateActionConfig(ActionConfig{Kind: "update", ConstantValues: tt.values})
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("ValidateActionConfig() unexpected error: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("ValidateActionConfig() error = %v, want %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 

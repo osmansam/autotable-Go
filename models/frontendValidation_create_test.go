@@ -15,12 +15,17 @@ func TestValidateTableComponentConfigDataMode(t *testing.T) {
 		{name: "omitted"},
 		{name: "paginated", mode: "paginated"},
 		{name: "all", mode: "all"},
+		{name: "array field", mode: "arrayField"},
 		{name: "unknown", mode: "future", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateTableComponentConfig(&TableComponentConfig{DataMode: tt.mode})
+			table := &TableComponentConfig{DataMode: tt.mode}
+			if tt.mode == "arrayField" {
+				table.ArraySource = &TableArraySourceConfig{Enabled: true, Field: "products", RowIdentityField: "product"}
+			}
+			err := ValidateTableComponentConfig(table)
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "invalid table dataMode") {
 					t.Fatalf("ValidateTableComponentConfig() error = %v, want invalid table dataMode", err)
@@ -29,6 +34,63 @@ func TestValidateTableComponentConfigDataMode(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("ValidateTableComponentConfig() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestValidateTableComponentConfigRejectsInvalidArraySource(t *testing.T) {
+	tests := []struct {
+		name  string
+		table *TableComponentConfig
+		want  string
+	}{
+		{
+			name:  "array mode requires array source",
+			table: &TableComponentConfig{DataMode: "arrayField"},
+			want:  "table dataMode arrayField requires enabled arraySource",
+		},
+		{
+			name:  "enabled array source requires field",
+			table: &TableComponentConfig{ArraySource: &TableArraySourceConfig{Enabled: true, RowIdentityField: "product"}},
+			want:  "table arraySource requires field",
+		},
+		{
+			name:  "enabled array source requires identity",
+			table: &TableComponentConfig{ArraySource: &TableArraySourceConfig{Enabled: true, Field: "products"}},
+			want:  "table arraySource requires rowIdentityField",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTableComponentConfig(tt.table)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateTableComponentConfig() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateTableComponentConfigDataFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		dataFields []string
+		wantErr    string
+	}{
+		{name: "valid", dataFields: []string{"status", "internalCategory"}},
+		{name: "blank", dataFields: []string{"status", " "}, wantErr: "table dataFields requires non-empty fields"},
+		{name: "duplicate after trimming", dataFields: []string{"status", " status "}, wantErr: "table dataFields field 'status' is duplicated"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTableComponentConfig(&TableComponentConfig{DataFields: tt.dataFields})
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("ValidateTableComponentConfig() unexpected error: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("ValidateTableComponentConfig() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -89,6 +151,17 @@ func TestValidateTableComponentConfigRejectsEnabledDragWithoutOrderField(t *test
 
 	if err := ValidateTableComponentConfig(table); err == nil {
 		t.Fatal("ValidateTableComponentConfig() error = nil, want missing drag order field error")
+	}
+}
+
+func TestValidateTableComponentConfigRejectsBlankTemplateColumn(t *testing.T) {
+	table := &TableComponentConfig{Columns: []TableColumnConfig{{
+		Field: "fullName",
+		Type:  "template",
+	}}}
+
+	if err := ValidateTableComponentConfig(table); err == nil || !strings.Contains(err.Error(), "requires template") {
+		t.Fatalf("ValidateTableComponentConfig() error = %v, want missing template error", err)
 	}
 }
 

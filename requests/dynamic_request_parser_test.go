@@ -189,7 +189,7 @@ func TestDynamicRequestParserJSONPaths(t *testing.T) {
 
 func TestDynamicRequestParserQueryPaths(t *testing.T) {
 	parser := NewDynamicRequestParser(nil)
-	container := &models.ContainerModel{Fields: []models.Field{{Name: "age", Type: "int"}}}
+	container := &models.ContainerModel{Fields: []models.Field{{Name: "age", Type: "int"}, {Name: "status", Type: "enum"}}}
 	app := fiber.New()
 	app.Get("/", func(c *fiber.Ctx) error {
 		search, err := parser.ParseSearchParams(c)
@@ -197,7 +197,7 @@ func TestDynamicRequestParserQueryPaths(t *testing.T) {
 			t.Fatalf("ParseSearchParams() = %#v, %v", search, err)
 		}
 		filter, err := parser.ParseFilterParams(c, container)
-		if err != nil || !reflect.DeepEqual(filter.Filter, bson.M{"age": 42}) {
+		if err != nil || !reflect.DeepEqual(filter.Filter, bson.M{"age": 42, "status": "ACTIVE"}) {
 			t.Fatalf("ParseFilterParams() = %#v, %v", filter, err)
 		}
 		paginated, err := parser.ParsePaginatedItemsParams(c, container)
@@ -206,7 +206,7 @@ func TestDynamicRequestParserQueryPaths(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/?search=Ada&page=2&limit=5&age=42", nil)); err != nil {
+	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/?search=Ada&page=2&limit=5&age=42&status=ACTIVE", nil)); err != nil {
 		t.Fatalf("app.Test() error = %v", err)
 	}
 }

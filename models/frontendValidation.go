@@ -123,6 +123,11 @@ func ValidateActionConfig(action ActionConfig) error {
 	if err := validateActionKind(action.Kind); err != nil {
 		return err
 	}
+	for key := range action.ConstantValues {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("constantValues requires non-empty keys")
+		}
+	}
 	if err := validateActionModalType(action.ModalType); err != nil {
 		return err
 	}
@@ -368,8 +373,30 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
 	}
-	if table.DataMode != "" && table.DataMode != "paginated" && table.DataMode != "all" {
+	if table.DataMode != "" && table.DataMode != "paginated" && table.DataMode != "all" && table.DataMode != "arrayField" {
 		return fmt.Errorf("invalid table dataMode %q", table.DataMode)
+	}
+	if table.DataMode == "arrayField" && (table.ArraySource == nil || !table.ArraySource.Enabled) {
+		return fmt.Errorf("table dataMode arrayField requires enabled arraySource")
+	}
+	if table.ArraySource != nil && table.ArraySource.Enabled {
+		if strings.TrimSpace(table.ArraySource.Field) == "" {
+			return fmt.Errorf("table arraySource requires field")
+		}
+		if strings.TrimSpace(table.ArraySource.RowIdentityField) == "" {
+			return fmt.Errorf("table arraySource requires rowIdentityField")
+		}
+	}
+	dataFields := map[string]struct{}{}
+	for _, field := range table.DataFields {
+		trimmed := strings.TrimSpace(field)
+		if trimmed == "" {
+			return fmt.Errorf("table dataFields requires non-empty fields")
+		}
+		if _, exists := dataFields[trimmed]; exists {
+			return fmt.Errorf("table dataFields field '%s' is duplicated", trimmed)
+		}
+		dataFields[trimmed] = struct{}{}
 	}
 	if table.Drag != nil && table.Drag.Enabled && strings.TrimSpace(table.Drag.OrderField) == "" {
 		return fmt.Errorf("enabled table drag configuration requires orderField")
@@ -379,6 +406,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	}
 
 	for _, column := range table.Columns {
+		if column.Type == "template" && strings.TrimSpace(column.Template) == "" {
+			return fmt.Errorf("table column '%s' requires template", column.Field)
+		}
 		if column.Link == nil {
 			continue
 		}

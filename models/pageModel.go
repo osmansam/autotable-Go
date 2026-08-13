@@ -161,6 +161,7 @@ type TableColumnConfig struct {
 	DisplayName          string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
 	Lookup               *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	ComputedLabelRules   []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
+	Template             string                   `bson:"template,omitempty" json:"template,omitempty"`
 	FallbackValue        string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
 	ProgressBar          *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
 	CellClassName        []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
@@ -237,6 +238,13 @@ type TableNestedRowsConfig struct {
 	Columns []TableNestedRowColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
 }
 
+// TableArraySourceConfig turns an array field on the fetched records into table rows.
+type TableArraySourceConfig struct {
+	Enabled          bool   `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Field            string `bson:"field,omitempty" json:"field,omitempty"`
+	RowIdentityField string `bson:"rowIdentityField,omitempty" json:"rowIdentityField,omitempty"`
+}
+
 // TableCacheConfig defines cache invalidation behavior for table mutations.
 type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
@@ -292,9 +300,11 @@ type TableComponentConfig struct {
 	DataMode                 string                           `bson:"dataMode,omitempty" json:"dataMode,omitempty"`
 	EnableSearch             *bool                            `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
 	Columns                  []TableColumnConfig              `bson:"columns,omitempty" json:"columns,omitempty"`
+	DataFields               []string                         `bson:"dataFields,omitempty" json:"dataFields,omitempty"`
 	GeneratedRelationColumns []GeneratedRelationColumnsConfig `bson:"generatedRelationColumns,omitempty" json:"generatedRelationColumns,omitempty"`
 	Rows                     *TableRowsConfig                 `bson:"rows,omitempty" json:"rows,omitempty"`
 	NestedRows               *TableNestedRowsConfig           `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
+	ArraySource              *TableArraySourceConfig          `bson:"arraySource,omitempty" json:"arraySource,omitempty"`
 	Cache                    *TableCacheConfig                `bson:"cache,omitempty" json:"cache,omitempty"`
 	ConstantFilters          map[string]interface{}           `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
 	ConstantSort             *TableConstantSortConfig         `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
