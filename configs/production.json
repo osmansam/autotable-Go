@@ -61,6 +61,10 @@
       "uploadBodySizeBytes": 26214400
     }
   },
-  "corsWhitelist": ["https://tenant.autoapi.org", "https://panel.autoapi.org"],
+  "corsWhitelist": [
+    "https://tenant.autoapi.org",
+    "https://panel.autoapi.org",
+    "https://bayi.davinciboardgame.com"
+  ],
   "migrationEnabled": false
 }
