@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,17 @@ import (
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 )
+
+func parseSelectionLimit(raw string) (int64, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	limit, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, fmt.Errorf("limit must be an integer between 1 and 100")
+	}
+	return limit, nil
+}
 
 // getProjectContext extracts tenantID and projectID from fiber context
 // Returns an error if either is missing
@@ -263,6 +275,10 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
 	valueField := c.Query("valueField")
+	limit, err := parseSelectionLimit(c.Query("limit"))
+	if err != nil {
+		return sendDynamicError(c, &services.ServiceError{Status: http.StatusBadRequest, Message: err.Error()}, "Invalid selection limit")
+	}
 	filter := map[string]interface{}{}
 	var container *models.ContainerModel
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
@@ -289,6 +305,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		Schema:     schemaName,
 		FieldName:  fieldName,
 		ValueField: valueField,
+		Limit:      limit,
 		Filter:     filter,
 		UserRole:   userRole,
 	})

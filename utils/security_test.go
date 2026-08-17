@@ -27,6 +27,22 @@ func TestGenerateAndParseTokens(t *testing.T) {
 	if _, _, _, _, _, _, err := ParseToken("invalid"); err == nil {
 		t.Fatal("ParseToken(invalid) error = nil")
 	}
+	if _, _, _, _, _, _, err := ParseToken(tokens.RefreshToken); err == nil {
+		t.Fatal("ParseToken(refresh token) error = nil")
+	}
+	refreshClaims, err := ParseProjectRefreshToken(tokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("ParseProjectRefreshToken() error = %v", err)
+	}
+	if refreshClaims.TokenType != TokenTypeRefresh || refreshClaims.Scope != TokenScopeProject || refreshClaims.Audience != ProjectTokenAudience {
+		t.Fatalf("refresh claims = %#v", refreshClaims)
+	}
+	if refreshClaims.ID == "" || refreshClaims.FamilyID == "" {
+		t.Fatalf("refresh identifiers missing: %#v", refreshClaims)
+	}
+	if _, err := ParseProjectRefreshToken(tokens.AccessToken); err == nil {
+		t.Fatal("ParseProjectRefreshToken(access token) error = nil")
+	}
 
 	tokens, err = GenerateTokensWithDisplayName("user", "admin", "tenant", "project", "tenant-slug", "project-slug", "Ada")
 	if err != nil {
@@ -34,6 +50,26 @@ func TestGenerateAndParseTokens(t *testing.T) {
 	}
 	if got := ParseTokenDisplayName(tokens.AccessToken); got != "Ada" {
 		t.Fatalf("ParseTokenDisplayName() = %q, want Ada", got)
+	}
+}
+
+func TestGenerateProjectTokensForFamilyPreservesFamilyAndRotatesJTI(t *testing.T) {
+	oldSecret := jwtSecret
+	jwtSecret = []byte("test-secret")
+	t.Cleanup(func() { jwtSecret = oldSecret })
+
+	first, err := GenerateTokensForFamily("user", "admin", "tenant", "project", "davinci", "goblin", "Ada", "family-1")
+	if err != nil {
+		t.Fatalf("first GenerateTokensForFamily() error = %v", err)
+	}
+	second, err := GenerateTokensForFamily("user", "admin", "tenant", "project", "davinci", "goblin", "Ada", "family-1")
+	if err != nil {
+		t.Fatalf("second GenerateTokensForFamily() error = %v", err)
+	}
+	firstClaims, _ := ParseProjectRefreshToken(first.RefreshToken)
+	secondClaims, _ := ParseProjectRefreshToken(second.RefreshToken)
+	if firstClaims.FamilyID != "family-1" || secondClaims.FamilyID != "family-1" || firstClaims.ID == secondClaims.ID {
+		t.Fatalf("claims = %#v, %#v", firstClaims, secondClaims)
 	}
 }
 
@@ -60,6 +96,34 @@ func TestGenerateAndParseTenantTokens(t *testing.T) {
 	}
 	if _, err := ParseTenantToken("invalid"); err == nil {
 		t.Fatal("ParseTenantToken(invalid) error = nil")
+	}
+	if _, err := ParseTenantToken(tokens.RefreshToken); err == nil {
+		t.Fatal("ParseTenantToken(refresh token) error = nil")
+	}
+	refreshClaims, err := ParseTenantRefreshToken(tokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("ParseTenantRefreshToken() error = %v", err)
+	}
+	if refreshClaims.TokenType != TokenTypeRefresh || refreshClaims.Scope != TokenScopeProject || refreshClaims.Audience != TenantTokenAudience {
+		t.Fatalf("tenant refresh claims = %#v", refreshClaims)
+	}
+	if _, err := ParseTenantRefreshToken(tokens.AccessToken); err == nil {
+		t.Fatal("ParseTenantRefreshToken(access token) error = nil")
+	}
+}
+
+func TestGenerateTenantTokensForFamilyPreservesFamily(t *testing.T) {
+	oldSecret := tenantJwtSecret
+	tenantJwtSecret = []byte("tenant-test-secret")
+	t.Cleanup(func() { tenantJwtSecret = oldSecret })
+
+	tokens, err := GenerateTenantTokensForFamily("user", "user@example.com", "tenant", "", []string{models.TenantRoleOwner}, string(models.RoleScopeTenant), "family-tenant")
+	if err != nil {
+		t.Fatalf("GenerateTenantTokensForFamily() error = %v", err)
+	}
+	claims, err := ParseTenantRefreshToken(tokens.RefreshToken)
+	if err != nil || claims.FamilyID != "family-tenant" {
+		t.Fatalf("claims = %#v, error = %v", claims, err)
 	}
 }
 

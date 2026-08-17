@@ -626,6 +626,81 @@ func TestValidatePageTableConfig(t *testing.T) {
 	}
 }
 
+func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
+	validConfig := &RelationMatrixConfig{
+		RowSchemaName:        "product",
+		RowIDField:           "_id",
+		RowLabelField:        "name",
+		ColumnSchemaName:     "countList",
+		ColumnIDField:        "_id",
+		ColumnLabelField:     "name",
+		TargetArrayField:     "products",
+		TargetItemMatchField: "product",
+		ColumnLimit:          100,
+		VisibilityToggle:     &ToggleBinding{ToggleID: "show-count-lists", When: true},
+		EditToggle:           &ToggleBinding{ToggleID: "edit-count-lists", When: true},
+	}
+	page := PageModel{
+		Name: "Product matrix",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:             "product-countlists",
+				Type:           ComponentType("relationMatrix"),
+				RelationMatrix: validConfig,
+			},
+		}},
+	}
+
+	jsonData, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var jsonPage PageModel
+	if err := json.Unmarshal(jsonData, &jsonPage); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := jsonPage.Sections[0].Component.RelationMatrix; !reflect.DeepEqual(got, validConfig) {
+		t.Fatalf("JSON relationMatrix = %#v, want %#v", got, validConfig)
+	}
+
+	bsonData, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var bsonPage PageModel
+	if err := bson.Unmarshal(bsonData, &bsonPage); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if got := bsonPage.Sections[0].Component.RelationMatrix; !reflect.DeepEqual(got, validConfig) {
+		t.Fatalf("BSON relationMatrix = %#v, want %#v", got, validConfig)
+	}
+
+	if err := ValidatePageTableConfig(&page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() valid matrix error = %v", err)
+	}
+
+	missingMatch := page
+	missingConfig := *validConfig
+	missingConfig.TargetItemMatchField = ""
+	missingMatch.Sections = []Section{{Type: SectionTypeComponent, Component: &ComponentBlock{
+		ID: "missing-match", Type: ComponentType("relationMatrix"), RelationMatrix: &missingConfig,
+	}}}
+	if err := ValidatePageTableConfig(&missingMatch); err == nil || !strings.Contains(err.Error(), "targetItemMatchField") {
+		t.Fatalf("ValidatePageTableConfig() missing match error = %v", err)
+	}
+
+	tooMany := page
+	limitConfig := *validConfig
+	limitConfig.ColumnLimit = 101
+	tooMany.Sections = []Section{{Type: SectionTypeComponent, Component: &ComponentBlock{
+		ID: "too-many", Type: ComponentType("relationMatrix"), RelationMatrix: &limitConfig,
+	}}}
+	if err := ValidatePageTableConfig(&tooMany); err == nil || !strings.Contains(err.Error(), "columnLimit") {
+		t.Fatalf("ValidatePageTableConfig() column limit error = %v", err)
+	}
+}
+
 func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {
 	page := PageModel{
 		Name: "Inventory",
@@ -671,6 +746,40 @@ func TestPageTableComputedLabelColumnRoundTrip(t *testing.T) {
 	}
 	if column.ComputedLabelRules[0].Condition != "stock == 1" || column.ComputedLabelRules[0].Value != "critical" {
 		t.Fatalf("ComputedLabelRules[0] = %#v, want critical stock rule", column.ComputedLabelRules[0])
+	}
+}
+
+func TestPageTableTemplateColumnRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "People",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "people-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field:       "fullName",
+					Type:        "template",
+					DisplayName: "Full Name",
+					Template:    "{{name}} {{surname}}",
+				}}},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	column := got.Sections[0].Component.Table.Columns[0]
+	if column.Type != "template" || column.Template != "{{name}} {{surname}}" {
+		t.Fatalf("column = %#v, want persisted template column", column)
 	}
 }
 
@@ -777,6 +886,66 @@ func TestPageTableNestedRowsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPageTableArraySourceRoundTrip(t *testing.T) {
+	parentID := ParameterBinding{Source: ParameterBindingSourceStatic, Value: "{{route.id}}"}
+	page := PageModel{
+		Name: "Count Lists",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "count-list-products",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					DataMode: "arrayField",
+					ArraySource: &TableArraySourceConfig{
+						Enabled:          true,
+						Field:            "products",
+						RowIdentityField: "product",
+						ParentID:         &parentID,
+						AutoGenerate: &TableArrayAutoGenerateConfig{
+							Columns: true,
+							Add:     true,
+							Edit:    true,
+							Delete:  true,
+						},
+					},
+					GeneratedRelationColumns: []GeneratedRelationColumnsConfig{{
+						ID:               "locations",
+						ArrayField:       "locations",
+						SourceSchemaName: "location",
+						SourceIDField:    "_id",
+						SourceLabelField: "name",
+					}},
+				},
+			},
+		}},
+	}
+
+	if err := ValidatePageTableConfig(&page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() error = %v", err)
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	arraySource := got.Sections[0].Component.Table.ArraySource
+	if arraySource == nil || !arraySource.Enabled || arraySource.Field != "products" || arraySource.RowIdentityField != "product" {
+		t.Fatalf("ArraySource = %#v, want products array source keyed by product", arraySource)
+	}
+	if arraySource.ParentID == nil || arraySource.ParentID.Source != ParameterBindingSourceStatic || arraySource.ParentID.Value != "{{route.id}}" {
+		t.Fatalf("ArraySource.ParentID = %#v, want static route binding", arraySource.ParentID)
+	}
+	if arraySource.AutoGenerate == nil || !arraySource.AutoGenerate.Columns || !arraySource.AutoGenerate.Add || !arraySource.AutoGenerate.Edit || !arraySource.AutoGenerate.Delete || arraySource.AutoGenerate.Reorder {
+		t.Fatalf("ArraySource.AutoGenerate = %#v, want generated CRUD without reorder", arraySource.AutoGenerate)
+	}
+}
+
 func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	isNumberButtonsActive := true
 	isDisabled := true
@@ -796,9 +965,10 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 				Type: ComponentTypeTable,
 				Table: &TableComponentConfig{
 					Actions: []ActionConfig{{
-						Kind:       "update",
-						ButtonName: "Save stock",
-						FormFields: &formFields,
+						Kind:           "update",
+						ButtonName:     "Save stock",
+						FormFields:     &formFields,
+						ConstantValues: map[string]interface{}{"status": "ACTIVE", "enabled": false, "count": 0, "parent": nil},
 					}},
 				},
 			},
@@ -830,6 +1000,213 @@ func TestPageTableActionFormFieldInvalidateKeysRoundTrip(t *testing.T) {
 	}
 	if gotButtonName := got.Sections[0].Component.Table.Actions[0].ButtonName; gotButtonName != "Save stock" {
 		t.Fatalf("ButtonName = %q, want %q", gotButtonName, "Save stock")
+	}
+	gotConstants := got.Sections[0].Component.Table.Actions[0].ConstantValues
+	if gotConstants["status"] != "ACTIVE" || gotConstants["enabled"] != false || gotConstants["count"] != int32(0) {
+		t.Fatalf("ConstantValues = %#v, want string, false, and zero values", gotConstants)
+	}
+	if parent, ok := gotConstants["parent"]; !ok || parent != nil {
+		t.Fatalf("ConstantValues[parent] = %#v (present %v), want present nil", parent, ok)
+	}
+}
+
+func TestPageTableAdditionalDataFieldsRoundTrip(t *testing.T) {
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					Columns:    []TableColumnConfig{{Field: "name"}},
+					DataFields: []string{"status", "internalCategory"},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Sections[0].Component.Table.DataFields, []string{"status", "internalCategory"}) {
+		t.Fatalf("DataFields = %#v, want status and internalCategory", got.Sections[0].Component.Table.DataFields)
+	}
+}
+
+func TestPageTableActionFormLayoutRoundTrip(t *testing.T) {
+	allowOverflow := false
+	page := PageModel{
+		Name: "Orders",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "orders-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					AddButton: &ActionConfig{
+						Kind: "create",
+						FormLayout: &ActionFormLayoutConfig{
+							Columns:          3,
+							AllowOverflow:    &allowOverflow,
+							TopClassName:     "items-start",
+							GeneralClassName: "w-full",
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	layout := got.Sections[0].Component.Table.AddButton.FormLayout
+	if layout == nil {
+		t.Fatal("FormLayout = nil, want persisted per-action layout")
+	}
+	if layout.Columns != 3 || layout.TopClassName != "items-start" || layout.GeneralClassName != "w-full" {
+		t.Fatalf("FormLayout = %#v, want all class and column settings", layout)
+	}
+	if layout.AllowOverflow == nil || *layout.AllowOverflow {
+		t.Fatalf("AllowOverflow = %#v, want explicit false", layout.AllowOverflow)
+	}
+}
+
+func TestValidateActionConfigConstantValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]interface{}
+		wantErr string
+	}{
+		{name: "string value", values: map[string]interface{}{"status": "ACTIVE"}},
+		{name: "falsy and null values", values: map[string]interface{}{"enabled": false, "count": 0, "note": "", "parent": nil}},
+		{name: "blank key", values: map[string]interface{}{"   ": "ACTIVE"}, wantErr: "constantValues requires non-empty keys"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateActionConfig(ActionConfig{Kind: "update", ConstantValues: tt.values})
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("ValidateActionConfig() unexpected error: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("ValidateActionConfig() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPageTableTogglesRoundTrip(t *testing.T) {
+	visible := true
+	page := PageModel{
+		Name: "Inventory",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "inventory-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{
+					Drag: &TableDragConfig{Enabled: true, OrderField: "order"},
+					Toggles: []TableToggleConfig{{
+						ID:           "showInactive",
+						Label:        "Show inactive",
+						DefaultValue: false,
+						Request: &TableToggleRequestConfig{
+							Off: &ToggleRequestEffect{Type: "set", Field: "deleted", Value: false},
+							On:  &ToggleRequestEffect{Type: "omit"},
+						},
+					}},
+					Columns: []TableColumnConfig{{
+						Field:                "active",
+						Type:                 "booleanSwitch",
+						VisibilityToggle:     &ToggleBinding{ToggleID: "showInactive", When: true},
+						BooleanEditToggle:    &ToggleBinding{ToggleID: "showInactive", When: false},
+						BooleanDisplayToggle: &ToggleBinding{ToggleID: "showInactive", When: true},
+					}},
+					GeneratedRelationColumns: []GeneratedRelationColumnsConfig{{
+						ID: "locations", ArrayField: "locations", SourceSchemaName: "location",
+						SourceIDField: "_id", SourceLabelField: "name", SourceLimit: 50,
+						VisibilityToggle:  &ToggleBinding{ToggleID: "showInactive", When: true},
+						BooleanEditToggle: &ToggleBinding{ToggleID: "showInactive", When: false},
+					}},
+				},
+			},
+		}},
+	}
+
+	data, err := bson.Marshal(page)
+	if err != nil {
+		t.Fatalf("bson.Marshal() error = %v", err)
+	}
+	var got PageModel
+	if err := bson.Unmarshal(data, &got); err != nil {
+		t.Fatalf("bson.Unmarshal() error = %v", err)
+	}
+
+	table := got.Sections[0].Component.Table
+	if table.Drag == nil || !table.Drag.Enabled || table.Drag.OrderField != "order" {
+		t.Fatalf("Drag = %#v, want enabled order-field configuration", table.Drag)
+	}
+	if len(table.Toggles) != 1 || table.Toggles[0].ID != "showInactive" {
+		t.Fatalf("Toggles = %#v, want persisted showInactive toggle", table.Toggles)
+	}
+	if table.Toggles[0].Request == nil || table.Toggles[0].Request.Off == nil || table.Toggles[0].Request.Off.Value != false {
+		t.Fatalf("Request = %#v, want OFF deleted=false", table.Toggles[0].Request)
+	}
+	column := table.Columns[0]
+	if column.VisibilityToggle == nil || !column.VisibilityToggle.When {
+		t.Fatalf("VisibilityToggle = %#v, want visible when ON", column.VisibilityToggle)
+	}
+	if column.BooleanEditToggle == nil || column.BooleanEditToggle.When {
+		t.Fatalf("BooleanEditToggle = %#v, want editable when OFF", column.BooleanEditToggle)
+	}
+	if column.BooleanDisplayToggle == nil || !column.BooleanDisplayToggle.When {
+		t.Fatalf("BooleanDisplayToggle = %#v, want switch presentation when ON", column.BooleanDisplayToggle)
+	}
+	group := table.GeneratedRelationColumns[0]
+	if group.ID != "locations" || group.ArrayField != "locations" || group.SourceLimit != 50 {
+		t.Fatalf("GeneratedRelationColumns = %#v, want persisted locations group", table.GeneratedRelationColumns)
+	}
+	if group.BooleanEditToggle == nil || group.BooleanEditToggle.When {
+		t.Fatalf("BooleanEditToggle = %#v, want generated switches editable when OFF", group.BooleanEditToggle)
+	}
+	if group.VisibilityToggle == nil || group.VisibilityToggle.ToggleID != "showInactive" || group.VisibilityToggle.When != visible {
+		t.Fatalf("VisibilityToggle = %#v, want generated columns visible when ON", group.VisibilityToggle)
+	}
+}
+
+func TestTableToggleExplicitLowerPlacementJSONRoundTrip(t *testing.T) {
+	var toggle TableToggleConfig
+	if err := json.Unmarshal(
+		[]byte(`{"id":"locations","label":"Locations","defaultValue":false,"isUpperSide":false}`),
+		&toggle,
+	); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	data, err := json.Marshal(toggle)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal(output) error = %v", err)
+	}
+	if value, ok := got["isUpperSide"]; !ok || value != false {
+		t.Fatalf("isUpperSide = %#v, present = %v, want explicit false", value, ok)
 	}
 }
 

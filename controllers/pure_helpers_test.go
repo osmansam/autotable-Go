@@ -68,6 +68,27 @@ func TestSanitizeFieldName(t *testing.T) {
 	}
 }
 
+func TestParseSelectionLimit(t *testing.T) {
+	tests := []struct {
+		raw     string
+		want    int64
+		wantErr bool
+	}{
+		{raw: "", want: 0},
+		{raw: "25", want: 25},
+		{raw: "0", wantErr: true},
+		{raw: "-1", wantErr: true},
+		{raw: "101", wantErr: true},
+		{raw: "many", wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := parseSelectionLimit(tt.raw)
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Fatalf("parseSelectionLimit(%q) = %d, %v; want %d, error=%v", tt.raw, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
 func TestResolveAuthRoleNameKeepsRoleObjectID(t *testing.T) {
 	roleID := primitive.NewObjectID()
 	if got := resolveAuthRoleName(context.Background(), "tenant", "project", roleID); got != roleID.Hex() {
@@ -382,13 +403,31 @@ func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
 
-	mt.Run("rejects self reference", func(mt *mtest.T) {
+	mt.Run("allows self reference while updating a container", func(mt *mtest.T) {
 		container := models.ContainerModel{
-			SchemaName: "orders",
-			Fields:     []models.Field{{Name: "parent", Type: "objectIdArray", ObjectSchemaName: "orders"}},
+			SchemaName: "location",
+			Fields:     []models.Field{{Name: "fallbackStockLocation", Type: "objectId", ObjectSchemaName: "location"}},
 		}
-		if _, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NilObjectID); err == nil {
-			t.Fatal("validateObjectReferences() error = nil")
+		got, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NewObjectID())
+		if err != nil {
+			t.Fatalf("validateObjectReferences() error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("validateObjectReferences() = %#v, want no external references", got)
+		}
+	})
+
+	mt.Run("allows self reference while creating a container", func(mt *mtest.T) {
+		container := models.ContainerModel{
+			SchemaName: "location",
+			Fields:     []models.Field{{Name: "fallbackStockLocations", Type: "objectIdArray", ObjectSchemaName: "location"}},
+		}
+		got, err := validateObjectReferences(context.Background(), mt.Coll, container, primitive.NilObjectID)
+		if err != nil {
+			t.Fatalf("validateObjectReferences() error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("validateObjectReferences() = %#v, want no external references", got)
 		}
 	})
 

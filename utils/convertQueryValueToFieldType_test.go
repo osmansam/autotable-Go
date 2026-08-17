@@ -1,10 +1,34 @@
 package utils
 
 import (
+	"reflect"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
+
+func TestConvertQueryValueToFieldType_Enum(t *testing.T) {
+	tests := []struct {
+		name       string
+		queryValue string
+		want       interface{}
+	}{
+		{name: "single enum value", queryValue: "ACTIVE", want: "ACTIVE"},
+		{name: "multiple enum values", queryValue: "ACTIVE,PAUSED", want: bson.M{"$in": []string{"ACTIVE", "PAUSED"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConvertQueryValueToFieldType("status", "enum", tt.queryValue)
+			if err != nil {
+				t.Fatalf("ConvertQueryValueToFieldType() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ConvertQueryValueToFieldType() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestConvertQueryValueToFieldType_Integer(t *testing.T) {
 	tests := []struct {
@@ -92,19 +116,19 @@ func TestConvertQueryValueToFieldType_Integer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ConvertQueryValueToFieldType(tt.fieldName, tt.fieldType, tt.queryValue)
-			
+
 			if (err != nil) != tt.wantError {
 				t.Errorf("ConvertQueryValueToFieldType() error = %v, wantError %v", err, tt.wantError)
 				return
 			}
-			
+
 			if !tt.wantError {
 				gotInt, ok := got.(int)
 				if !ok {
 					t.Errorf("ConvertQueryValueToFieldType() returned type %T, want int", got)
 					return
 				}
-				
+
 				if gotInt != tt.wantValue {
 					t.Errorf("ConvertQueryValueToFieldType() = %v, want %v", gotInt, tt.wantValue)
 				}
@@ -151,36 +175,36 @@ func TestConvertQueryValueToFieldType_IntegerList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ConvertQueryValueToFieldType(tt.fieldName, tt.fieldType, tt.queryValue)
-			
+
 			if (err != nil) != tt.wantError {
 				t.Errorf("ConvertQueryValueToFieldType() error = %v, wantError %v", err, tt.wantError)
 				return
 			}
-			
+
 			if !tt.wantError {
 				gotBson, ok := got.(bson.M)
 				if !ok {
 					t.Errorf("ConvertQueryValueToFieldType() returned type %T, want bson.M", got)
 					return
 				}
-				
+
 				gotIn, ok := gotBson["$in"]
 				if !ok {
 					t.Errorf("ConvertQueryValueToFieldType() missing $in operator")
 					return
 				}
-				
+
 				gotIntSlice, ok := gotIn.([]int)
 				if !ok {
 					t.Errorf("ConvertQueryValueToFieldType() $in value type %T, want []int", gotIn)
 					return
 				}
-				
+
 				if len(gotIntSlice) != len(tt.wantValues) {
 					t.Errorf("ConvertQueryValueToFieldType() length = %v, want %v", len(gotIntSlice), len(tt.wantValues))
 					return
 				}
-				
+
 				for i, v := range gotIntSlice {
 					if v != tt.wantValues[i] {
 						t.Errorf("ConvertQueryValueToFieldType() [%d] = %v, want %v", i, v, tt.wantValues[i])

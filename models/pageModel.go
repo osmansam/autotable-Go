@@ -148,17 +148,40 @@ type TableLinkConfig struct {
 	Type       string `bson:"type,omitempty" json:"type,omitempty"` // external | internal | email | phone | file
 }
 
+// ToggleBinding connects a column behavior to a table-local toggle state.
+type ToggleBinding struct {
+	ToggleID string `bson:"toggleId" json:"toggleId"`
+	When     bool   `bson:"when" json:"when"`
+}
+
 // TableColumnConfig defines display and cell behavior for one table column.
 type TableColumnConfig struct {
-	Field              string                   `bson:"field" json:"field"`
-	Type               string                   `bson:"type,omitempty" json:"type,omitempty"`
-	DisplayName        string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
-	Lookup             *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
-	ComputedLabelRules []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
-	FallbackValue      string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
-	ProgressBar        *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
-	CellClassName      []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
-	Link               *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+	Field                string                   `bson:"field" json:"field"`
+	Type                 string                   `bson:"type,omitempty" json:"type,omitempty"`
+	DisplayName          string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	Lookup               *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
+	ComputedLabelRules   []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
+	Template             string                   `bson:"template,omitempty" json:"template,omitempty"`
+	FallbackValue        string                   `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
+	ProgressBar          *TableProgressBarConfig  `bson:"progressBar,omitempty" json:"progressBar,omitempty"`
+	CellClassName        []RowClassConfig         `bson:"cellClassName,omitempty" json:"cellClassName,omitempty"`
+	Link                 *TableLinkConfig         `bson:"link,omitempty" json:"link,omitempty"`
+	VisibilityToggle     *ToggleBinding           `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	BooleanEditToggle    *ToggleBinding           `bson:"booleanEditToggle,omitempty" json:"booleanEditToggle,omitempty"`
+	BooleanDisplayToggle *ToggleBinding           `bson:"booleanDisplayToggle,omitempty" json:"booleanDisplayToggle,omitempty"`
+}
+
+// GeneratedRelationColumnsConfig expands records from a reference schema into
+// Boolean membership columns backed by an array field on each table row.
+type GeneratedRelationColumnsConfig struct {
+	ID                string         `bson:"id" json:"id"`
+	ArrayField        string         `bson:"arrayField" json:"arrayField"`
+	SourceSchemaName  string         `bson:"sourceSchemaName" json:"sourceSchemaName"`
+	SourceIDField     string         `bson:"sourceIdField,omitempty" json:"sourceIdField,omitempty"`
+	SourceLabelField  string         `bson:"sourceLabelField" json:"sourceLabelField"`
+	SourceLimit       int            `bson:"sourceLimit,omitempty" json:"sourceLimit,omitempty"`
+	VisibilityToggle  *ToggleBinding `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	BooleanEditToggle *ToggleBinding `bson:"booleanEditToggle,omitempty" json:"booleanEditToggle,omitempty"`
 }
 
 // TableLookupLabelConfig defines display-only lookup rendering for a table column.
@@ -215,6 +238,24 @@ type TableNestedRowsConfig struct {
 	Columns []TableNestedRowColumnConfig `bson:"columns,omitempty" json:"columns,omitempty"`
 }
 
+// TableArrayAutoGenerateConfig records which array-table elements the designer generated.
+type TableArrayAutoGenerateConfig struct {
+	Columns bool `bson:"columns" json:"columns"`
+	Add     bool `bson:"add" json:"add"`
+	Edit    bool `bson:"edit" json:"edit"`
+	Delete  bool `bson:"delete" json:"delete"`
+	Reorder bool `bson:"reorder" json:"reorder"`
+}
+
+// TableArraySourceConfig turns an array field on one fetched parent record into table rows.
+type TableArraySourceConfig struct {
+	Enabled          bool                          `bson:"enabled,omitempty" json:"enabled,omitempty"`
+	Field            string                        `bson:"field,omitempty" json:"field,omitempty"`
+	RowIdentityField string                        `bson:"rowIdentityField,omitempty" json:"rowIdentityField,omitempty"`
+	ParentID         *ParameterBinding             `bson:"parentId,omitempty" json:"parentId,omitempty"`
+	AutoGenerate     *TableArrayAutoGenerateConfig `bson:"autoGenerate,omitempty" json:"autoGenerate,omitempty"`
+}
+
 // TableCacheConfig defines cache invalidation behavior for table mutations.
 type TableCacheConfig struct {
 	InvalidateKeys []string `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
@@ -237,19 +278,70 @@ type TableBulkActionsConfig struct {
 	Delete *ActionConfig `bson:"delete,omitempty" json:"delete,omitempty"`
 }
 
+// ToggleRequestEffect contributes one optional request-filter value for a toggle state.
+type ToggleRequestEffect struct {
+	Type  string      `bson:"type" json:"type"`
+	Field string      `bson:"field,omitempty" json:"field,omitempty"`
+	Value interface{} `bson:"value,omitempty" json:"value,omitempty"`
+}
+
+// TableToggleRequestConfig defines the request effect for both toggle states.
+type TableToggleRequestConfig struct {
+	On  *ToggleRequestEffect `bson:"on,omitempty" json:"on,omitempty"`
+	Off *ToggleRequestEffect `bson:"off,omitempty" json:"off,omitempty"`
+}
+
+// TableToggleConfig defines one local table mode control.
+type TableToggleConfig struct {
+	ID           string                    `bson:"id" json:"id"`
+	Label        string                    `bson:"label,omitempty" json:"label,omitempty"`
+	DefaultValue bool                      `bson:"defaultValue" json:"defaultValue"`
+	IsUpperSide  *bool                     `bson:"isUpperSide,omitempty" json:"isUpperSide,omitempty"`
+	Request      *TableToggleRequestConfig `bson:"request,omitempty" json:"request,omitempty"`
+}
+
+// TableDragConfig controls manual row ordering for a table.
+type TableDragConfig struct {
+	Enabled    bool   `bson:"enabled" json:"enabled"`
+	OrderField string `bson:"orderField" json:"orderField"`
+}
+
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
-	EnableSearch    *bool                    `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
-	Columns         []TableColumnConfig      `bson:"columns,omitempty" json:"columns,omitempty"`
-	Rows            *TableRowsConfig         `bson:"rows,omitempty" json:"rows,omitempty"`
-	NestedRows      *TableNestedRowsConfig   `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
-	Cache           *TableCacheConfig        `bson:"cache,omitempty" json:"cache,omitempty"`
-	ConstantFilters map[string]interface{}   `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
-	ConstantSort    *TableConstantSortConfig `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
-	AddButton       *ActionConfig            `bson:"addButton,omitempty" json:"addButton,omitempty"`
-	Actions         []ActionConfig           `bson:"actions,omitempty" json:"actions,omitempty"`
-	BulkActions     *TableBulkActionsConfig  `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
-	FilterPanel     *TableFilterPanelConfig  `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	DataMode                 string                           `bson:"dataMode,omitempty" json:"dataMode,omitempty"`
+	EnableSearch             *bool                            `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
+	Columns                  []TableColumnConfig              `bson:"columns,omitempty" json:"columns,omitempty"`
+	DataFields               []string                         `bson:"dataFields,omitempty" json:"dataFields,omitempty"`
+	GeneratedRelationColumns []GeneratedRelationColumnsConfig `bson:"generatedRelationColumns,omitempty" json:"generatedRelationColumns,omitempty"`
+	Rows                     *TableRowsConfig                 `bson:"rows,omitempty" json:"rows,omitempty"`
+	NestedRows               *TableNestedRowsConfig           `bson:"nestedRows,omitempty" json:"nestedRows,omitempty"`
+	ArraySource              *TableArraySourceConfig          `bson:"arraySource,omitempty" json:"arraySource,omitempty"`
+	Cache                    *TableCacheConfig                `bson:"cache,omitempty" json:"cache,omitempty"`
+	ConstantFilters          map[string]interface{}           `bson:"constantFilters,omitempty" json:"constantFilters,omitempty"`
+	ConstantSort             *TableConstantSortConfig         `bson:"constantSort,omitempty" json:"constantSort,omitempty"`
+	AddButton                *ActionConfig                    `bson:"addButton,omitempty" json:"addButton,omitempty"`
+	Actions                  []ActionConfig                   `bson:"actions,omitempty" json:"actions,omitempty"`
+	BulkActions              *TableBulkActionsConfig          `bson:"bulkActions,omitempty" json:"bulkActions,omitempty"`
+	FilterPanel              *TableFilterPanelConfig          `bson:"filterPanel,omitempty" json:"filterPanel,omitempty"`
+	Toggles                  []TableToggleConfig              `bson:"toggles,omitempty" json:"toggles,omitempty"`
+	Drag                     *TableDragConfig                 `bson:"drag,omitempty" json:"drag,omitempty"`
+}
+
+// RelationMatrixConfig renders records from one schema as rows and records
+// from another schema as Boolean membership columns backed by an embedded array.
+type RelationMatrixConfig struct {
+	RowSchemaName        string              `bson:"rowSchemaName" json:"rowSchemaName"`
+	RowIDField           string              `bson:"rowIdField" json:"rowIdField"`
+	RowLabelField        string              `bson:"rowLabelField" json:"rowLabelField"`
+	ColumnSchemaName     string              `bson:"columnSchemaName" json:"columnSchemaName"`
+	ColumnIDField        string              `bson:"columnIdField" json:"columnIdField"`
+	ColumnLabelField     string              `bson:"columnLabelField" json:"columnLabelField"`
+	TargetArrayField     string              `bson:"targetArrayField" json:"targetArrayField"`
+	TargetItemMatchField string              `bson:"targetItemMatchField" json:"targetItemMatchField"`
+	ColumnLimit          int                 `bson:"columnLimit,omitempty" json:"columnLimit,omitempty"`
+	Toggles              []TableToggleConfig `bson:"toggles,omitempty" json:"toggles,omitempty"`
+	VisibilityToggle     *ToggleBinding      `bson:"visibilityToggle,omitempty" json:"visibilityToggle,omitempty"`
+	EditToggle           *ToggleBinding      `bson:"editToggle,omitempty" json:"editToggle,omitempty"`
 }
 
 // FormLayoutConfig controls the layout shell for form components.
@@ -354,6 +446,7 @@ const (
 	ComponentTypeCustom             ComponentType = "custom"
 	ComponentTypeInfoBlocks         ComponentType = "infoBlocks"
 	ComponentTypeDistributionBlocks ComponentType = "distributionBlocks"
+	ComponentTypeRelationMatrix     ComponentType = "relationMatrix"
 
 	// Chart Types - Specific chart components
 	ComponentTypeBarChart           ComponentType = "barChart"           // Bar Chart
@@ -419,20 +512,21 @@ type TabPanelTab struct {
 
 // ComponentBlock represents a single component with its data binding and configuration
 type ComponentBlock struct {
-	ID            string                      `bson:"id" json:"id"`
-	StateKey      string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
-	Type          ComponentType               `bson:"type" json:"type"`
-	Title         string                      `bson:"title,omitempty" json:"title,omitempty"`
-	Order         int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
-	DataBinding   *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
-	Outputs       []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
-	GroupBy       *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`             // Grouping configuration for table components
-	Table         *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                 // Table-specific display, row, link, and cache config
-	Form          *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                   // Form-specific field layout, actions, and embedded object lists
-	IsAuthorized  bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`   // Component-level auth (optional)
-	AuthorizeRole []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Component-level roles
-	Props         map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                 // Free-form config (columns, chart type, etc.)
-	Tabs          []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                   // For tabPanel type components
+	ID             string                      `bson:"id" json:"id"`
+	StateKey       string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
+	Type           ComponentType               `bson:"type" json:"type"`
+	Title          string                      `bson:"title,omitempty" json:"title,omitempty"`
+	Order          int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
+	DataBinding    *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
+	Outputs        []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
+	GroupBy        *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`               // Grouping configuration for table components
+	Table          *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                   // Table-specific display, row, link, and cache config
+	RelationMatrix *RelationMatrixConfig       `bson:"relationMatrix,omitempty" json:"relationMatrix,omitempty"` // Inverse array-membership matrix config
+	Form           *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                     // Form-specific field layout, actions, and embedded object lists
+	IsAuthorized   bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`     // Component-level auth (optional)
+	AuthorizeRole  []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`   // Component-level roles
+	Props          map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                   // Free-form config (columns, chart type, etc.)
+	Tabs           []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                     // For tabPanel type components
 }
 
 // GridCell represents a cell in a grid layout

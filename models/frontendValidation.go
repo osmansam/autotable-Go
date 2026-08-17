@@ -123,6 +123,11 @@ func ValidateActionConfig(action ActionConfig) error {
 	if err := validateActionKind(action.Kind); err != nil {
 		return err
 	}
+	for key := range action.ConstantValues {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("constantValues requires non-empty keys")
+		}
+	}
 	if err := validateActionModalType(action.ModalType); err != nil {
 		return err
 	}
@@ -280,12 +285,138 @@ func validateFormArea(area string) error {
 	}
 }
 
+func validateToggleRequestEffect(effect *ToggleRequestEffect) error {
+	if effect == nil {
+		return nil
+	}
+	switch effect.Type {
+	case "set":
+		if strings.TrimSpace(effect.Field) == "" {
+			return fmt.Errorf("set effect requires field")
+		}
+	case "omit":
+		if strings.TrimSpace(effect.Field) != "" || effect.Value != nil {
+			return fmt.Errorf("omit effect cannot define field or value")
+		}
+	default:
+		return fmt.Errorf("invalid request effect type '%s'", effect.Type)
+	}
+	return nil
+}
+
+func validateTableToggles(table *TableComponentConfig) error {
+	toggleIDs := make(map[string]bool, len(table.Toggles))
+	for index, toggle := range table.Toggles {
+		id := strings.TrimSpace(toggle.ID)
+		if id == "" {
+			return fmt.Errorf("table toggle %d requires id", index)
+		}
+		if toggleIDs[id] {
+			return fmt.Errorf("table toggle id '%s' must be unique", id)
+		}
+		toggleIDs[id] = true
+		if toggle.Request != nil {
+			if err := validateToggleRequestEffect(toggle.Request.On); err != nil {
+				return fmt.Errorf("table toggle '%s' on: %w", id, err)
+			}
+			if err := validateToggleRequestEffect(toggle.Request.Off); err != nil {
+				return fmt.Errorf("table toggle '%s' off: %w", id, err)
+			}
+		}
+	}
+
+	for _, column := range table.Columns {
+		bindings := []struct {
+			name    string
+			binding *ToggleBinding
+		}{
+			{name: "visibilityToggle", binding: column.VisibilityToggle},
+			{name: "booleanEditToggle", binding: column.BooleanEditToggle},
+			{name: "booleanDisplayToggle", binding: column.BooleanDisplayToggle},
+		}
+		for _, candidate := range bindings {
+			if candidate.binding == nil {
+				continue
+			}
+			if !toggleIDs[strings.TrimSpace(candidate.binding.ToggleID)] {
+				return fmt.Errorf("table column '%s' %s references unknown toggle '%s'", column.Field, candidate.name, candidate.binding.ToggleID)
+			}
+		}
+	}
+	groupIDs := make(map[string]bool, len(table.GeneratedRelationColumns))
+	for index, group := range table.GeneratedRelationColumns {
+		id := strings.TrimSpace(group.ID)
+		if id == "" {
+			return fmt.Errorf("generated relation column group %d requires id", index)
+		}
+		if groupIDs[id] {
+			return fmt.Errorf("generated relation column group id '%s' must be unique", id)
+		}
+		groupIDs[id] = true
+		if strings.TrimSpace(group.ArrayField) == "" || strings.TrimSpace(group.SourceSchemaName) == "" || strings.TrimSpace(group.SourceLabelField) == "" {
+			return fmt.Errorf("generated relation column group '%s' requires arrayField, sourceSchemaName, and sourceLabelField", id)
+		}
+		if group.SourceLimit < 0 || group.SourceLimit > 100 {
+			return fmt.Errorf("generated relation column group '%s' sourceLimit must be between 1 and 100", id)
+		}
+		if group.VisibilityToggle != nil && !toggleIDs[strings.TrimSpace(group.VisibilityToggle.ToggleID)] {
+			return fmt.Errorf("generated relation column group '%s' visibilityToggle references unknown toggle '%s'", id, group.VisibilityToggle.ToggleID)
+		}
+		if group.BooleanEditToggle != nil && !toggleIDs[strings.TrimSpace(group.BooleanEditToggle.ToggleID)] {
+			return fmt.Errorf("generated relation column group '%s' booleanEditToggle references unknown toggle '%s'", id, group.BooleanEditToggle.ToggleID)
+		}
+	}
+	return nil
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
 	}
+	if table.DataMode != "" && table.DataMode != "paginated" && table.DataMode != "all" && table.DataMode != "arrayField" {
+		return fmt.Errorf("invalid table dataMode %q", table.DataMode)
+	}
+	if table.DataMode == "arrayField" && (table.ArraySource == nil || !table.ArraySource.Enabled) {
+		return fmt.Errorf("table dataMode arrayField requires enabled arraySource")
+	}
+	if table.ArraySource != nil && table.ArraySource.Enabled {
+		if strings.TrimSpace(table.ArraySource.Field) == "" {
+			return fmt.Errorf("table arraySource requires field")
+		}
+		if strings.TrimSpace(table.ArraySource.RowIdentityField) == "" {
+			return fmt.Errorf("table arraySource requires rowIdentityField")
+		}
+		autoGenerate := table.ArraySource.AutoGenerate
+		writable := autoGenerate != nil && (autoGenerate.Add || autoGenerate.Edit || autoGenerate.Delete || autoGenerate.Reorder)
+		if writable && table.ArraySource.ParentID == nil {
+			return fmt.Errorf("writable table arraySource requires parentId")
+		}
+		if autoGenerate != nil && autoGenerate.Reorder && (table.Drag == nil || !table.Drag.Enabled || strings.TrimSpace(table.Drag.OrderField) == "") {
+			return fmt.Errorf("generated array reorder requires enabled table drag with orderField")
+		}
+	}
+	dataFields := map[string]struct{}{}
+	for _, field := range table.DataFields {
+		trimmed := strings.TrimSpace(field)
+		if trimmed == "" {
+			return fmt.Errorf("table dataFields requires non-empty fields")
+		}
+		if _, exists := dataFields[trimmed]; exists {
+			return fmt.Errorf("table dataFields field '%s' is duplicated", trimmed)
+		}
+		dataFields[trimmed] = struct{}{}
+	}
+	if table.Drag != nil && table.Drag.Enabled && strings.TrimSpace(table.Drag.OrderField) == "" {
+		return fmt.Errorf("enabled table drag configuration requires orderField")
+	}
+	if err := validateTableToggles(table); err != nil {
+		return err
+	}
 
 	for _, column := range table.Columns {
+		if column.Type == "template" && strings.TrimSpace(column.Template) == "" {
+			return fmt.Errorf("table column '%s' requires template", column.Field)
+		}
 		if column.Link == nil {
 			continue
 		}
@@ -367,6 +498,11 @@ func ValidateComponentTableConfig(component *ComponentBlock) error {
 			return fmt.Errorf("component '%s': %w", component.ID, err)
 		}
 	}
+	if component.Type == ComponentTypeRelationMatrix {
+		if err := ValidateRelationMatrixConfig(component.RelationMatrix); err != nil {
+			return fmt.Errorf("component '%s': %w", component.ID, err)
+		}
+	}
 
 	for i := range component.Tabs {
 		for j := range component.Tabs[i].Components {
@@ -376,6 +512,33 @@ func ValidateComponentTableConfig(component *ComponentBlock) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateRelationMatrixConfig ensures inverse membership matrices have a
+// complete row, column, and embedded-array contract before persistence.
+func ValidateRelationMatrixConfig(config *RelationMatrixConfig) error {
+	if config == nil {
+		return fmt.Errorf("relationMatrix configuration is required")
+	}
+	required := map[string]string{
+		"rowSchemaName":        config.RowSchemaName,
+		"rowIdField":           config.RowIDField,
+		"rowLabelField":        config.RowLabelField,
+		"columnSchemaName":     config.ColumnSchemaName,
+		"columnIdField":        config.ColumnIDField,
+		"columnLabelField":     config.ColumnLabelField,
+		"targetArrayField":     config.TargetArrayField,
+		"targetItemMatchField": config.TargetItemMatchField,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("relationMatrix %s is required", field)
+		}
+	}
+	if config.ColumnLimit < 0 || config.ColumnLimit > 100 {
+		return fmt.Errorf("relationMatrix columnLimit must be between 1 and 100")
+	}
 	return nil
 }
 

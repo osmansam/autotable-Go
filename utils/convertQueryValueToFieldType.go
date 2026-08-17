@@ -25,34 +25,32 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		"eq-":  "$eq", // Exact match
 	}
 
+	// Handle date filters with comparison operators or as exact match
+	if fieldType == "date" {
+		filter := bson.M{}
+		conditionsFound := false
 
-    // Handle date filters with comparison operators or as exact match
-    if fieldType == "date" {
-        filter := bson.M{}
-        conditionsFound := false
+		// Apply range and exact match operators for dates if operator is provided
+		for prefix, mongoOp := range operators {
+			if strings.HasPrefix(queryValue, prefix) {
+				dateStr := strings.TrimPrefix(queryValue, prefix)
+				parsedDate, err := parseDate(dateStr)
+				if err != nil {
+					return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
+				}
+				filter[mongoOp] = parsedDate
+				conditionsFound = true
+			}
+		}
 
-        // Apply range and exact match operators for dates if operator is provided
-        for prefix, mongoOp := range operators {
-            if strings.HasPrefix(queryValue, prefix) {
-                dateStr := strings.TrimPrefix(queryValue, prefix)
-                parsedDate, err := parseDate(dateStr)
-                if err != nil {
-                    return nil, fmt.Errorf("invalid date format for field %s: %w", fieldName, err)
-                }
-                filter[mongoOp] = parsedDate
-                conditionsFound = true
-            }
-        }
-
-        // If no operator was found, match string representations using regex
-        if !conditionsFound {
-            // For dates stored as strings, use regex to match the date pattern
-            // This will match "2025-11-01", "2025-11-01T10:30:00", etc.
-            return primitive.Regex{Pattern: "^" + queryValue, Options: "i"}, nil
-        }
-        return filter, nil
-    }
-
+		// If no operator was found, match string representations using regex
+		if !conditionsFound {
+			// For dates stored as strings, use regex to match the date pattern
+			// This will match "2025-11-01", "2025-11-01T10:30:00", etc.
+			return primitive.Regex{Pattern: "^" + queryValue, Options: "i"}, nil
+		}
+		return filter, nil
+	}
 
 	// New block: Handle integer filters with comparison operators
 	if fieldType == "int" {
@@ -92,7 +90,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 				intValues = append(intValues, intValue)
 			}
 			return bson.M{"$in": intValues}, nil
-		case "string":
+		case "string", "enum":
 			var strValues []string
 			for _, v := range values {
 				strValues = append(strValues, strings.TrimSpace(v))
@@ -109,34 +107,34 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			}
 			return bson.M{"$in": boolValues}, nil
 		case "objectId":
-		var objectIds []primitive.ObjectID
-		for _, v := range values {
-			oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
-			if err != nil {
-				return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+			var objectIds []primitive.ObjectID
+			for _, v := range values {
+				oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
+				if err != nil {
+					return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+				}
+				objectIds = append(objectIds, oid)
 			}
-			objectIds = append(objectIds, oid)
-		}
-		return bson.M{"$in": objectIds}, nil
-	case "objectIdArray":
-		var objectIds []primitive.ObjectID
-		for _, v := range values {
-			oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
-			if err != nil {
-				return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+			return bson.M{"$in": objectIds}, nil
+		case "objectIdArray":
+			var objectIds []primitive.ObjectID
+			for _, v := range values {
+				oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(v))
+				if err != nil {
+					return nil, fmt.Errorf("invalid objectId value in list for field %s: %w", fieldName, err)
+				}
+				objectIds = append(objectIds, oid)
 			}
-			objectIds = append(objectIds, oid)
-		}
-		// For array fields, use $in to match documents where the array contains any of these IDs
-		return bson.M{"$in": objectIds}, nil
-	default:
+			// For array fields, use $in to match documents where the array contains any of these IDs
+			return bson.M{"$in": objectIds}, nil
+		default:
 			return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 		}
 	}
 
 	// Handle single values (when no comma or operator is provided)
 	switch fieldType {
-	case "string":
+	case "string", "enum":
 		return queryValue, nil
 	case "int":
 		intValue, err := strconv.Atoi(queryValue)
@@ -205,6 +203,7 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		return nil, fmt.Errorf("unsupported field type %s for field %s", fieldType, fieldName)
 	}
 }
+
 // parseDate ensures the date is parsed correctly and normalized to UTC
 func parseDate(dateStr string) (time.Time, error) {
 	formats := []string{

@@ -16,6 +16,7 @@ func TenantAuthRoutes(app *fiber.App) {
 
 	// Login to tenant
 	tenantAuth.Post("/login", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.TenantLogin)
+	tenantAuth.Get("/session", middlewares.PublicRateLimit(), controllers.TenantSession)
 
 	// Refresh access token
 	tenantAuth.Post("/refresh", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.TenantRefreshToken)
@@ -25,12 +26,12 @@ func TenantAuthRoutes(app *fiber.App) {
 	tenantAuthProtected.Use(middlewares.TenantAuthenticate)
 	tenantAuthProtected.Use(middlewares.GeneralRateLimit())
 
-	// Logout
-	tenantAuthProtected.Post("/logout", middlewares.DefaultBodySizeLimit(), controllers.TenantLogout)
-
 	// Get current user info
 	tenantAuthProtected.Get("/me", controllers.GetCurrentUser)
 
 	// Switch to project context (requires tenant auth)
 	tenantAuthProtected.Post("/switch-project", middlewares.DefaultBodySizeLimit(), controllers.SwitchToProject)
+
+	// Logout remains callable when the access token has expired so cookies can be cleared.
+	tenantAuth.Post("/logout", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.TenantLogout)
 }

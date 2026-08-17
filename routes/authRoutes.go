@@ -11,7 +11,8 @@ func AuthRoutes(baseUrl string, app *fiber.App) {
 	authGroup.Get("/login-config", middlewares.PublicRateLimit(), controllers.GetProjectLoginConfig)
 	authGroup.Post("/register", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.Register)
 	authGroup.Post("/login", middlewares.DefaultBodySizeLimit(), middlewares.AuthRateLimit(), controllers.Login)
-	// authGroup.Post("/refresh", controllers.Refresh)
+	authGroup.Get("/session", middlewares.PublicRateLimit(), controllers.ProjectSession)
+	authGroup.Post("/refresh", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.ProjectRefresh)
 
 	// Google OAuth routes
 	authGroup.Get("/google/login", middlewares.PublicRateLimit(), controllers.GoogleLogin)

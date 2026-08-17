@@ -321,11 +321,24 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	log.Println("User registered successfully in schema:", schemaName)
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "User registered successfully.",
-		Data:    result,
-	})
+	userID := result.InsertedID.(primitive.ObjectID).Hex()
+	role := "user"
+	if value, ok := userData["role"].(string); ok && value != "" {
+		role = value
+	} else if roleID, ok := userData["role"].(primitive.ObjectID); ok {
+		role = resolveAuthRoleName(ctx, tenantID, projectID, roleID)
+	}
+	displayName := auditIdentityValue(userData, auditIdentityFieldName(*container))
+	tokens, err := utils.GenerateTokensWithDisplayName(userID, role, tenantID, projectID, c.Params("tenantSlug"), c.Params("projectSlug"), displayName)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "User created, but login session could not be generated"})
+	}
+	if err := startProjectAuthSession(ctx, tokens); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "User created, but login session could not be saved"})
+	}
+	delete(userData, "password")
+	userData["_id"] = result.InsertedID
+	return sendScopedAuthResponse(c, http.StatusCreated, "User registered successfully.", utils.TokenScopeProject, projectCookieTokens(tokens), &fiber.Map{"user": userData})
 }
 
 // Login endpoint dynamically verifies user credentials.
@@ -475,6 +488,15 @@ func Login(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
+	if err := startProjectAuthSession(ctx, tokenDetails); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to create login session"})
+	}
+	if err := startProjectAuthSession(ctx, tokenDetails); err != nil {
+		log.Printf("Could not persist auth session: %v", err)
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status: http.StatusInternalServerError, Message: "Could not create login session.",
+		})
+	}
 
 	// Remove any sensitive fields (like hashed passwords) before returning user data.
 	delete(storedUser, "password")
@@ -504,15 +526,7 @@ func Login(c *fiber.Ctx) error {
 		log.Printf("Failed to log login: %v", err)
 	}
 
-	return c.JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: "Login successful.",
-		Data: &fiber.Map{
-			"accessToken":  tokenDetails.AccessToken,
-			"refreshToken": tokenDetails.RefreshToken,
-			"user":         storedUser,
-		},
-	})
+	return sendScopedAuthResponse(c, http.StatusOK, "Login successful.", utils.TokenScopeProject, projectCookieTokens(tokenDetails), &fiber.Map{"user": storedUser})
 }
 
 // GoogleLogin initiates the Google OAuth flow
@@ -557,6 +571,7 @@ func GoogleLogin(c *fiber.Ctx) error {
 
 	// Generate a cryptographically secure random state for CSRF protection
 	state := uuid.New().String()
+	verifier := oauth2.GenerateVerifier()
 
 	// Store state in Redis with tenant/project context for 5-minute expiration
 	if !configs.RedisCircuitAllow() {
@@ -573,6 +588,7 @@ func GoogleLogin(c *fiber.Ctx) error {
 		"projectID":   projectID,
 		"tenantSlug":  tenantSlug,
 		"projectSlug": projectSlug,
+		"verifier":    verifier,
 	}
 	stateJSON, err := json.Marshal(stateData)
 	if err != nil {
@@ -593,7 +609,7 @@ func GoogleLogin(c *fiber.Ctx) error {
 		})
 	}
 
-	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	url := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 	return c.Redirect(url)
 }
 
@@ -620,7 +636,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 	}
 	stateKey := "oauth:state:" + state
 
-	val, err := configs.RedisClient.Get(ctx, stateKey).Result()
+	// Consume state atomically so a callback cannot be replayed concurrently.
+	val, err := configs.RedisClient.GetDel(ctx, stateKey).Result()
 	configs.RedisCircuitRecordResult(err)
 	if err != nil {
 		log.Printf("GoogleCallback: Invalid or expired OAuth state: %v", err)
@@ -640,17 +657,12 @@ func GoogleCallback(c *fiber.Ctx) error {
 		})
 	}
 
-	// Delete the state from Redis (one-time use)
-	if configs.RedisCircuitAllow() {
-		err := configs.RedisClient.Del(ctx, stateKey).Err()
-		configs.RedisCircuitRecordResult(err)
-	}
-
 	// Extract tenant and project context from state
 	tenantID := stateData["tenantID"]
 	projectID := stateData["projectID"]
 	tenantSlug := stateData["tenantSlug"]
 	projectSlug := stateData["projectSlug"]
+	verifier := stateData["verifier"]
 
 	if tenantID == "" || projectID == "" {
 		log.Printf("GoogleCallback: Missing tenant or project context")
@@ -685,7 +697,7 @@ func GoogleCallback(c *fiber.Ctx) error {
 	// Exchange code for token
 	oauthConfig := utils.GetGoogleOAuthConfig()
 
-	token, err := oauthConfig.Exchange(ctx, code)
+	token, err := oauthConfig.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		log.Printf("GoogleCallback: Failed to exchange token: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -925,25 +937,13 @@ func GoogleCallback(c *fiber.Ctx) error {
 		frontendURL = "http://localhost:5173" // fallback
 	}
 
-	// Serialize user data to JSON and encode for URL
-	userJSON, err := json.Marshal(existingUser)
-	if err != nil {
-		log.Printf("GoogleCallback: Failed to marshal user data: %v", err)
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to serialize user data",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
-	}
-
-	// Build the redirect URL with tenant/project context and user data
-	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?accessToken=%s&refreshToken=%s&user=%s",
+	utils.SetProjectAuthCookies(c, tenantSlug, projectSlug, projectCookieTokens(tokenDetails))
+	setAuthNoStoreHeaders(c)
+	// Tokens never enter the URL; the callback page confirms the cookie session.
+	redirectURL := fmt.Sprintf("%s/t/%s/p/%s/auth/google/callback?success=1",
 		frontendURL,
 		tenantSlug,
 		projectSlug,
-		tokenDetails.AccessToken,
-		tokenDetails.RefreshToken,
-		string(userJSON),
 	)
 
 	return c.Redirect(redirectURL)
@@ -953,6 +953,15 @@ func GoogleCallback(c *fiber.Ctx) error {
 // Currently it mainly serves to log the logout action for audit purposes.
 // In the future, it can handle token blacklisting.
 func Logout(c *fiber.Ctx) error {
+	if err := requireAuthMutationOrigin(c); err != nil {
+		return err
+	}
+	tenantSlug, projectSlug := c.Params("tenantSlug"), c.Params("projectSlug")
+	if c.Cookies(utils.ProjectAuthCookieName(tenantSlug, projectSlug, "access")) == "" {
+		utils.ClearProjectAuthCookies(c, tenantSlug, projectSlug)
+		setAuthNoStoreHeaders(c)
+		return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Logout successful."})
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -962,19 +971,7 @@ func Logout(c *fiber.Ctx) error {
 
 	// Extract tenant and project context
 	// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
-	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to get project context: " + err.Error(),
-		})
-	}
-	if tenantID == "" || projectID == "" {
-		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-			Status:  http.StatusBadRequest,
-			Message: "Missing tenant or project context",
-		})
-	}
+	tenantID, projectID, _ := utils.GetTenantAndProjectContext(c)
 
 	// IP and UserAgent
 	ip := c.IP()
@@ -985,6 +982,8 @@ func Logout(c *fiber.Ctx) error {
 		// We log the error but still return success to the user as the collection
 		// of usage data shouldn't block the user's workflow.
 	}
+	utils.ClearProjectAuthCookies(c, tenantSlug, projectSlug)
+	setAuthNoStoreHeaders(c)
 
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,

@@ -61,6 +61,13 @@ func validateField(item map[string]interface{}, field models.Field) error {
 		return err
 	}
 
+	// Optional fields that are omitted or empty have already passed base
+	// validation and must not enter structured/type-specific validators.
+	fieldValue, exists := item[field.Name]
+	if !exists || fieldValue == nil || fmt.Sprintf("%v", fieldValue) == "" {
+		return nil
+	}
+
 	// Validate nested fields if the field is an array
 	if field.Type == "array" {
 		if err := validateArrayField(item, field); err != nil {

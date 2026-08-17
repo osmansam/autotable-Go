@@ -40,6 +40,40 @@ func TestRouteRegistration(t *testing.T) {
 	}
 }
 
+func TestDynamicArrayRoutesRegisteredInSafeOrder(t *testing.T) {
+	app := fiber.New()
+	DynamicRoutes("/dynamic", app)
+
+	want := map[string]bool{
+		"POST /dynamic/:schema/:id/array/:field":                false,
+		"PATCH /dynamic/:schema/:id/array/:field/:rowIdentity":  false,
+		"DELETE /dynamic/:schema/:id/array/:field/:rowIdentity": false,
+		"PATCH /dynamic/:schema/:id/array/:field/reorder":       false,
+	}
+	reorderIndex := -1
+	identityIndex := -1
+	for index, route := range app.GetRoutes() {
+		key := route.Method + " " + route.Path
+		if _, exists := want[key]; exists {
+			want[key] = true
+		}
+		if key == "PATCH /dynamic/:schema/:id/array/:field/reorder" {
+			reorderIndex = index
+		}
+		if key == "PATCH /dynamic/:schema/:id/array/:field/:rowIdentity" {
+			identityIndex = index
+		}
+	}
+	for route, found := range want {
+		if !found {
+			t.Errorf("route %s is not registered", route)
+		}
+	}
+	if reorderIndex == -1 || identityIndex == -1 || reorderIndex > identityIndex {
+		t.Fatalf("reorder route index = %d, identity route index = %d; reorder must be first", reorderIndex, identityIndex)
+	}
+}
+
 func TestMetadataRoutesRequireTenantAuthentication(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -154,6 +188,11 @@ func testProjectJWT(t *testing.T, role string) string {
 		"project_id":   "project-id",
 		"tenant_slug":  "tenant",
 		"project_slug": "project",
+		"token_type":   "access",
+		"scope":        "project",
+		"aud":          "autoapi-project",
+		"jti":          "test-jti",
+		"family_id":    "test-family",
 		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte{})

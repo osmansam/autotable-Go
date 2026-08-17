@@ -388,7 +388,7 @@ func (r *DynamicRepository) Query(ctx context.Context, tenantID, projectID, sche
 	return result, err
 }
 
-func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string, filter bson.M, extraFields ...string) ([]map[string]interface{}, error) {
+func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, projectID, schemaName, fieldName string, filter bson.M, limit int64, extraFields ...string) ([]map[string]interface{}, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("find_for_selection", schemaName)...)
 	status := "success"
 	var spanErr error
@@ -407,7 +407,11 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 		projection[extraField] = 1
 	}
 
-	cursor, err := r.GetCollection(tenantID, projectID, schemaName).Find(ctx, filter, options.Find().SetProjection(projection))
+	findOptions := options.Find().SetProjection(projection)
+	if limit > 0 {
+		findOptions.SetLimit(limit)
+	}
+	cursor, err := r.GetCollection(tenantID, projectID, schemaName).Find(ctx, filter, findOptions)
 	if err != nil {
 		status = "error"
 		spanErr = err
@@ -457,6 +461,13 @@ func (r *DynamicRepository) DeleteManyByField(ctx context.Context, tenantID, pro
 func (r *DynamicRepository) UpdateByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}, item map[string]interface{}) (*mongo.UpdateResult, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("update_one", schemaName)...)
 	result, err := r.GetCollection(tenantID, projectID, schemaName).UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": item})
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
+}
+
+func (r *DynamicRepository) UpdateByFilter(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M, update bson.M) (*mongo.UpdateResult, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("update_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).UpdateOne(ctx, filter, update)
 	observability.EndSpan(span, traceStatus(err), err)
 	return result, err
 }

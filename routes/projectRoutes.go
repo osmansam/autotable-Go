@@ -31,6 +31,16 @@ func ProjectRoutes(app *fiber.App) {
 
 	projectGroup.Get("/templates", middlewares.SearchRateLimit(), controllers.GetProjectTemplates)
 
+	projectGroup.Patch("/:id/locales",
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.UpdateProjectLocales,
+	)
+	projectGroup.Get("/:id/translations", middlewares.SearchRateLimit(), controllers.ListProjectTranslations)
+	projectGroup.Patch("/:id/translations/:locale/:key",
+		middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.UpdateProjectTranslation,
+	)
+
 	projectGroup.Patch("/:id/template",
 		middlewares.TenantAuthorize([]string{
 			models.TenantRoleOwner,

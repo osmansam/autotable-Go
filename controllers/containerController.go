@@ -109,7 +109,7 @@ func validateObjectReferences(ctx context.Context, containerCollection *mongo.Co
 	containerSchemaName := normalizedSchemaName(container.SchemaName)
 	for _, referencedSchemaName := range referencedObjectSchemaNames(container.Fields) {
 		if referencedSchemaName == containerSchemaName {
-			return nil, fmt.Errorf("field with type 'objectId' or 'objectIdArray' must reference an already defined container name, not the one being created or updated")
+			continue
 		}
 
 		filter := bson.M{"schemaName": referencedSchemaName}
