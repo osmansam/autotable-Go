@@ -1,0 +1,63 @@
+{
+  "objectList": {
+    "key": "items",
+    "itemFields": [
+      "productId",
+      "quantity"
+    ],
+    "fieldMappings": [
+      {
+        "sourceFormKey": "productId",
+        "sourceField": "price",
+        "targetField": "unitPrice",
+        "required": true
+      }
+    ],
+    "itemCalculations": [
+      {
+        "operation": "multiply",
+        "inputs": [
+          "unitPrice",
+          "quantity"
+        ],
+        "targetField": "lineTotal",
+        "precision": 2
+      }
+    ],
+    "display": {
+      "primaryField": "productId",
+      "secondaryTemplate": "{{quantity}} adet · {{unitPrice}} TRY · {{lineTotal}} TRY"
+    }
+  },
+  "summaries": [
+    {
+      "key": "subtotal",
+      "label": "Ara Toplam",
+      "area": "right",
+      "order": 1,
+      "operation": "sum",
+      "objectListKey": "items",
+      "sourceField": "lineTotal",
+      "targetField": "subtotal",
+      "format": {
+        "style": "currency",
+        "currency": "TRY",
+        "precision": 2
+      }
+    },
+    {
+      "key": "total",
+      "label": "Toplam",
+      "area": "right",
+      "order": 2,
+      "operation": "copy",
+      "sourceField": "subtotal",
+      "targetField": "total",
+      "format": {
+        "style": "currency",
+        "currency": "TRY",
+        "precision": 2
+      }
+    }
+  ]
+}
