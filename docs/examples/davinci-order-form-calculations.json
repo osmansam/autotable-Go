@@ -1,4 +1,20 @@
 {
+  "selectField": {
+    "formKey": "productId",
+    "type": "select",
+    "optionsSource": "schema",
+    "sourceSchemaName": "product",
+    "sourceValueField": "_id",
+    "sourceLabelField": "name",
+    "sourceDataFields": [
+      "name",
+      "price"
+    ],
+    "optionDisplay": {
+      "leftTemplate": "{{name}}",
+      "rightTemplate": "{{price}} ₺"
+    }
+  },
   "objectList": {
     "key": "items",
     "itemFields": [

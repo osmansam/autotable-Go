@@ -341,7 +341,7 @@ git commit -m "feat: render select option dependencies"
 ### Task 7: Configure and verify the Da Vinci order example
 
 **Files:**
-- Modify: `docs/examples/davinci-order-calculations.json`
+- Modify: `docs/examples/davinci-order-form-calculations.json`
 - Test: all three repository suites from prior tasks.
 
 **Interfaces:**
@@ -375,6 +375,6 @@ Expected: every test and build exits zero; lint introduces no new errors.
 - [ ] **Step 3: Commit the example**
 
 ```bash
-git add docs/examples/davinci-order-calculations.json
+git add docs/examples/davinci-order-form-calculations.json
 git commit -m "docs: show product price in order options"
 ```
