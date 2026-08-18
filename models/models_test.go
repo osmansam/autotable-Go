@@ -1217,7 +1217,10 @@ func TestFormComponentConfigRoundTrip(t *testing.T) {
 		Component: &ComponentBlock{ID: "sales-form", Type: ComponentTypeForm, Form: &FormComponentConfig{
 			Title: "Sales Details", SchemaName: "sales",
 			Fields: []FormFieldConfig{{ActionFormFieldConfig: ActionFormFieldConfig{
-				FormKey: "saleDate", Type: "date", FormKeyType: "date", Label: "Sale Date",
+				FormKey: "productId", Type: "select", FormKeyType: "string", Label: "Product",
+				OptionsSource: "schema", SourceSchemaName: "product", SourceValueField: "_id", SourceLabelField: "name",
+				SourceDataFields: []string{"name", "price", "taxRate"},
+				OptionDisplay:    &SelectOptionDisplayConfig{LeftTemplate: "{{name}}", RightTemplate: "{{price}} ₺"},
 			}, Area: "main", Order: 1, Width: "full"}},
 			ObjectLists: []FormObjectListConfig{{
 				Key: "items", Title: "Cart", Area: "right", Source: "embedded",
@@ -1241,6 +1244,9 @@ func TestFormComponentConfigRoundTrip(t *testing.T) {
 	form := got.Sections[0].Component.Form
 	if form == nil || form.SchemaName != "sales" {
 		t.Fatalf("Component.Form = %#v, want sales form config", form)
+	}
+	if gotField := form.Fields[0]; !reflect.DeepEqual(gotField.SourceDataFields, []string{"name", "price", "taxRate"}) || gotField.OptionDisplay == nil || gotField.OptionDisplay.RightTemplate != "{{price}} ₺" {
+		t.Fatalf("form.Fields[0] select display config was not preserved: %#v", gotField)
 	}
 	if gotList := form.ObjectLists[0]; gotList.Key != "items" || gotList.Display.SecondaryTemplate != "{{quantity}} items" {
 		t.Fatalf("form.ObjectLists[0] = %#v, want configured items list", gotList)

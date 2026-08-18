@@ -14,7 +14,11 @@ func validCalculatedOrderForm() FormComponentConfig {
 	return FormComponentConfig{
 		SchemaName: "davinciOrder",
 		Fields: []FormFieldConfig{
-			{ActionFormFieldConfig: ActionFormFieldConfig{FormKey: "productId", Type: "select", OptionsSource: "schema", SourceSchemaName: "product"}},
+			{ActionFormFieldConfig: ActionFormFieldConfig{
+				FormKey: "productId", Type: "select", OptionsSource: "schema", SourceSchemaName: "product",
+				SourceValueField: "_id", SourceLabelField: "name", SourceDataFields: []string{"price"},
+				OptionDisplay: &SelectOptionDisplayConfig{LeftTemplate: "{{name}}", RightTemplate: "{{price}} ₺"},
+			}},
 			{ActionFormFieldConfig: ActionFormFieldConfig{FormKey: "quantity", Type: "number"}},
 		},
 		ObjectLists: []FormObjectListConfig{{
@@ -74,6 +78,11 @@ func TestValidateFormCalculationConfig(t *testing.T) {
 		{name: "valid"},
 		{name: "mapping source required", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].FieldMappings[0].SourceField = "" }, wantErr: "sourceFormKey, sourceField, and targetField"},
 		{name: "mapping select must use schema", mutate: func(form *FormComponentConfig) { form.Fields[0].OptionsSource = "static" }, wantErr: "schema-backed select"},
+		{name: "mapping source must be available", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].FieldMappings[0].SourceField = "taxRate" }, wantErr: "available source field"},
+		{name: "blank dependency", mutate: func(form *FormComponentConfig) {
+			form.Fields[0].SourceDataFields = append(form.Fields[0].SourceDataFields, " ")
+		}, wantErr: "sourceDataFields"},
+		{name: "malformed display template", mutate: func(form *FormComponentConfig) { form.Fields[0].OptionDisplay.RightTemplate = "{{price" }, wantErr: "template"},
 		{name: "duplicate mapping target", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].FieldMappings = append(form.ObjectLists[0].FieldMappings, form.ObjectLists[0].FieldMappings[0])
 		}, wantErr: "duplicate item target"},

@@ -178,6 +178,9 @@ func ValidateFormComponentConfig(form *FormComponentConfig) error {
 		if field.Type == "" {
 			return fmt.Errorf("form field '%s' requires type", field.FormKey)
 		}
+		if err := validateSelectOptionConfig(field); err != nil {
+			return fmt.Errorf("form field '%s': %w", field.FormKey, err)
+		}
 	}
 
 	objectListKeys := map[string]bool{}
@@ -215,6 +218,58 @@ func ValidateFormComponentConfig(form *FormComponentConfig) error {
 }
 
 var formCurrencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
+var selectOptionTemplatePattern = regexp.MustCompile(`{{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*}}`)
+
+func selectOptionTemplateFields(template string) ([]string, error) {
+	fields := []string{}
+	for _, match := range selectOptionTemplatePattern.FindAllStringSubmatch(template, -1) {
+		fields = append(fields, match[1])
+	}
+	remainder := selectOptionTemplatePattern.ReplaceAllString(template, "")
+	if strings.Contains(remainder, "{{") || strings.Contains(remainder, "}}") {
+		return nil, fmt.Errorf("option display template has malformed field reference")
+	}
+	return fields, nil
+}
+
+func validateSelectOptionConfig(field FormFieldConfig) error {
+	for _, sourceField := range field.SourceDataFields {
+		if strings.TrimSpace(sourceField) == "" {
+			return fmt.Errorf("sourceDataFields cannot contain blank fields")
+		}
+	}
+	if field.OptionDisplay == nil {
+		return nil
+	}
+	if _, err := selectOptionTemplateFields(field.OptionDisplay.LeftTemplate); err != nil {
+		return err
+	}
+	if _, err := selectOptionTemplateFields(field.OptionDisplay.RightTemplate); err != nil {
+		return err
+	}
+	return nil
+}
+
+func effectiveSelectSourceFields(field FormFieldConfig) map[string]bool {
+	available := map[string]bool{"_id": true}
+	for _, sourceField := range []string{field.SourceValueField, field.SourceLabelField} {
+		if sourceField != "" {
+			available[sourceField] = true
+		}
+	}
+	for _, sourceField := range field.SourceDataFields {
+		available[strings.TrimSpace(sourceField)] = true
+	}
+	if field.OptionDisplay != nil {
+		for _, template := range []string{field.OptionDisplay.LeftTemplate, field.OptionDisplay.RightTemplate} {
+			fields, _ := selectOptionTemplateFields(template)
+			for _, sourceField := range fields {
+				available[sourceField] = true
+			}
+		}
+	}
+	return available
+}
 
 func validateFormCalculationConfig(form FormComponentConfig) error {
 	fields := make(map[string]FormFieldConfig, len(form.Fields))
@@ -237,6 +292,9 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 			source, ok := fields[mapping.SourceFormKey]
 			if !ok || source.Type != "select" || source.OptionsSource != "schema" || source.SourceSchemaName == "" {
 				return fmt.Errorf("object list '%s' field mapping %d sourceFormKey must reference a schema-backed select", list.Key, index)
+			}
+			if !effectiveSelectSourceFields(source)[mapping.SourceField] {
+				return fmt.Errorf("object list '%s' field mapping %d must reference an available source field", list.Key, index)
 			}
 			if available[mapping.TargetField] {
 				return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, mapping.TargetField)

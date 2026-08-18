@@ -36,35 +36,42 @@ type ActionFormOptionConfig struct {
 	Label string      `bson:"label" json:"label"`
 }
 
+type SelectOptionDisplayConfig struct {
+	LeftTemplate  string `bson:"leftTemplate,omitempty" json:"leftTemplate,omitempty"`
+	RightTemplate string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
+}
+
 type ActionFormFieldConfig struct {
-	ID                    string                   `bson:"id,omitempty" json:"id,omitempty"`
-	FormKey               string                   `bson:"formKey" json:"formKey"`
-	Type                  string                   `bson:"type" json:"type"`
-	FormKeyType           string                   `bson:"formKeyType,omitempty" json:"formKeyType,omitempty"`
-	Label                 string                   `bson:"label,omitempty" json:"label,omitempty"`
-	Placeholder           string                   `bson:"placeholder,omitempty" json:"placeholder,omitempty"`
-	Required              *bool                    `bson:"required,omitempty" json:"required,omitempty"`
-	RequiredCondition     string                   `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
-	DisabledCondition     string                   `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
-	IsDisabled            *bool                    `bson:"isDisabled,omitempty" json:"isDisabled,omitempty"`
-	IsMultiple            *bool                    `bson:"isMultiple,omitempty" json:"isMultiple,omitempty"`
-	IsNumberButtonsActive *bool                    `bson:"isNumberButtonsActive,omitempty" json:"isNumberButtonsActive,omitempty"`
-	OptionsSource         string                   `bson:"optionsSource,omitempty" json:"optionsSource,omitempty"`
-	StaticOptions         []ActionFormOptionConfig `bson:"staticOptions,omitempty" json:"staticOptions,omitempty"`
-	StaticOptionsJson     string                   `bson:"staticOptionsJson,omitempty" json:"staticOptionsJson,omitempty"`
-	SourceSchemaName      string                   `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`
-	SourceValueField      string                   `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`
-	SourceLabelField      string                   `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`
-	SourceRequestFilters  map[string]interface{}   `bson:"sourceRequestFilters,omitempty" json:"sourceRequestFilters,omitempty"`
-	SourceFilterCondition string                   `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
-	InvalidateKeys        []string                 `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
-	DefaultValue          interface{}              `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
-	Min                   interface{}              `bson:"min,omitempty" json:"min,omitempty"`
-	Max                   interface{}              `bson:"max,omitempty" json:"max,omitempty"`
-	MinLength             interface{}              `bson:"minLength,omitempty" json:"minLength,omitempty"`
-	MaxLength             interface{}              `bson:"maxLength,omitempty" json:"maxLength,omitempty"`
-	Pattern               string                   `bson:"pattern,omitempty" json:"pattern,omitempty"`
-	ValidationMessage     string                   `bson:"validationMessage,omitempty" json:"validationMessage,omitempty"`
+	ID                    string                     `bson:"id,omitempty" json:"id,omitempty"`
+	FormKey               string                     `bson:"formKey" json:"formKey"`
+	Type                  string                     `bson:"type" json:"type"`
+	FormKeyType           string                     `bson:"formKeyType,omitempty" json:"formKeyType,omitempty"`
+	Label                 string                     `bson:"label,omitempty" json:"label,omitempty"`
+	Placeholder           string                     `bson:"placeholder,omitempty" json:"placeholder,omitempty"`
+	Required              *bool                      `bson:"required,omitempty" json:"required,omitempty"`
+	RequiredCondition     string                     `bson:"requiredCondition,omitempty" json:"requiredCondition,omitempty"`
+	DisabledCondition     string                     `bson:"disabledCondition,omitempty" json:"disabledCondition,omitempty"`
+	IsDisabled            *bool                      `bson:"isDisabled,omitempty" json:"isDisabled,omitempty"`
+	IsMultiple            *bool                      `bson:"isMultiple,omitempty" json:"isMultiple,omitempty"`
+	IsNumberButtonsActive *bool                      `bson:"isNumberButtonsActive,omitempty" json:"isNumberButtonsActive,omitempty"`
+	OptionsSource         string                     `bson:"optionsSource,omitempty" json:"optionsSource,omitempty"`
+	StaticOptions         []ActionFormOptionConfig   `bson:"staticOptions,omitempty" json:"staticOptions,omitempty"`
+	StaticOptionsJson     string                     `bson:"staticOptionsJson,omitempty" json:"staticOptionsJson,omitempty"`
+	SourceSchemaName      string                     `bson:"sourceSchemaName,omitempty" json:"sourceSchemaName,omitempty"`
+	SourceValueField      string                     `bson:"sourceValueField,omitempty" json:"sourceValueField,omitempty"`
+	SourceLabelField      string                     `bson:"sourceLabelField,omitempty" json:"sourceLabelField,omitempty"`
+	SourceDataFields      []string                   `bson:"sourceDataFields,omitempty" json:"sourceDataFields,omitempty"`
+	OptionDisplay         *SelectOptionDisplayConfig `bson:"optionDisplay,omitempty" json:"optionDisplay,omitempty"`
+	SourceRequestFilters  map[string]interface{}     `bson:"sourceRequestFilters,omitempty" json:"sourceRequestFilters,omitempty"`
+	SourceFilterCondition string                     `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
+	InvalidateKeys        []string                   `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
+	DefaultValue          interface{}                `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`
+	Min                   interface{}                `bson:"min,omitempty" json:"min,omitempty"`
+	Max                   interface{}                `bson:"max,omitempty" json:"max,omitempty"`
+	MinLength             interface{}                `bson:"minLength,omitempty" json:"minLength,omitempty"`
+	MaxLength             interface{}                `bson:"maxLength,omitempty" json:"maxLength,omitempty"`
+	Pattern               string                     `bson:"pattern,omitempty" json:"pattern,omitempty"`
+	ValidationMessage     string                     `bson:"validationMessage,omitempty" json:"validationMessage,omitempty"`
 }
 
 type ActionSubmitConfig struct {
