@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -206,6 +207,113 @@ func ValidateFormComponentConfig(form *FormComponentConfig) error {
 	}
 	if err := validateFormSubmitConfig(form.Submit, objectListKeys); err != nil {
 		return err
+	}
+	if err := validateFormCalculationConfig(*form); err != nil {
+		return err
+	}
+	return nil
+}
+
+var formCurrencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
+
+func validateFormCalculationConfig(form FormComponentConfig) error {
+	fields := make(map[string]FormFieldConfig, len(form.Fields))
+	parentFields := make(map[string]bool, len(form.Fields))
+	for _, field := range form.Fields {
+		fields[field.FormKey] = field
+		parentFields[field.FormKey] = true
+	}
+
+	lists := make(map[string]map[string]bool, len(form.ObjectLists))
+	for _, list := range form.ObjectLists {
+		available := make(map[string]bool)
+		for _, field := range list.ItemFields {
+			available[field] = true
+		}
+		for index, mapping := range list.FieldMappings {
+			if mapping.SourceFormKey == "" || mapping.SourceField == "" || mapping.TargetField == "" {
+				return fmt.Errorf("object list '%s' field mapping %d requires sourceFormKey, sourceField, and targetField", list.Key, index)
+			}
+			source, ok := fields[mapping.SourceFormKey]
+			if !ok || source.Type != "select" || source.OptionsSource != "schema" || source.SourceSchemaName == "" {
+				return fmt.Errorf("object list '%s' field mapping %d sourceFormKey must reference a schema-backed select", list.Key, index)
+			}
+			if available[mapping.TargetField] {
+				return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, mapping.TargetField)
+			}
+			available[mapping.TargetField] = true
+		}
+		for index, calculation := range list.ItemCalculations {
+			if calculation.Operation != "multiply" {
+				return fmt.Errorf("object list '%s' item calculation %d has unsupported item calculation operation '%s'", list.Key, index, calculation.Operation)
+			}
+			if len(calculation.Inputs) != 2 {
+				return fmt.Errorf("object list '%s' multiply calculation %d requires exactly two inputs", list.Key, index)
+			}
+			for _, input := range calculation.Inputs {
+				if !available[input] {
+					return fmt.Errorf("object list '%s' item calculation %d references unknown input '%s'", list.Key, index, input)
+				}
+				if calculation.TargetField == input {
+					return fmt.Errorf("object list '%s' item calculation %d cannot overwrite an input field", list.Key, index)
+				}
+			}
+			if calculation.TargetField == "" || available[calculation.TargetField] {
+				return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, calculation.TargetField)
+			}
+			if err := validateFormPrecision(calculation.Precision); err != nil {
+				return fmt.Errorf("object list '%s' item calculation %d: %w", list.Key, index, err)
+			}
+			available[calculation.TargetField] = true
+		}
+		lists[list.Key] = available
+	}
+
+	availableSummaries := make(map[string]bool)
+	summaryTargets := make(map[string]bool)
+	for index, summary := range form.Summaries {
+		if summary.Key == "" || summary.TargetField == "" {
+			return fmt.Errorf("form summary %d requires key and targetField", index)
+		}
+		if summaryTargets[summary.TargetField] {
+			return fmt.Errorf("form summary %d has duplicate summary target '%s'", index, summary.TargetField)
+		}
+		if parentFields[summary.TargetField] {
+			return fmt.Errorf("form summary target '%s' collides with form field", summary.TargetField)
+		}
+		switch summary.Operation {
+		case "sum":
+			itemFields, ok := lists[summary.ObjectListKey]
+			if !ok {
+				return fmt.Errorf("form summary %d references unknown object list '%s'", index, summary.ObjectListKey)
+			}
+			if !itemFields[summary.SourceField] {
+				return fmt.Errorf("form summary %d references unknown item field '%s'", index, summary.SourceField)
+			}
+		case "copy":
+			if !availableSummaries[summary.SourceField] {
+				return fmt.Errorf("form summary %d references unknown earlier summary '%s'", index, summary.SourceField)
+			}
+		default:
+			return fmt.Errorf("form summary %d has unsupported summary operation '%s'", index, summary.Operation)
+		}
+		if summary.Format != nil {
+			if summary.Format.Currency != "" && !formCurrencyPattern.MatchString(summary.Format.Currency) {
+				return fmt.Errorf("form summary %d currency must be three uppercase ASCII letters", index)
+			}
+			if err := validateFormPrecision(summary.Format.Precision); err != nil {
+				return fmt.Errorf("form summary %d: %w", index, err)
+			}
+		}
+		summaryTargets[summary.TargetField] = true
+		availableSummaries[summary.TargetField] = true
+	}
+	return nil
+}
+
+func validateFormPrecision(precision *int) error {
+	if precision != nil && (*precision < 0 || *precision > 6) {
+		return fmt.Errorf("precision must be between 0 and 6")
 	}
 	return nil
 }
