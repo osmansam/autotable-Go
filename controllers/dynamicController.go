@@ -982,21 +982,26 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Invalid request body")
 	}
+	formConfigRef, err := parseWorkflowFormConfigReference(c.Body())
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid form configuration reference")
+	}
 
 	userID, _ := c.Locals("userID").(string)
 	dynamicService := services.NewDynamicService()
 	result, err := dynamicService.ExecuteWorkflow(ctx, services.ExecuteWorkflowInput{
-		TenantID:     tenantID,
-		ProjectID:    projectID,
-		Schema:       schemaName,
-		WorkflowName: workflowName,
-		Record:       record,
-		Query:        queryParams,
-		OldRecord:    oldRecord,
-		StepOutputs:  stepOutputs,
-		UserID:       userID,
-		AuditUser:    utils.GetUserFromContext(c),
-		Container:    container,
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		Schema:        schemaName,
+		WorkflowName:  workflowName,
+		Record:        record,
+		Query:         queryParams,
+		OldRecord:     oldRecord,
+		StepOutputs:   stepOutputs,
+		UserID:        userID,
+		AuditUser:     utils.GetUserFromContext(c),
+		Container:     container,
+		FormConfigRef: formConfigRef,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to execute workflow")
@@ -1008,6 +1013,25 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		Data:    result.Data,
 		Source:  utils.PointerToString(result.Source),
 	})
+}
+
+func parseWorkflowFormConfigReference(body []byte) (*services.FormConfigReference, error) {
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return nil, nil
+	}
+	var envelope struct {
+		FormConfigRef *services.FormConfigReference `json:"formConfigRef"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.FormConfigRef == nil {
+		return nil, nil
+	}
+	if envelope.FormConfigRef.PageID == "" || envelope.FormConfigRef.ComponentID == "" {
+		return nil, fmt.Errorf("formConfigRef requires pageId and componentId")
+	}
+	return envelope.FormConfigRef, nil
 }
 
 func parseWorkflowRequestBody(body []byte) (map[string]interface{}, map[string]interface{}, map[string]interface{}, error) {
@@ -1026,6 +1050,7 @@ func parseWorkflowRequestBody(body []byte) (map[string]interface{}, map[string]i
 		if nested, ok := typed["record"].(map[string]interface{}); ok {
 			record = nested
 		}
+		delete(record, "formConfigRef")
 		ensureWorkflowProductIDs(record)
 		oldRecord := map[string]interface{}{}
 		if nested, ok := typed["oldRecord"].(map[string]interface{}); ok {

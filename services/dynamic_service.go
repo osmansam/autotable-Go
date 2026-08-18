@@ -276,18 +276,24 @@ type ExecuteDynamicAPIInput struct {
 }
 
 type ExecuteWorkflowInput struct {
-	TenantID     string
-	ProjectID    string
-	Schema       string
-	WorkflowName string
-	Record       map[string]interface{}
-	Query        map[string]interface{}
-	OldRecord    map[string]interface{}
-	StepOutputs  map[string]interface{}
-	UserID       string
-	AuditUser    *models.AuditUser
-	Container    *models.ContainerModel
-	Pager        *utils.Pager
+	TenantID      string
+	ProjectID     string
+	Schema        string
+	WorkflowName  string
+	Record        map[string]interface{}
+	Query         map[string]interface{}
+	OldRecord     map[string]interface{}
+	StepOutputs   map[string]interface{}
+	UserID        string
+	AuditUser     *models.AuditUser
+	Container     *models.ContainerModel
+	Pager         *utils.Pager
+	FormConfigRef *FormConfigReference
+}
+
+type FormConfigReference struct {
+	PageID      string `json:"pageId"`
+	ComponentID string `json:"componentId"`
 }
 
 type ExportDynamicItemsInput struct {
