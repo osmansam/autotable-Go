@@ -2073,6 +2073,11 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 	if !workflow.IsActive {
 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusForbidden, Message: "Workflow is disabled", Data: nil}
 	}
+	verifiedRecord, err := s.verifyWorkflowFormCart(ctx, input)
+	if err != nil {
+		return DynamicExecutionResult{}, err
+	}
+	input.Record = verifiedRecord
 
 	var pagination *workflowTableSourcePagination
 	if input.Pager != nil && input.Pager.Enabled {
