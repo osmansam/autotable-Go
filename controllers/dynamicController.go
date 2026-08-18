@@ -28,6 +28,20 @@ func parseSelectionLimit(raw string) (int64, error) {
 	return limit, nil
 }
 
+func parseSelectionDataFields(raw string) []string {
+	seen := map[string]bool{}
+	fields := []string{}
+	for _, value := range strings.Split(raw, ",") {
+		field := strings.TrimSpace(value)
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		fields = append(fields, field)
+	}
+	return fields
+}
+
 // getProjectContext extracts tenantID and projectID from fiber context
 // Returns an error if either is missing
 func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
@@ -275,6 +289,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
 	valueField := c.Query("valueField")
+	dataFields := parseSelectionDataFields(c.Query("dataFields"))
 	limit, err := parseSelectionLimit(c.Query("limit"))
 	if err != nil {
 		return sendDynamicError(c, &services.ServiceError{Status: http.StatusBadRequest, Message: err.Error()}, "Invalid selection limit")
@@ -305,6 +320,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		Schema:     schemaName,
 		FieldName:  fieldName,
 		ValueField: valueField,
+		DataFields: dataFields,
 		Limit:      limit,
 		Filter:     filter,
 		UserRole:   userRole,

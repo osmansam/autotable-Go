@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -55,10 +56,23 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 
 	mt.Run("find selection", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
-		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "name", Value: "Ada"}}))
-		got, err := repository.FindForSelection(context.Background(), "tenant", "project", "orders", "name", bson.M{}, 25)
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "name", Value: "Ada"}, {Key: "price", Value: 120}, {Key: "taxRate", Value: 20}}))
+		got, err := repository.FindForSelection(context.Background(), "tenant", "project", "orders", "name", bson.M{}, 25, "price", "taxRate")
 		if err != nil || len(got) != 1 || got[0]["name"] != "Ada" {
 			t.Fatalf("FindForSelection() = %#v, %v", got, err)
+		}
+		started := mt.GetStartedEvent()
+		projection, err := started.Command.LookupErr("projection")
+		if err != nil {
+			t.Fatalf("selection command projection error = %v", err)
+		}
+		var gotProjection bson.M
+		if err := projection.Unmarshal(&gotProjection); err != nil {
+			t.Fatalf("selection projection decode error = %v", err)
+		}
+		wantProjection := bson.M{"_id": int32(1), "name": int32(1), "price": int32(1), "taxRate": int32(1)}
+		if !reflect.DeepEqual(gotProjection, wantProjection) {
+			t.Fatalf("selection projection = %#v, want %#v", gotProjection, wantProjection)
 		}
 	})
 
