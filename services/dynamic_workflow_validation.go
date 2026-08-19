@@ -94,6 +94,10 @@ func ValidateWorkflow(workflow models.DynamicWorkflow) error {
 }
 
 func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.DynamicWorkflowStep) error {
+	return validateWorkflowStepsWithContext(workflow, steps, false)
+}
+
+func validateWorkflowStepsWithContext(workflow models.DynamicWorkflow, steps []models.DynamicWorkflowStep, capturedByOutboxParent bool) error {
 	orderedSteps := append([]models.DynamicWorkflowStep(nil), steps...)
 	sort.SliceStable(orderedSteps, func(i, j int) bool {
 		return orderedSteps[i].Order < orderedSteps[j].Order
@@ -170,6 +174,7 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 		}
 		if workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox &&
 			workflowStepHasUnsafeOutboxReference(step) &&
+			!capturedByOutboxParent &&
 			!workflowAllowsCapturedOutboxReferences(workflow) {
 			return fmt.Errorf("workflow %s step %s outbox execution cannot depend on steps.* or vars.* values", workflow.Name, step.Name)
 		}
@@ -185,17 +190,19 @@ func validateWorkflowSteps(workflow models.DynamicWorkflow, steps []models.Dynam
 		if err := validateWorkflowConditions(workflow.Trigger, step.Conditions); err != nil {
 			return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
 		}
-		if err := validateWorkflowSteps(workflow, step.Steps); err != nil {
+		capturesNestedSteps := capturedByOutboxParent || (workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox &&
+			(len(step.Steps) > 0 || len(step.ElseSteps) > 0 || len(step.Branches) > 0))
+		if err := validateWorkflowStepsWithContext(workflow, step.Steps, capturesNestedSteps); err != nil {
 			return err
 		}
-		if err := validateWorkflowSteps(workflow, step.ElseSteps); err != nil {
+		if err := validateWorkflowStepsWithContext(workflow, step.ElseSteps, capturesNestedSteps); err != nil {
 			return err
 		}
 		for _, branch := range step.Branches {
 			if err := validateWorkflowConditions(workflow.Trigger, branch.Conditions); err != nil {
 				return fmt.Errorf("workflow %s step %s branch %s: %w", workflow.Name, step.Name, branch.Name, err)
 			}
-			if err := validateWorkflowSteps(workflow, branch.Steps); err != nil {
+			if err := validateWorkflowStepsWithContext(workflow, branch.Steps, capturesNestedSteps); err != nil {
 				return err
 			}
 		}

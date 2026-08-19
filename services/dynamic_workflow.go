@@ -74,7 +74,7 @@ const (
 	maxWorkflowDepth             = 4
 	maxWorkflowSteps             = 100
 	maxWorkflowOutboxEvents      = 100
-	maxWorkflowLoopItems         = 500
+	maxWorkflowLoopItems         = 4000
 	maxWorkflowQueryLimit        = 4000
 	maxWorkflowAggregateLimit    = 500
 	maxWorkflowAggregateSkip     = 5000
@@ -300,7 +300,7 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 }
 
 func (s *DynamicService) processWorkflowStepForMode(ctx context.Context, step models.DynamicWorkflowStep, payload *workflowExecutionPayload, executionMode string) (interface{}, error) {
-	if executionMode == models.WorkflowModeTransactional && workflowStepHasNonTransactionalSideEffect(step) {
+	if executionMode == models.WorkflowModeTransactional && workflowStepHasNonTransactionalSideEffect(step) && payload.OutboxEventID.IsZero() {
 		return nil, fmt.Errorf("%s steps must run in outbox execution mode", step.Type)
 	}
 	return s.processWorkflowStepWithTimeout(ctx, step, payload)
@@ -1780,6 +1780,7 @@ func buildWorkflowStepOutboxEvent(payload workflowExecutionPayload, workflowName
 			WorkflowName:    workflowName,
 			WorkflowTrigger: payload.WorkflowTrigger,
 			WorkflowVersion: payload.WorkflowVersion,
+			StopOnError:     payload.StopOnError,
 			StepID:          step.ID,
 			StepName:        step.Name,
 			StepType:        step.Type,
@@ -1866,6 +1867,7 @@ func processWorkflowOutboxStep(ctx context.Context, repository *repositories.Dyn
 		WorkflowName:    event.Payload.WorkflowName,
 		WorkflowTrigger: event.Payload.WorkflowTrigger,
 		WorkflowVersion: event.Payload.WorkflowVersion,
+		StopOnError:     event.Payload.StopOnError,
 		Record:          event.Payload.Record,
 		OldRecord:       event.Payload.OldRecord,
 		StepOutputs:     event.Payload.StepOutputs,

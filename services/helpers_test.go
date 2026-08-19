@@ -873,6 +873,9 @@ func TestWorkflowIfAndForEach(t *testing.T) {
 	if _, err := service.workflowForEach(context.Background(), models.DynamicWorkflowStep{Config: map[string]interface{}{"items": []interface{}{}, "maxItems": 0}}, &payload); err == nil {
 		t.Fatal("workflowForEach(invalid maxItems) error = nil")
 	}
+	if _, err := service.workflowForEach(context.Background(), models.DynamicWorkflowStep{Config: map[string]interface{}{"items": []interface{}{}, "maxItems": 4000}}, &payload); err != nil {
+		t.Fatalf("workflowForEach(maxItems 4000) error = %v, want nil", err)
+	}
 }
 
 func TestWorkflowStepProcessingErrors(t *testing.T) {
@@ -1113,6 +1116,34 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 		t.Fatalf("ValidateWorkflow(valid) error = %v", err)
 	}
 	if err := ValidateWorkflow(models.DynamicWorkflow{
+		Name:    "background-price-sync",
+		Trigger: models.WorkflowTriggerManual,
+		Mode:    models.WorkflowModeOutbox,
+		Steps: []models.DynamicWorkflowStep{{
+			Name:       "sync",
+			Type:       models.WorkflowStepTypeIf,
+			IsActive:   true,
+			TimeoutSec: 300,
+			Steps: []models.DynamicWorkflowStep{
+				{
+					Name:       "fetchProducts",
+					Type:       models.WorkflowStepTypeCallAPI,
+					IsActive:   true,
+					TimeoutSec: 60,
+					Config:     map[string]interface{}{"method": http.MethodGet, "url": "https://example.com/products"},
+				},
+				{
+					Name:     "updateProducts",
+					Type:     models.WorkflowStepTypeForEach,
+					IsActive: true,
+					Config:   map[string]interface{}{"items": "{{steps.fetchProducts.data.items}}"},
+				},
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("ValidateWorkflow(outbox nested sequential pipeline) error = %v", err)
+	}
+	if err := ValidateWorkflow(models.DynamicWorkflow{
 		Name:    "create-davinci-order",
 		Trigger: models.WorkflowTriggerManual,
 		Mode:    models.WorkflowModeHybrid,
@@ -1299,6 +1330,19 @@ func TestValidateWorkflowDefinitions(t *testing.T) {
 
 	if err := ValidateWorkflows([]models.DynamicWorkflow{{Name: "same"}, {Name: "same"}}); err == nil {
 		t.Fatal("ValidateWorkflows(duplicate names) error = nil")
+	}
+}
+
+func TestOutboxWorkerAllowsNestedCallAPIToExecuteLocally(t *testing.T) {
+	service := &DynamicService{}
+	payload := workflowExecutionPayload{OutboxEventID: primitive.NewObjectID()}
+	_, err := service.processWorkflowStepForMode(context.Background(), models.DynamicWorkflowStep{
+		Type:       models.WorkflowStepTypeCallAPI,
+		TimeoutSec: 1,
+		Config:     map[string]interface{}{},
+	}, &payload, models.WorkflowModeTransactional)
+	if err == nil || !strings.Contains(err.Error(), "requires url config") {
+		t.Fatalf("processWorkflowStepForMode() error = %v, want call_api URL validation", err)
 	}
 }
 

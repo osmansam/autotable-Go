@@ -339,6 +339,7 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 				StepOutputs:     outputs,
 				Variables:       variables,
 				Loop:            loop,
+				StopOnError:     true,
 			}
 			got := buildWorkflowStepOutboxEvent(payload, "workflow", tt.step)
 			afterBuild := time.Now()
@@ -361,6 +362,9 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 			}
 			if got.Payload.StepTimeoutSec != 15 || got.Payload.TargetSchema != "target" {
 				t.Fatal("payload must preserve timeout and target schema")
+			}
+			if !got.Payload.StopOnError {
+				t.Fatal("payload must preserve stopOnError")
 			}
 			if !reflect.DeepEqual(got.Payload.Record, record) || !reflect.DeepEqual(got.Payload.OldRecord, oldRecord) {
 				t.Fatal("payload must preserve record snapshots")
