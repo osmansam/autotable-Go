@@ -1225,7 +1225,7 @@ func TestFormComponentConfigRoundTrip(t *testing.T) {
 			ObjectLists: []FormObjectListConfig{{
 				Key: "items", Title: "Cart", Area: "right", Source: "embedded",
 				ItemFields: []string{"product", "quantity", "note"},
-				Display:    &FormObjectListDisplayConfig{PrimaryField: "product", SecondaryTemplate: "{{quantity}} items"},
+				Display:    &FormObjectListDisplayConfig{PrimaryField: "product", SecondaryTemplate: "{{quantity}} items", RightTemplate: "{{lineTotal}} TRY"},
 				Actions:    []FormObjectActionConfig{{Kind: "editObject", Position: "start"}, {Kind: "decrement", Field: "quantity", Min: &minimum, Step: 1, Position: "end"}},
 			}},
 			Actions: []FormActionConfig{{Kind: "addObject", Area: "bottom", TargetObjectList: "items", SourceFields: []string{"product", "quantity", "note"}}, {Kind: "submit", Area: "bottom", ButtonName: "Save Sale"}},
@@ -1248,7 +1248,7 @@ func TestFormComponentConfigRoundTrip(t *testing.T) {
 	if gotField := form.Fields[0]; !reflect.DeepEqual(gotField.SourceDataFields, []string{"name", "price", "taxRate"}) || gotField.OptionDisplay == nil || gotField.OptionDisplay.RightTemplate != "{{price}} ₺" {
 		t.Fatalf("form.Fields[0] select display config was not preserved: %#v", gotField)
 	}
-	if gotList := form.ObjectLists[0]; gotList.Key != "items" || gotList.Display.SecondaryTemplate != "{{quantity}} items" {
+	if gotList := form.ObjectLists[0]; gotList.Key != "items" || gotList.Display.SecondaryTemplate != "{{quantity}} items" || gotList.Display.RightTemplate != "{{lineTotal}} TRY" {
 		t.Fatalf("form.ObjectLists[0] = %#v, want configured items list", gotList)
 	}
 	if form.Actions[0].Area != "bottom" || form.ObjectLists[0].Actions[0].Position != "start" {

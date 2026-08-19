@@ -373,6 +373,7 @@ type FormObjectListDisplayConfig struct {
 	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
 	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
 	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	RightTemplate     string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
 	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
 }
 

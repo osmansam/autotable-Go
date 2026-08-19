@@ -124,3 +124,13 @@ func TestValidateFormCalculationConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateFormCalculationConfigAllowsQualifiedAdditionalOptionInput(t *testing.T) {
+	form := validCalculatedOrderForm()
+	form.ObjectLists[0].FieldMappings = nil
+	form.ObjectLists[0].ItemCalculations[0].Inputs = []string{"productId.price", "quantity"}
+
+	if err := ValidateFormComponentConfig(&form); err != nil {
+		t.Fatalf("ValidateFormComponentConfig() error = %v, want nil", err)
+	}
+}

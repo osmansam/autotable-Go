@@ -285,6 +285,17 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 		for _, field := range list.ItemFields {
 			available[field] = true
 		}
+		for _, field := range form.Fields {
+			if field.Type != "select" || field.OptionsSource != "schema" {
+				continue
+			}
+			for _, sourceField := range field.SourceDataFields {
+				sourceField = strings.TrimSpace(sourceField)
+				if sourceField != "" {
+					available[field.FormKey+"."+sourceField] = true
+				}
+			}
+		}
 		for index, mapping := range list.FieldMappings {
 			if mapping.SourceFormKey == "" || mapping.SourceField == "" || mapping.TargetField == "" {
 				return fmt.Errorf("object list '%s' field mapping %d requires sourceFormKey, sourceField, and targetField", list.Key, index)
