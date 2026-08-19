@@ -956,7 +956,7 @@ func ExecuteDynamicAPI(c *fiber.Ctx) error {
 }
 
 func ExecuteWorkflow(c *fiber.Ctx) error {
-	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
+	ctx, cancel := workflowRequestContext(c.UserContext())
 	defer cancel()
 
 	tenantID, projectID, err := getProjectContext(c)
@@ -1029,6 +1029,13 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		Data:    result.Data,
 		Source:  utils.PointerToString(result.Source),
 	})
+}
+
+func workflowRequestContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, 300*time.Second)
 }
 
 func parseWorkflowFormConfigReference(body []byte) (*services.FormConfigReference, error) {

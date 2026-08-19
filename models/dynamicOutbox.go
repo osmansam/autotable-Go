@@ -26,6 +26,7 @@ type DynamicOutboxPayload struct {
 	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	WorkflowTrigger   string                 `bson:"workflowTrigger,omitempty" json:"workflowTrigger,omitempty"`
 	WorkflowVersion   int                    `bson:"workflowVersion,omitempty" json:"workflowVersion,omitempty"`
+	StopOnError       bool                   `bson:"stopOnError,omitempty" json:"stopOnError,omitempty"`
 	StepID            string                 `bson:"stepId,omitempty" json:"stepId,omitempty"`
 	StepName          string                 `bson:"stepName,omitempty" json:"stepName,omitempty"`
 	StepType          string                 `bson:"stepType,omitempty" json:"stepType,omitempty"`

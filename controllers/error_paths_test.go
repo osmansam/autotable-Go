@@ -1,14 +1,30 @@
 package controllers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+func TestWorkflowRequestContextAllowsLongRunningWorkflow(t *testing.T) {
+	ctx, cancel := workflowRequestContext(context.Background())
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("workflow request context has no deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining < 299*time.Second || remaining > 300*time.Second {
+		t.Fatalf("workflow request context timeout = %v, want approximately 300s", remaining)
+	}
+}
 
 func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 	tests := []struct {
