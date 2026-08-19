@@ -1890,6 +1890,39 @@ func TestAdditionalExportFormatting(t *testing.T) {
 	}
 }
 
+func TestValidateSelectionFieldsRejectsUnsafeDependencies(t *testing.T) {
+	container := &models.ContainerModel{SchemaName: "product", Fields: []models.Field{
+		{Name: "name"},
+		{Name: "price"},
+		{Name: "secret", AuthorizeRole: []string{"admin"}},
+		{Name: "password", IsHashed: true},
+	}}
+
+	tests := []struct {
+		name     string
+		fields   []string
+		role     string
+		wantCode int
+	}{
+		{name: "known fields", fields: []string{"name", "price"}},
+		{name: "unknown field", fields: []string{"name", "missing"}, wantCode: http.StatusBadRequest},
+		{name: "restricted field", fields: []string{"secret"}, role: "viewer", wantCode: http.StatusForbidden},
+		{name: "hashed field", fields: []string{"password"}, role: "admin", wantCode: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSelectionFields(container, tt.fields, tt.role)
+			if tt.wantCode == 0 && err != nil {
+				t.Fatalf("validateSelectionFields() error = %v", err)
+			}
+			if tt.wantCode != 0 && serviceErrorStatus(err) != tt.wantCode {
+				t.Fatalf("validateSelectionFields() status = %d, want %d; error = %v", serviceErrorStatus(err), tt.wantCode, err)
+			}
+		})
+	}
+}
+
 func parseIP(value string) net.IP {
 	return net.ParseIP(value)
 }

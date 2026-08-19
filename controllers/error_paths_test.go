@@ -126,6 +126,39 @@ func TestParseWorkflowRequestBodyAddsProductIDsForWrappedItems(t *testing.T) {
 	}
 }
 
+func TestParseWorkflowFormConfigReference(t *testing.T) {
+	ref, err := parseWorkflowFormConfigReference([]byte(`{
+		"record":{"items":[]},
+		"formConfigRef":{"pageId":"68a4f56da3c241f066ff1142","componentId":"cmp-order"}
+	}`))
+	if err != nil {
+		t.Fatalf("parseWorkflowFormConfigReference() error = %v", err)
+	}
+	if ref == nil || ref.PageID != "68a4f56da3c241f066ff1142" || ref.ComponentID != "cmp-order" {
+		t.Fatalf("reference = %#v", ref)
+	}
+	record, _, _, err := parseWorkflowRequestBody([]byte(`{
+		"record":{"items":[]},
+		"formConfigRef":{"pageId":"68a4f56da3c241f066ff1142","componentId":"cmp-order"}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := record["formConfigRef"]; exists {
+		t.Fatal("formConfigRef leaked into workflow record")
+	}
+}
+
+func TestParseWorkflowFormConfigReferenceRejectsPartialReference(t *testing.T) {
+	if _, err := parseWorkflowFormConfigReference([]byte(`{"formConfigRef":{"pageId":"page"}}`)); err == nil {
+		t.Fatal("partial formConfigRef was accepted")
+	}
+	ref, err := parseWorkflowFormConfigReference([]byte(`{"record":{}}`))
+	if err != nil || ref != nil {
+		t.Fatalf("missing reference = %#v, %v", ref, err)
+	}
+}
+
 func TestContainerHandlersRejectMissingProjectContext(t *testing.T) {
 	tests := []struct {
 		name    string

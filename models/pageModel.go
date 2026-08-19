@@ -373,6 +373,7 @@ type FormObjectListDisplayConfig struct {
 	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
 	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
 	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	RightTemplate     string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
 	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
 }
 
@@ -386,6 +387,42 @@ type FormObjectActionConfig struct {
 	Min      *float64 `bson:"min,omitempty" json:"min,omitempty"`
 	Max      *float64 `bson:"max,omitempty" json:"max,omitempty"`
 	Step     float64  `bson:"step,omitempty" json:"step,omitempty"`
+}
+
+// FormFieldMappingConfig snapshots a field from a schema-backed selected record.
+type FormFieldMappingConfig struct {
+	SourceFormKey string `bson:"sourceFormKey" json:"sourceFormKey"`
+	SourceField   string `bson:"sourceField" json:"sourceField"`
+	TargetField   string `bson:"targetField" json:"targetField"`
+	Required      bool   `bson:"required,omitempty" json:"required,omitempty"`
+}
+
+// FormItemCalculationConfig calculates one embedded item field.
+type FormItemCalculationConfig struct {
+	Operation   string   `bson:"operation" json:"operation"`
+	Inputs      []string `bson:"inputs" json:"inputs"`
+	TargetField string   `bson:"targetField" json:"targetField"`
+	Precision   *int     `bson:"precision,omitempty" json:"precision,omitempty"`
+}
+
+// FormValueFormatConfig controls presentation without changing persisted numbers.
+type FormValueFormatConfig struct {
+	Style     string `bson:"style,omitempty" json:"style,omitempty"`
+	Currency  string `bson:"currency,omitempty" json:"currency,omitempty"`
+	Precision *int   `bson:"precision,omitempty" json:"precision,omitempty"`
+}
+
+// FormSummaryConfig calculates and renders a parent form summary.
+type FormSummaryConfig struct {
+	Key           string                 `bson:"key" json:"key"`
+	Label         string                 `bson:"label,omitempty" json:"label,omitempty"`
+	Area          string                 `bson:"area,omitempty" json:"area,omitempty"`
+	Order         int                    `bson:"order,omitempty" json:"order,omitempty"`
+	Operation     string                 `bson:"operation" json:"operation"`
+	ObjectListKey string                 `bson:"objectListKey,omitempty" json:"objectListKey,omitempty"`
+	SourceField   string                 `bson:"sourceField" json:"sourceField"`
+	TargetField   string                 `bson:"targetField" json:"targetField"`
+	Format        *FormValueFormatConfig `bson:"format,omitempty" json:"format,omitempty"`
 }
 
 // FormActionConfig defines an action attached to the form itself.
@@ -404,14 +441,16 @@ type FormActionConfig struct {
 
 // FormObjectListConfig describes an embedded object array rendered inside a form.
 type FormObjectListConfig struct {
-	Key        string                       `bson:"key" json:"key"`
-	Title      string                       `bson:"title,omitempty" json:"title,omitempty"`
-	Area       string                       `bson:"area,omitempty" json:"area,omitempty"`
-	Source     string                       `bson:"source,omitempty" json:"source,omitempty"`
-	ItemFields []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
-	AddAction  *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`
-	Display    *FormObjectListDisplayConfig `bson:"display,omitempty" json:"display,omitempty"`
-	Actions    []FormObjectActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
+	Key              string                       `bson:"key" json:"key"`
+	Title            string                       `bson:"title,omitempty" json:"title,omitempty"`
+	Area             string                       `bson:"area,omitempty" json:"area,omitempty"`
+	Source           string                       `bson:"source,omitempty" json:"source,omitempty"`
+	ItemFields       []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
+	FieldMappings    []FormFieldMappingConfig     `bson:"fieldMappings,omitempty" json:"fieldMappings,omitempty"`
+	ItemCalculations []FormItemCalculationConfig  `bson:"itemCalculations,omitempty" json:"itemCalculations,omitempty"`
+	AddAction        *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`
+	Display          *FormObjectListDisplayConfig `bson:"display,omitempty" json:"display,omitempty"`
+	Actions          []FormObjectActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
 }
 
 // FormSubmitConfig controls final form submission.
@@ -431,6 +470,7 @@ type FormComponentConfig struct {
 	Layout      *FormLayoutConfig      `bson:"layout,omitempty" json:"layout,omitempty"`
 	Fields      []FormFieldConfig      `bson:"fields,omitempty" json:"fields,omitempty"`
 	ObjectLists []FormObjectListConfig `bson:"objectLists,omitempty" json:"objectLists,omitempty"`
+	Summaries   []FormSummaryConfig    `bson:"summaries,omitempty" json:"summaries,omitempty"`
 	Actions     []FormActionConfig     `bson:"actions,omitempty" json:"actions,omitempty"`
 	Submit      *FormSubmitConfig      `bson:"submit,omitempty" json:"submit,omitempty"`
 }

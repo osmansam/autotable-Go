@@ -150,6 +150,7 @@ type GetItemsForSelectionInput struct {
 	Schema     string
 	FieldName  string
 	ValueField string
+	DataFields []string
 	Limit      int64
 	Filter     map[string]interface{}
 	UserRole   string
@@ -276,18 +277,24 @@ type ExecuteDynamicAPIInput struct {
 }
 
 type ExecuteWorkflowInput struct {
-	TenantID     string
-	ProjectID    string
-	Schema       string
-	WorkflowName string
-	Record       map[string]interface{}
-	Query        map[string]interface{}
-	OldRecord    map[string]interface{}
-	StepOutputs  map[string]interface{}
-	UserID       string
-	AuditUser    *models.AuditUser
-	Container    *models.ContainerModel
-	Pager        *utils.Pager
+	TenantID      string
+	ProjectID     string
+	Schema        string
+	WorkflowName  string
+	Record        map[string]interface{}
+	Query         map[string]interface{}
+	OldRecord     map[string]interface{}
+	StepOutputs   map[string]interface{}
+	UserID        string
+	AuditUser     *models.AuditUser
+	Container     *models.ContainerModel
+	Pager         *utils.Pager
+	FormConfigRef *FormConfigReference
+}
+
+type FormConfigReference struct {
+	PageID      string `json:"pageId"`
+	ComponentID string `json:"componentId"`
 }
 
 type ExportDynamicItemsInput struct {
@@ -1025,6 +1032,7 @@ func validateSelectionFields(container *models.ContainerModel, fieldNames []stri
 		if _, ok := requestedFields[field.Name]; !ok {
 			continue
 		}
+		delete(requestedFields, field.Name)
 
 		if len(field.AuthorizeRole) > 0 {
 			authorized := false
@@ -1052,6 +1060,13 @@ func validateSelectionFields(container *models.ContainerModel, fieldNames []stri
 			}
 		}
 	}
+	if len(requestedFields) > 0 {
+		return &ServiceError{
+			Status:  http.StatusBadRequest,
+			Message: "Requested selection field does not exist",
+			Data:    nil,
+		}
+	}
 
 	return nil
 }
@@ -1075,46 +1090,13 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	requestedFields := map[string]struct{}{
-		input.FieldName: {},
-	}
-	if input.ValueField != "" && input.ValueField != "_id" {
-		requestedFields[input.ValueField] = struct{}{}
+	requestedFields := append([]string{input.FieldName, input.ValueField}, input.DataFields...)
+	if err := validateSelectionFields(container, requestedFields, input.UserRole); err != nil {
+		return nil, err
 	}
 
-	for _, field := range container.Fields {
-		if _, ok := requestedFields[field.Name]; !ok {
-			continue
-		}
-
-		if len(field.AuthorizeRole) > 0 {
-			authorized := false
-			for _, role := range field.AuthorizeRole {
-				if role == input.UserRole {
-					authorized = true
-					break
-				}
-			}
-			if !authorized {
-				return nil, &ServiceError{
-					Status:  http.StatusForbidden,
-					Message: "Access to this field is restricted",
-					Data:    nil,
-				}
-			}
-		}
-
-		if field.IsHashed {
-			log.Printf("Attempted to access hashed field %s in schema %s", field.Name, input.Schema)
-			return nil, &ServiceError{
-				Status:  http.StatusForbidden,
-				Message: "Cannot access hashed fields",
-				Data:    nil,
-			}
-		}
-	}
-
-	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.Filter, input.Limit, input.ValueField)
+	extraFields := append([]string{input.ValueField}, input.DataFields...)
+	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.Filter, input.Limit, extraFields...)
 	if err != nil {
 		log.Printf("Failed to query collection %s: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -2067,6 +2049,11 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 	if !workflow.IsActive {
 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusForbidden, Message: "Workflow is disabled", Data: nil}
 	}
+	verifiedRecord, err := s.verifyWorkflowFormCart(ctx, input)
+	if err != nil {
+		return DynamicExecutionResult{}, err
+	}
+	input.Record = verifiedRecord
 
 	var pagination *workflowTableSourcePagination
 	if input.Pager != nil && input.Pager.Enabled {

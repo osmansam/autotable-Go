@@ -28,6 +28,20 @@ func parseSelectionLimit(raw string) (int64, error) {
 	return limit, nil
 }
 
+func parseSelectionDataFields(raw string) []string {
+	seen := map[string]bool{}
+	fields := []string{}
+	for _, value := range strings.Split(raw, ",") {
+		field := strings.TrimSpace(value)
+		if field == "" || seen[field] {
+			continue
+		}
+		seen[field] = true
+		fields = append(fields, field)
+	}
+	return fields
+}
+
 // getProjectContext extracts tenantID and projectID from fiber context
 // Returns an error if either is missing
 func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
@@ -275,6 +289,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 	schemaName := c.Query("schemaName")
 	fieldName := c.Query("fieldName")
 	valueField := c.Query("valueField")
+	dataFields := parseSelectionDataFields(c.Query("dataFields"))
 	limit, err := parseSelectionLimit(c.Query("limit"))
 	if err != nil {
 		return sendDynamicError(c, &services.ServiceError{Status: http.StatusBadRequest, Message: err.Error()}, "Invalid selection limit")
@@ -305,6 +320,7 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		Schema:     schemaName,
 		FieldName:  fieldName,
 		ValueField: valueField,
+		DataFields: dataFields,
 		Limit:      limit,
 		Filter:     filter,
 		UserRole:   userRole,
@@ -982,21 +998,26 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Invalid request body")
 	}
+	formConfigRef, err := parseWorkflowFormConfigReference(c.Body())
+	if err != nil {
+		return utils.SendErrorResponse(c, err, "Invalid form configuration reference")
+	}
 
 	userID, _ := c.Locals("userID").(string)
 	dynamicService := services.NewDynamicService()
 	result, err := dynamicService.ExecuteWorkflow(ctx, services.ExecuteWorkflowInput{
-		TenantID:     tenantID,
-		ProjectID:    projectID,
-		Schema:       schemaName,
-		WorkflowName: workflowName,
-		Record:       record,
-		Query:        queryParams,
-		OldRecord:    oldRecord,
-		StepOutputs:  stepOutputs,
-		UserID:       userID,
-		AuditUser:    utils.GetUserFromContext(c),
-		Container:    container,
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		Schema:        schemaName,
+		WorkflowName:  workflowName,
+		Record:        record,
+		Query:         queryParams,
+		OldRecord:     oldRecord,
+		StepOutputs:   stepOutputs,
+		UserID:        userID,
+		AuditUser:     utils.GetUserFromContext(c),
+		Container:     container,
+		FormConfigRef: formConfigRef,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to execute workflow")
@@ -1008,6 +1029,25 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		Data:    result.Data,
 		Source:  utils.PointerToString(result.Source),
 	})
+}
+
+func parseWorkflowFormConfigReference(body []byte) (*services.FormConfigReference, error) {
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return nil, nil
+	}
+	var envelope struct {
+		FormConfigRef *services.FormConfigReference `json:"formConfigRef"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.FormConfigRef == nil {
+		return nil, nil
+	}
+	if envelope.FormConfigRef.PageID == "" || envelope.FormConfigRef.ComponentID == "" {
+		return nil, fmt.Errorf("formConfigRef requires pageId and componentId")
+	}
+	return envelope.FormConfigRef, nil
 }
 
 func parseWorkflowRequestBody(body []byte) (map[string]interface{}, map[string]interface{}, map[string]interface{}, error) {
@@ -1026,6 +1066,7 @@ func parseWorkflowRequestBody(body []byte) (map[string]interface{}, map[string]i
 		if nested, ok := typed["record"].(map[string]interface{}); ok {
 			record = nested
 		}
+		delete(record, "formConfigRef")
 		ensureWorkflowProductIDs(record)
 		oldRecord := map[string]interface{}{}
 		if nested, ok := typed["oldRecord"].(map[string]interface{}); ok {
