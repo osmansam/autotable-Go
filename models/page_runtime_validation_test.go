@@ -72,6 +72,26 @@ func TestValidatePageRuntimeConfigAcceptsValidGraph(t *testing.T) {
 	}
 }
 
+func TestValidatePageRuntimeConfigAcceptsInfoBlockSelectionOutput(t *testing.T) {
+	page := validRuntimePage()
+	page.Sections[1].Component.Outputs = []ComponentOutputDefinition{{
+		ID: "out_minimum", Key: "minimum", Type: RuntimeValueTypeNumber,
+		Source: ComponentOutputSource{Kind: ComponentOutputSourceInfoBlockSelection, ValueKey: "minimum"},
+	}}
+	if err := ValidatePageRuntimeConfig(&page); err != nil {
+		t.Fatalf("ValidatePageRuntimeConfig() error = %v", err)
+	}
+}
+
+func TestValidatePageRuntimeConfigRejectsInfoBlockSelectionWithoutValueKey(t *testing.T) {
+	page := validRuntimePage()
+	page.Sections[1].Component.Outputs = []ComponentOutputDefinition{{
+		ID: "out_minimum", Key: "minimum", Type: RuntimeValueTypeNumber,
+		Source: ComponentOutputSource{Kind: ComponentOutputSourceInfoBlockSelection},
+	}}
+	requireRuntimeValidationError(t, page, "requires valueKey")
+}
+
 func TestValidatePageRuntimeConfigLeavesLegacyPageWithoutRuntimeConfigUnchanged(t *testing.T) {
 	legacyFilter := ActionFormFieldConfig{ID: "legacy-filter", FormKey: "status", Type: "text"}
 	page := PageModel{

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 	"github.com/osmansam/autotableGo/ws"
@@ -61,6 +63,19 @@ func pageUpdateDocument(page models.PageModel, body []byte) (bson.M, error) {
 	return bson.M{"$set": updateSet}, nil
 }
 
+func sendPageRuntimeValidationError(c *fiber.Ctx, validationErr error) error {
+	const message = "Validation error. Page runtime bindings are invalid."
+	observability.Warn(c, "page runtime validation failed",
+		slog.Int("status_code", http.StatusBadRequest),
+		slog.String(observability.FieldError, validationErr.Error()),
+	)
+	return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
+		Status:  http.StatusBadRequest,
+		Message: message,
+		Data:    fiber.Map{"error": validationErr.Error()},
+	})
+}
+
 // CreatePage creates a new page in project-specific collection
 func CreatePage(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -95,7 +110,7 @@ func CreatePage(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
 	}
 	if validationErr := models.ValidatePageRuntimeConfig(&page); validationErr != nil {
-		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
+		return sendPageRuntimeValidationError(c, validationErr)
 	}
 	if page.IsMainPage && page.IsGroupOnly {
 		return utils.SendErrorResponse(c, fmt.Errorf("group-only pages cannot be main pages"), "Validation error. A group-only page cannot be selected as the main page.")
@@ -366,7 +381,7 @@ func UpdatePage(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
 	}
 	if validationErr := models.ValidatePageRuntimeConfig(&updatedPage); validationErr != nil {
-		return utils.SendErrorResponse(c, validationErr, "Validation error. Page runtime bindings are invalid.")
+		return sendPageRuntimeValidationError(c, validationErr)
 	}
 	if updatedPage.IsMainPage && updatedPage.IsGroupOnly {
 		return utils.SendErrorResponse(c, fmt.Errorf("group-only pages cannot be main pages"), "Validation error. A group-only page cannot be selected as the main page.")

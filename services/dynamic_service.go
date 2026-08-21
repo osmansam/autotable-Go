@@ -1656,6 +1656,19 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 		}
 		return projectTableSourceResponse(normalizeTableSourceResponse(result, input.Pager), input.Fields), nil
 	case models.BindingKindPipeline:
+		prepareStage := input.PrepareStage
+		if len(input.Filter) > 0 {
+			prepareStage = func(pipelineJSON string) string {
+				if input.PrepareStage != nil {
+					pipelineJSON = input.PrepareStage(pipelineJSON)
+				}
+				filtered, err := appendPipelineMatch(pipelineJSON, input.Filter)
+				if err != nil {
+					return pipelineJSON
+				}
+				return filtered
+			}
+		}
 		items, err := s.GetPipeline(ctx, GetPipelineInput{
 			TenantID:     input.TenantID,
 			ProjectID:    input.ProjectID,
@@ -1663,7 +1676,7 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 			PipelineName: input.PipelineName,
 			CurrentQuery: input.QueryString,
 			Container:    input.Container,
-			PrepareStage: input.PrepareStage,
+			PrepareStage: prepareStage,
 		})
 		if err != nil {
 			return nil, err
@@ -1711,6 +1724,26 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 			Data:    nil,
 		}
 	}
+}
+
+func appendPipelineMatch(pipelineJSON string, filter bson.M) (string, error) {
+	if len(filter) == 0 {
+		return pipelineJSON, nil
+	}
+	var stages []json.RawMessage
+	if err := json.Unmarshal([]byte(pipelineJSON), &stages); err != nil {
+		return "", err
+	}
+	match, err := bson.MarshalExtJSON(bson.M{"$match": filter}, false, false)
+	if err != nil {
+		return "", err
+	}
+	stages = append(stages, json.RawMessage(match))
+	encoded, err := json.Marshal(stages)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func projectTableSourceResponse(response fiber.Map, fields []string) fiber.Map {
