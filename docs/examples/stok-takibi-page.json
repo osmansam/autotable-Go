@@ -1,0 +1,278 @@
+{
+  "name": "Stok Takibi",
+  "icon": "MdInventory2",
+  "slug": "stok-takibi",
+  "order": 4,
+  "isGroupOnly": false,
+  "isOnSidebar": true,
+  "isAuthenticated": true,
+  "isAuthorized": false,
+  "sections": [
+    {
+      "columns": 1,
+      "gap": 16,
+      "cells": [
+        {
+          "id": "cell-stock-summary",
+          "row": 1,
+          "column": 1,
+          "components": [
+            {
+              "id": "cmp_a7cd91be275d449790cb44f180783a5b",
+              "stateKey": "stokBilgileri",
+              "type": "infoBlocks",
+              "title": "Stok Bilgileri",
+              "order": 1,
+              "dataBinding": {
+                "kind": "workflow",
+                "schemaName": "stock",
+                "workflowName": "manual.productStockSummary"
+              },
+              "props": {
+                "infoBlocks": {
+                  "isDynamic": false,
+                  "items": [
+                    {
+                      "color": "#0e8a05",
+                      "footer": "ürün",
+                      "footerColorRules": [],
+                      "title": "Yeterli Stok",
+                      "titleColorRules": [],
+                      "value": "{{high}}",
+                      "clickValues": {
+                        "quantity": ["gt-5"]
+                      }
+                    },
+                    {
+                      "color": "#f2991c",
+                      "footer": "ürün (3–5 adet)",
+                      "footerColorRules": [],
+                      "title": "Az Stok",
+                      "titleColorRules": [],
+                      "value": "{{medium}}",
+                      "clickValues": {
+                        "quantity": ["gte-3", "lte-5"]
+                      }
+                    },
+                    {
+                      "color": "#d12323",
+                      "footer": "ürün (0–2 adet)",
+                      "footerColorRules": [],
+                      "title": "Kritik",
+                      "titleColorRules": [],
+                      "value": "{{low}}",
+                      "clickValues": {
+                        "quantity": ["gte-0", "lte-2"]
+                      }
+                    },
+                    {
+                      "color": "#111827",
+                      "footer": "adet",
+                      "footerColorRules": [],
+                      "title": "Total Stok",
+                      "titleColorRules": [],
+                      "value": "{{totalStock}}"
+                    }
+                  ],
+                  "source": "workflow"
+                }
+              },
+              "outputs": [
+                {
+                  "id": "out_stock_quantity",
+                  "key": "quantity",
+                  "type": "stringArray",
+                  "source": {
+                    "kind": "infoBlockSelection",
+                    "valueKey": "quantity"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cell-stock-table",
+          "row": 2,
+          "column": 1,
+          "components": [
+            {
+              "id": "cmp_cc8a8aca2a4d47d1bd887013bcefae89",
+              "stateKey": "stokListesi",
+              "type": "table",
+              "title": "Stok Listesi",
+              "order": 1,
+              "dataBinding": {
+                "kind": "pipeline",
+                "schemaName": "stock",
+                "pipelineName": "stock-with-product-details",
+                "parameters": {
+                  "quantity": {
+                    "source": "componentOutput",
+                    "componentId": "cmp_a7cd91be275d449790cb44f180783a5b",
+                    "outputId": "out_stock_quantity"
+                  }
+                }
+              },
+              "table": {
+                "columns": [
+                  {
+                    "field": "productName",
+                    "displayName": "Ürün"
+                  },
+                  {
+                    "field": "productPrice",
+                    "displayName": "Ürün Fiyatı"
+                  },
+                  {
+                    "field": "quantity",
+                    "displayName": "Stok"
+                  }
+                ],
+                "addButton": {
+                  "id": "default-create",
+                  "key": "default-create",
+                  "label": "Yeni Stok",
+                  "buttonName": "Create",
+                  "kind": "create",
+                  "icon": "FiPlus",
+                  "order": 1,
+                  "enabled": true,
+                  "modalType": "form",
+                  "formFields": [
+                    {
+                      "formKey": "product",
+                      "type": "select",
+                      "formKeyType": "objectId",
+                      "label": "Ürün",
+                      "placeholder": "Ürün seç",
+                      "required": true,
+                      "optionsSource": "schema",
+                      "staticOptionsJson": "[]",
+                      "sourceSchemaName": "product",
+                      "sourceValueField": "_id",
+                      "sourceLabelField": "name",
+                      "sourceRequestFilters": {
+                        "isActive": true
+                      }
+                    },
+                    {
+                      "formKey": "quantity",
+                      "type": "number",
+                      "formKeyType": "number",
+                      "label": "Stok Miktarı",
+                      "placeholder": "Stok Miktarı",
+                      "required": true,
+                      "isNumberButtonsActive": true,
+                      "optionsSource": "static",
+                      "staticOptionsJson": "[]",
+                      "sourceValueField": "_id",
+                      "defaultValue": "1"
+                    }
+                  ],
+                  "submit": {}
+                },
+                "actions": [
+                  {
+                    "id": "action-1783997416000",
+                    "key": "action-1783997416000",
+                    "label": "Düzenle",
+                    "buttonName": "Düzenle",
+                    "kind": "edit",
+                    "icon": "FiEdit",
+                    "order": 1,
+                    "enabled": true,
+                    "modalType": "form",
+                    "formFields": [
+                      {
+                        "formKey": "quantity",
+                        "type": "number",
+                        "formKeyType": "number",
+                        "label": "Stok Miktarı",
+                        "placeholder": "Stok Miktarı",
+                        "required": true,
+                        "isNumberButtonsActive": true,
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      }
+                    ],
+                    "submit": {}
+                  },
+                  {
+                    "id": "action-1784042212874",
+                    "key": "action-1784042212874",
+                    "label": "Sil",
+                    "buttonName": "Sil",
+                    "kind": "delete",
+                    "icon": "HiOutlineTrash",
+                    "order": 2,
+                    "enabled": true,
+                    "modalType": "confirm",
+                    "submit": {}
+                  }
+                ],
+                "bulkActions": {
+                  "edit": {
+                    "id": "bulk-edit",
+                    "key": "bulk-edit",
+                    "label": "Edit Selected",
+                    "buttonName": "Edit",
+                    "kind": "update",
+                    "icon": "FiEdit",
+                    "order": 1,
+                    "enabled": false,
+                    "modalType": "form",
+                    "formFields": [
+                      {
+                        "formKey": "product",
+                        "type": "select",
+                        "formKeyType": "string",
+                        "label": "product",
+                        "placeholder": "product",
+                        "required": true,
+                        "optionsSource": "schema",
+                        "staticOptionsJson": "[]",
+                        "sourceSchemaName": "product",
+                        "sourceValueField": "_id",
+                        "sourceLabelField": "name"
+                      },
+                      {
+                        "formKey": "quantity",
+                        "type": "number",
+                        "formKeyType": "number",
+                        "label": "quantity",
+                        "placeholder": "quantity",
+                        "required": true,
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      }
+                    ],
+                    "submit": {}
+                  },
+                  "delete": {
+                    "id": "bulk-delete",
+                    "key": "bulk-delete",
+                    "label": "Delete Selected",
+                    "kind": "delete",
+                    "icon": "HiOutlineTrash",
+                    "order": 2,
+                    "enabled": false,
+                    "modalType": "confirm",
+                    "confirmTitle": "Delete Selected",
+                    "confirmText": "Are you sure you want to delete the selected items?",
+                    "submit": {}
+                  }
+                },
+                "filterPanel": {
+                  "inputs": []
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

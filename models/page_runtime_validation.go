@@ -414,6 +414,14 @@ func validateComponentOutputs(component *ComponentBlock, filters map[string]Acti
 				return fmt.Errorf("component %q output %q: tableSearch source requires table component", component.ID, output.ID)
 			}
 			expectedType = RuntimeValueTypeString
+		case ComponentOutputSourceInfoBlockSelection:
+			if component.Type != ComponentTypeInfoBlocks {
+				return fmt.Errorf("component %q output %q: infoBlockSelection source requires infoBlocks component", component.ID, output.ID)
+			}
+			if output.Source.ValueKey == "" {
+				return fmt.Errorf("component %q output %q: infoBlockSelection source requires valueKey", component.ID, output.ID)
+			}
+			expectedType = output.Type
 		default:
 			return fmt.Errorf("component %q output %q: unsupported output source %q", component.ID, output.ID, output.Source.Kind)
 		}

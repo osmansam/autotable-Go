@@ -323,6 +323,31 @@ func TestWorkflowConfigurationHelpers(t *testing.T) {
 	}
 }
 
+func TestAppendPipelineMatchAddsTableRequestFilter(t *testing.T) {
+	got, err := appendPipelineMatch(
+		`[{"$lookup":{"from":"products","as":"product"}}]`,
+		bson.M{"quantity": bson.M{"$gte": 3, "$lte": 5}},
+	)
+	if err != nil {
+		t.Fatalf("appendPipelineMatch() error = %v", err)
+	}
+	var stages []bson.M
+	if err := bson.UnmarshalExtJSON([]byte(got), true, &stages); err != nil {
+		t.Fatalf("result is not valid pipeline JSON: %v", err)
+	}
+	if len(stages) != 2 || !reflect.DeepEqual(stages[1], bson.M{"$match": bson.M{"quantity": bson.M{"$gte": int32(3), "$lte": int32(5)}}}) {
+		t.Fatalf("appendPipelineMatch() stages = %#v", stages)
+	}
+}
+
+func TestAppendPipelineMatchLeavesUnfilteredPipelineUnchanged(t *testing.T) {
+	const pipeline = `[{"$match":{"active":true}}]`
+	got, err := appendPipelineMatch(pipeline, nil)
+	if err != nil || got != pipeline {
+		t.Fatalf("appendPipelineMatch() = %q, %v", got, err)
+	}
+}
+
 func TestWorkflowApplyOutputMappingsFlattensNestedFields(t *testing.T) {
 	items := []map[string]interface{}{
 		{

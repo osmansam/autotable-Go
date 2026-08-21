@@ -81,12 +81,14 @@ type PageFilterDefinition struct {
 type ComponentOutputSource struct {
 	Kind     string `bson:"kind" json:"kind"`
 	FilterID string `bson:"filterId,omitempty" json:"filterId,omitempty"`
+	ValueKey string `bson:"valueKey,omitempty" json:"valueKey,omitempty"`
 }
 
 const (
-	ComponentOutputSourceTableFilter      = "tableFilter"
-	ComponentOutputSourceTableSelectedIDs = "tableSelectedIds"
-	ComponentOutputSourceTableSearch      = "tableSearch"
+	ComponentOutputSourceTableFilter        = "tableFilter"
+	ComponentOutputSourceTableSelectedIDs   = "tableSelectedIds"
+	ComponentOutputSourceTableSearch        = "tableSearch"
+	ComponentOutputSourceInfoBlockSelection = "infoBlockSelection"
 )
 
 type ComponentOutputDefinition struct {
@@ -515,12 +517,13 @@ type InfoBlocksConfig struct {
 
 // InfoBlockItemConfig defines one information card in an infoBlocks component.
 type InfoBlockItemConfig struct {
-	Title            string               `bson:"title,omitempty" json:"title,omitempty"`
-	Value            string               `bson:"value,omitempty" json:"value,omitempty"`
-	Footer           string               `bson:"footer,omitempty" json:"footer,omitempty"`
-	Color            string               `bson:"color,omitempty" json:"color,omitempty"`
-	TitleColorRules  []InfoBlockColorRule `bson:"titleColorRules,omitempty" json:"titleColorRules,omitempty"`
-	FooterColorRules []InfoBlockColorRule `bson:"footerColorRules,omitempty" json:"footerColorRules,omitempty"`
+	Title            string                 `bson:"title,omitempty" json:"title,omitempty"`
+	Value            string                 `bson:"value,omitempty" json:"value,omitempty"`
+	Footer           string                 `bson:"footer,omitempty" json:"footer,omitempty"`
+	Color            string                 `bson:"color,omitempty" json:"color,omitempty"`
+	TitleColorRules  []InfoBlockColorRule   `bson:"titleColorRules,omitempty" json:"titleColorRules,omitempty"`
+	FooterColorRules []InfoBlockColorRule   `bson:"footerColorRules,omitempty" json:"footerColorRules,omitempty"`
+	ClickValues      map[string]interface{} `bson:"clickValues,omitempty" json:"clickValues,omitempty"`
 }
 
 // InfoBlockColorRule defines conditional text color behavior for an info block.

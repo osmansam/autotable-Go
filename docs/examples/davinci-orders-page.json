@@ -1,0 +1,405 @@
+{
+  "name": "Sipariş Girişi",
+  "icon": "MdShoppingCart",
+  "slug": "davinci-orders",
+  "order": 6,
+  "isGroupOnly": false,
+  "isOnSidebar": true,
+  "isAuthenticated": true,
+  "isAuthorized": false,
+  "sections": [
+    {
+      "columns": 1,
+      "gap": 16,
+      "cells": [
+        {
+          "id": "cell-sales-form",
+          "row": 1,
+          "column": 1,
+          "components": [
+            {
+              "id": "cmp_abfd7c7973e94f7294b6b43a198c05c4",
+              "stateKey": "form",
+              "type": "form",
+              "order": 1,
+              "dataBinding": {
+                "kind": "schema",
+                "schemaName": "davinciOrder"
+              },
+              "form": {
+                "title": "Sipariş Bilgileri",
+                "schemaName": "davinciOrder",
+                "layout": {
+                  "variant": "page",
+                  "columns": 2,
+                  "areas": [
+                    {
+                      "key": "left",
+                      "title": "Sipariş Bilgileri",
+                      "order": 1
+                    },
+                    {
+                      "key": "right",
+                      "order": 2
+                    }
+                  ]
+                },
+                "fields": [
+                  {
+                    "formKey": "productId",
+                    "type": "select",
+                    "formKeyType": "string",
+                    "label": "Ürün",
+                    "placeholder": "Ürün",
+                    "required": true,
+                    "isNumberButtonsActive": false,
+                    "optionsSource": "schema",
+                    "sourceSchemaName": "product",
+                    "sourceValueField": "_id",
+                    "sourceLabelField": "name",
+                    "sourceDataFields": [
+                      "price"
+                    ],
+                    "optionDisplay": {
+                      "rightTemplate": "{{price}} ₺"
+                    },
+                    "sourceRequestFilters": {
+                      "isActive": true
+                    },
+                    "area": "main",
+                    "order": 1,
+                    "width": "full"
+                  },
+                  {
+                    "formKey": "quantity",
+                    "type": "number",
+                    "formKeyType": "number",
+                    "label": "Miktar",
+                    "placeholder": "Miktar",
+                    "required": true,
+                    "isNumberButtonsActive": true,
+                    "defaultValue": 1,
+                    "area": "main",
+                    "order": 2,
+                    "width": "full"
+                  }
+                ],
+                "objectLists": [
+                  {
+                    "key": "items",
+                    "title": "Sepet",
+                    "area": "right",
+                    "source": "embedded",
+                    "itemFields": [
+                      "productId",
+                      "quantity"
+                    ],
+                    "fieldMappings": [
+                      {
+                        "sourceFormKey": "productId",
+                        "sourceField": "price",
+                        "targetField": "unitPrice",
+                        "required": true
+                      }
+                    ],
+                    "itemCalculations": [
+                      {
+                        "operation": "multiply",
+                        "inputs": [
+                          "unitPrice",
+                          "quantity"
+                        ],
+                        "targetField": "lineTotal",
+                        "precision": 2
+                      }
+                    ],
+                    "addAction": {
+                      "kind": "addObject",
+                      "label": "Add Item",
+                      "area": "left",
+                      "targetObjectList": "items",
+                      "sourceFields": [
+                        "productId",
+                        "quantity"
+                      ],
+                      "clearSourceFields": [
+                        "quantity",
+                        "productId",
+                        "date"
+                      ],
+                      "enabled": true
+                    },
+                    "display": {
+                      "primaryField": "productId",
+                      "secondaryTemplate": "{{quantity}} adet",
+                      "rightTemplate": "{{lineTotal}} TRY"
+                    },
+                    "actions": [
+                      {
+                        "kind": "editObject",
+                        "label": "Edit",
+                        "position": "end"
+                      },
+                      {
+                        "kind": "removeObject",
+                        "label": "Remove",
+                        "position": "end"
+                      }
+                    ]
+                  }
+                ],
+                "summaries": [
+                  {
+                    "key": "total",
+                    "label": "Toplam",
+                    "area": "right",
+                    "operation": "sum",
+                    "objectListKey": "items",
+                    "sourceField": "lineTotal",
+                    "targetField": "total",
+                    "format": {
+                      "style": "currency",
+                      "currency": "TRY",
+                      "precision": 2
+                    }
+                  }
+                ],
+                "actions": [
+                  {
+                    "kind": "submit",
+                    "buttonName": "Kaydet",
+                    "area": "right",
+                    "enabled": true,
+                    "order": 2
+                  }
+                ],
+                "submit": {
+                  "mode": "workflow",
+                  "workflowSchema": "davinciOrder",
+                  "workflowName": "create-davinci-order"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "columns": 1,
+      "gap": 16,
+      "cells": [
+        {
+          "id": "cell-1784083656504",
+          "row": 1,
+          "column": 1,
+          "components": [
+            {
+              "id": "cmp_1894ab5c37e9432fbd668b43f35b9a9d",
+              "stateKey": "table",
+              "type": "table",
+              "title": "Da Vinci Siparișleri",
+              "order": 1,
+              "dataBinding": {
+                "kind": "schema",
+                "schemaName": "davinciOrder"
+              },
+              "table": {
+                "columns": [
+                  {
+                    "field": "date",
+                    "displayName": "Tarih"
+                  },
+                  {
+                    "field": "status",
+                    "displayName": "Durum"
+                  }
+                ],
+                "nestedRows": {
+                  "enabled": true,
+                  "field": "product",
+                  "columns": [
+                    {
+                      "field": "productId",
+                      "displayName": "Ürün",
+                      "type": "lookupLabel",
+                      "lookup": {
+                        "schemaName": "product",
+                        "matchField": "_id",
+                        "labelField": "name"
+                      }
+                    },
+                    {
+                      "field": "quantity",
+                      "displayName": "Miktar"
+                    }
+                  ]
+                },
+                "constantSort": {
+                  "sort": "createdAt",
+                  "asc": 0
+                },
+                "addButton": {
+                  "id": "default-create",
+                  "key": "default-create",
+                  "label": "Add",
+                  "buttonName": "Create",
+                  "kind": "create",
+                  "icon": "FiPlus",
+                  "order": 1,
+                  "enabled": false,
+                  "modalType": "form",
+                  "formFields": [
+                    {
+                      "formKey": "date",
+                      "type": "date",
+                      "formKeyType": "date",
+                      "label": "date",
+                      "placeholder": "date",
+                      "required": true,
+                      "optionsSource": "static",
+                      "staticOptionsJson": "[]",
+                      "sourceValueField": "_id"
+                    },
+                    {
+                      "formKey": "status",
+                      "type": "select",
+                      "formKeyType": "string",
+                      "label": "status",
+                      "placeholder": "status",
+                      "optionsSource": "static",
+                      "staticOptionsJson": "[\n  {\n    \"value\": \"pending\",\n    \"label\": \"pending\"\n  },\n  {\n    \"value\": \"indelivery\",\n    \"label\": \"indelivery\"\n  },\n  {\n    \"value\": \"delivered\",\n    \"label\": \"delivered\"\n  },\n  {\n    \"value\": \"cancelled\",\n    \"label\": \"cancelled\"\n  }\n]",
+                      "sourceValueField": "_id"
+                    },
+                    {
+                      "formKey": "product",
+                      "type": "text",
+                      "formKeyType": "string",
+                      "label": "product",
+                      "placeholder": "product",
+                      "optionsSource": "static",
+                      "staticOptionsJson": "[]",
+                      "sourceValueField": "_id"
+                    }
+                  ],
+                  "submit": {}
+                },
+                "actions": [
+                  {
+                    "id": "default-delete",
+                    "key": "default-delete",
+                    "label": "Delete",
+                    "kind": "delete",
+                    "icon": "HiOutlineTrash",
+                    "order": 2,
+                    "enabled": true,
+                    "modalType": "confirm",
+                    "confirmText": "GeneralDeleteMessage",
+                    "submit": {}
+                  },
+                  {
+                    "id": "action-1784319497538",
+                    "key": "action-1784319497538",
+                    "label": "Teslim Aldım",
+                    "buttonName": "Teslim Aldım",
+                    "kind": "update",
+                    "icon": "MdApproval",
+                    "order": 2,
+                    "enabled": true,
+                    "modalType": "none",
+                    "submit": {
+                      "workflowName": "manual.markDavinciOrderDelivered",
+                      "workflowSchema": "davinciOrder"
+                    }
+                  }
+                ],
+                "bulkActions": {
+                  "edit": {
+                    "id": "bulk-edit",
+                    "key": "bulk-edit",
+                    "label": "Edit Selected",
+                    "buttonName": "Edit",
+                    "kind": "update",
+                    "icon": "FiEdit",
+                    "order": 1,
+                    "enabled": false,
+                    "modalType": "form",
+                    "formFields": [
+                      {
+                        "formKey": "date",
+                        "type": "date",
+                        "formKeyType": "date",
+                        "label": "date",
+                        "placeholder": "date",
+                        "required": true,
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      },
+                      {
+                        "formKey": "status",
+                        "type": "select",
+                        "formKeyType": "string",
+                        "label": "status",
+                        "placeholder": "status",
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[\n  {\n    \"value\": \"pending\",\n    \"label\": \"pending\"\n  },\n  {\n    \"value\": \"indelivery\",\n    \"label\": \"indelivery\"\n  },\n  {\n    \"value\": \"delivered\",\n    \"label\": \"delivered\"\n  },\n  {\n    \"value\": \"cancelled\",\n    \"label\": \"cancelled\"\n  }\n]",
+                        "sourceValueField": "_id"
+                      },
+                      {
+                        "formKey": "product",
+                        "type": "text",
+                        "formKeyType": "string",
+                        "label": "product",
+                        "placeholder": "product",
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      },
+                      {
+                        "formKey": "createdAt",
+                        "type": "date",
+                        "formKeyType": "date",
+                        "label": "createdAt",
+                        "placeholder": "createdAt",
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      },
+                      {
+                        "formKey": "updatedAt",
+                        "type": "date",
+                        "formKeyType": "date",
+                        "label": "updatedAt",
+                        "placeholder": "updatedAt",
+                        "optionsSource": "static",
+                        "staticOptionsJson": "[]",
+                        "sourceValueField": "_id"
+                      }
+                    ],
+                    "submit": {}
+                  },
+                  "delete": {
+                    "id": "bulk-delete",
+                    "key": "bulk-delete",
+                    "label": "Delete Selected",
+                    "kind": "delete",
+                    "icon": "HiOutlineTrash",
+                    "order": 2,
+                    "enabled": false,
+                    "modalType": "confirm",
+                    "confirmTitle": "Delete Selected",
+                    "confirmText": "Are you sure you want to delete the selected items?",
+                    "submit": {}
+                  }
+                },
+                "filterPanel": {
+                  "inputs": []
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -560,6 +561,11 @@ func TestProjectContextHelpers(t *testing.T) {
 
 func TestDynamicResponseHelpers(t *testing.T) {
 	serviceErr := &services.ServiceError{Status: http.StatusTeapot, Message: "tea", Data: map[string]string{"kind": "pot"}}
+	validationErr := &services.ServiceError{
+		Status:  http.StatusInternalServerError,
+		Message: "Failed to execute workflow",
+		Err:     errors.New("product[0].productDavinciId is required"),
+	}
 	app := fiber.New()
 	app.Get("/idempotent", func(c *fiber.Ctx) error {
 		return sendIdempotentResponse(context.Background(), c, "", http.StatusCreated, "created", map[string]string{"id": "1"})
@@ -570,15 +576,23 @@ func TestDynamicResponseHelpers(t *testing.T) {
 	app.Get("/dynamic", func(c *fiber.Ctx) error {
 		return sendDynamicError(c, serviceErr, "generic")
 	})
+	app.Get("/workflow-validation", func(c *fiber.Ctx) error {
+		c.Locals("tenantID", "tenant-1")
+		c.Locals("projectID", "project-1")
+		c.Locals("workflowName", "create-davinci-order")
+		return sendDynamicError(c, validationErr, "Failed to execute workflow")
+	})
 
 	tests := []struct {
 		path        string
 		wantStatus  int
 		wantMessage string
+		wantError   string
 	}{
 		{path: "/idempotent", wantStatus: http.StatusCreated, wantMessage: "created"},
 		{path: "/service", wantStatus: http.StatusTeapot, wantMessage: "tea"},
 		{path: "/dynamic", wantStatus: http.StatusTeapot, wantMessage: "tea"},
+		{path: "/workflow-validation", wantStatus: http.StatusBadRequest, wantMessage: "Failed to execute workflow", wantError: "product[0].productDavinciId is required"},
 	}
 	for _, tt := range tests {
 		resp, err := app.Test(httptest.NewRequest(http.MethodGet, tt.path, nil))
@@ -589,6 +603,60 @@ func TestDynamicResponseHelpers(t *testing.T) {
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || resp.StatusCode != tt.wantStatus || body.Message != tt.wantMessage {
 			t.Fatalf("%s response = %#v, status = %d, error = %v", tt.path, body, resp.StatusCode, err)
 		}
+		if tt.wantError != "" {
+			data, ok := body.Data.(map[string]interface{})
+			if !ok || data["error"] != tt.wantError {
+				t.Fatalf("%s response data = %#v, want error %q", tt.path, body.Data, tt.wantError)
+			}
+		}
+	}
+}
+
+func TestCreatePageReturnsRuntimeValidationDetail(t *testing.T) {
+	app := fiber.New()
+	app.Post("/", func(c *fiber.Ctx) error {
+		c.Locals("tenantID", "tenant-1")
+		c.Locals("projectID", "project-1")
+		return CreatePage(c)
+	})
+
+	body := `{
+		"name":"Invalid runtime page",
+		"sections":[{
+			"type":"component",
+			"component":{
+				"id":"cmp_summary",
+				"stateKey":"stockSummary",
+				"type":"infoBlocks",
+				"outputs":[{
+					"id":"out_stock_quantity",
+					"key":"quantity",
+					"type":"stringArray",
+					"source":{"kind":"unsupportedSource"}
+				}]
+			}
+		}]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+
+	var response responses.GeneralResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+	if response.Message != "Validation error. Page runtime bindings are invalid." {
+		t.Fatalf("message = %q", response.Message)
+	}
+	data, ok := response.Data.(map[string]interface{})
+	if !ok || data["error"] != `component "cmp_summary" output "out_stock_quantity": unsupported output source "unsupportedSource"` {
+		t.Fatalf("response data = %#v", response.Data)
 	}
 }
 

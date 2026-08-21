@@ -3,8 +3,10 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
@@ -146,15 +149,37 @@ func sendDynamicError(c *fiber.Ctx, err error, genericMessage string) error {
 	if normalized.Quiet {
 		return nil
 	}
+	var serviceErr *services.ServiceError
+	hasServiceError := errors.As(err, &serviceErr)
 	if normalized.Status != http.StatusInternalServerError {
-		return utils.SendResponse(c, normalized.Status, normalized.Message, nil)
+		data := interface{}(nil)
+		message := normalized.Message
+		if hasServiceError {
+			message = serviceErr.Message
+			data = serviceErr.Data
+			if data == nil && serviceErr.Err != nil {
+				data = fiber.Map{"error": serviceErr.Err.Error()}
+			}
+		}
+		observability.Warn(c, "dynamic request completed with handled error",
+			slog.Int("status_code", normalized.Status),
+			slog.String("message", message),
+			slog.String(observability.FieldError, err.Error()),
+		)
+		return c.Status(normalized.Status).JSON(responses.GeneralResponse{
+			Status: normalized.Status, Message: message, Data: data,
+		})
 	}
 
-	if serviceErr, ok := err.(*services.ServiceError); ok {
+	if hasServiceError {
 		data := serviceErr.Data
 		if data == nil && serviceErr.Err != nil {
 			data = fiber.Map{"error": serviceErr.Err.Error()}
 		}
+		observability.Error(c, "dynamic request completed with error", err,
+			slog.Int("status_code", serviceErr.Status),
+			slog.String("message", serviceErr.Message),
+		)
 		return c.Status(serviceErr.Status).JSON(responses.GeneralResponse{
 			Status:  serviceErr.Status,
 			Message: serviceErr.Message,
@@ -162,6 +187,10 @@ func sendDynamicError(c *fiber.Ctx, err error, genericMessage string) error {
 		})
 	}
 
+	observability.Error(c, "dynamic request completed with error", err,
+		slog.Int("status_code", normalized.Status),
+		slog.String("message", normalized.Message),
+	)
 	return utils.SendErrorResponse(c, err, genericMessage)
 }
 
