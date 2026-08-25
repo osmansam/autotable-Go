@@ -651,6 +651,48 @@ type Section struct {
 	Cells   []GridCell `bson:"cells,omitempty" json:"cells,omitempty"`
 }
 
+type PageNavigatorMode string
+
+const (
+	PageNavigatorModeAutomatic PageNavigatorMode = "automatic"
+	PageNavigatorModeCustom    PageNavigatorMode = "custom"
+)
+
+type PageNavigatorDestinationType string
+
+const (
+	PageNavigatorDestinationPage     PageNavigatorDestinationType = "page"
+	PageNavigatorDestinationExternal PageNavigatorDestinationType = "external"
+)
+
+type PageNavigatorDestination struct {
+	Type   PageNavigatorDestinationType `bson:"type" json:"type"`
+	PageID string                       `bson:"pageId,omitempty" json:"pageId,omitempty"`
+	URL    string                       `bson:"url,omitempty" json:"url,omitempty"`
+}
+
+type PageNavigatorOverride struct {
+	PageID string `bson:"pageId" json:"pageId"`
+	Label  string `bson:"label,omitempty" json:"label,omitempty"`
+	Hidden bool   `bson:"hidden,omitempty" json:"hidden,omitempty"`
+}
+
+type PageNavigatorAdditionalItem struct {
+	ID           string                   `bson:"id" json:"id"`
+	Label        string                   `bson:"label" json:"label"`
+	Destination  PageNavigatorDestination `bson:"destination" json:"destination"`
+	OpenInNewTab bool                     `bson:"openInNewTab,omitempty" json:"openInNewTab,omitempty"`
+}
+
+type PageNavigatorConfig struct {
+	Enabled         bool                          `bson:"enabled" json:"enabled"`
+	Mode            PageNavigatorMode             `bson:"mode" json:"mode"`
+	ShowHome        bool                          `bson:"showHome" json:"showHome"`
+	HomeLabel       string                        `bson:"homeLabel,omitempty" json:"homeLabel,omitempty"`
+	Overrides       []PageNavigatorOverride       `bson:"overrides,omitempty" json:"overrides,omitempty"`
+	AdditionalItems []PageNavigatorAdditionalItem `bson:"additionalItems,omitempty" json:"additionalItems,omitempty"`
+}
+
 // PageModel represents a page with hierarchical structure, auth, and layout
 type PageModel struct {
 	ID              primitive.ObjectID       `bson:"_id,omitempty" json:"id,omitempty"`
@@ -667,6 +709,7 @@ type PageModel struct {
 	AuthorizeRole   []string                 `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
 	Variables       []PageVariableDefinition `bson:"variables,omitempty" json:"variables,omitempty"`
 	Filters         []PageFilterDefinition   `bson:"filters,omitempty" json:"filters,omitempty"`
+	PageNavigator   *PageNavigatorConfig     `bson:"pageNavigator,omitempty" json:"pageNavigator,omitempty"`
 	Sections        []Section                `bson:"sections,omitempty" json:"sections,omitempty"` // Layout: list of top-level sections
 	SubPage         *PageModel               `bson:"subPage,omitempty" json:"subPage,omitempty"`   // Nested subpage (alternative to ParentPageID)
 }
