@@ -21,6 +21,10 @@
       "productId",
       "quantity"
     ],
+    "mergeOnAdd": {
+      "matchField": "productId",
+      "quantityField": "quantity"
+    },
     "fieldMappings": [
       {
         "sourceFormKey": "productId",
