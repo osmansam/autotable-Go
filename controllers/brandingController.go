@@ -17,7 +17,6 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var brandingAssetStore utils.BrandingAssetStore = utils.CloudinaryBrandingAssetStore{}
@@ -410,5 +409,3 @@ func GetRuntimeBranding(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"data": models.ResolveBranding(project.Name, tenant.Branding, project.Branding)})
 }
-
-var _ = mongo.ErrNoDocuments

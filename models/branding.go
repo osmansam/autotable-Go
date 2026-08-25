@@ -153,6 +153,12 @@ func ValidateBrandingPatch(patch BrandingPatch) (BrandingPatch, error) {
 		"displayName": true, "logoAlt": true, "primaryColor": true,
 		"loginBrandingEnabled": true,
 	}
+	setFields := map[string]bool{
+		"displayName":          patch.DisplayName != nil,
+		"logoAlt":              patch.LogoAlt != nil,
+		"primaryColor":         patch.PrimaryColor != nil,
+		"loginBrandingEnabled": patch.LoginBrandingEnabled != nil,
+	}
 	seen := map[string]bool{}
 	for _, field := range patch.Reset {
 		if !allowedReset[field] {
@@ -160,6 +166,9 @@ func ValidateBrandingPatch(patch BrandingPatch) (BrandingPatch, error) {
 		}
 		if seen[field] {
 			return BrandingPatch{}, fmt.Errorf("duplicate branding reset field %q", field)
+		}
+		if setFields[field] {
+			return BrandingPatch{}, fmt.Errorf("branding field %q cannot be set and reset together", field)
 		}
 		seen[field] = true
 	}

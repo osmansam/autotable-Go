@@ -68,6 +68,9 @@ func TestValidateBrandingPatchRejectsInvalidValues(t *testing.T) {
 		{name: "empty display name", patch: BrandingPatch{DisplayName: brandingString("  ")}},
 		{name: "invalid color", patch: BrandingPatch{PrimaryColor: brandingString("blue")}},
 		{name: "unknown reset", patch: BrandingPatch{Reset: []string{"version"}}},
+		{name: "set and reset same field", patch: BrandingPatch{
+			DisplayName: brandingString("Acme"), Reset: []string{"displayName"},
+		}},
 	}
 
 	for _, tt := range tests {
