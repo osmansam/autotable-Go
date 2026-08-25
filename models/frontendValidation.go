@@ -546,6 +546,21 @@ func validateTableToggles(table *TableComponentConfig) error {
 	return nil
 }
 
+func validateTableDateFormat(format string) error {
+	if format == "" {
+		return nil
+	}
+	for _, allowed := range []string{
+		"MM/DD/YYYY", "DD/MM/YYYY", "YYYY/MM/DD",
+		"DD-MM-YYYY", "MM-DD-YYYY", "YYYY-MM-DD",
+	} {
+		if format == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid dateFormat '%s'", format)
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
@@ -591,6 +606,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	}
 
 	for _, column := range table.Columns {
+		if err := validateTableDateFormat(column.DateFormat); err != nil {
+			return fmt.Errorf("table column '%s': %w", column.Field, err)
+		}
 		if column.Type == "template" && strings.TrimSpace(column.Template) == "" {
 			return fmt.Errorf("table column '%s' requires template", column.Field)
 		}
@@ -611,6 +629,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 		for index, column := range table.NestedRows.Columns {
 			if strings.TrimSpace(column.Field) == "" {
 				return fmt.Errorf("table nestedRows column %d requires field", index)
+			}
+			if err := validateTableDateFormat(column.DateFormat); err != nil {
+				return fmt.Errorf("table nestedRows column '%s': %w", column.Field, err)
 			}
 		}
 	}

@@ -161,6 +161,7 @@ type TableColumnConfig struct {
 	Field                string                   `bson:"field" json:"field"`
 	Type                 string                   `bson:"type,omitempty" json:"type,omitempty"`
 	DisplayName          string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	DateFormat           string                   `bson:"dateFormat,omitempty" json:"dateFormat,omitempty"`
 	Lookup               *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	ComputedLabelRules   []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
 	Template             string                   `bson:"template,omitempty" json:"template,omitempty"`
@@ -228,6 +229,7 @@ type TableNestedRowColumnConfig struct {
 	Field         string                  `bson:"field,omitempty" json:"field,omitempty"`
 	DisplayName   string                  `bson:"displayName,omitempty" json:"displayName,omitempty"`
 	Type          string                  `bson:"type,omitempty" json:"type,omitempty"`
+	DateFormat    string                  `bson:"dateFormat,omitempty" json:"dateFormat,omitempty"`
 	Lookup        *TableLookupLabelConfig `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	FallbackValue string                  `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
 }
