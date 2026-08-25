@@ -70,6 +70,7 @@ type Tenant struct {
 	Slug        string             `bson:"slug" json:"slug"`
 	OwnerUserID primitive.ObjectID `bson:"ownerUserId" json:"ownerUserId"`
 	IsActive    bool               `bson:"isActive" json:"isActive"`
+	Branding    *Branding          `bson:"branding,omitempty" json:"branding,omitempty"`
 	CreatedAt   time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt   time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
@@ -92,6 +93,7 @@ type Project struct {
 	DefaultLocale        string             `bson:"defaultLocale,omitempty" json:"defaultLocale,omitempty"`
 	EnabledLocales       []string           `bson:"enabledLocales,omitempty" json:"enabledLocales,omitempty"`
 	LocalizationVersion  int64              `bson:"localizationVersion,omitempty" json:"localizationVersion,omitempty"`
+	Branding             *Branding          `bson:"branding,omitempty" json:"branding,omitempty"`
 	CreatedAt            time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt            time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
