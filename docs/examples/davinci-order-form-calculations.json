@@ -31,18 +31,28 @@
     ],
     "itemCalculations": [
       {
-        "operation": "multiply",
+        "operation": "quantityDiscount",
         "inputs": [
           "unitPrice",
           "quantity"
         ],
+        "originalTargetField": "originalLineTotal",
         "targetField": "lineTotal",
+        "minimumQuantity": 6,
+        "discountPercentage": 30,
         "precision": 2
       }
     ],
     "display": {
       "primaryField": "productId",
-      "secondaryTemplate": "{{quantity}} adet · {{unitPrice}} TRY · {{lineTotal}} TRY"
+      "secondaryTemplate": "{{quantity}} adet · {{unitPrice}} TRY",
+      "rightTemplate": "{{lineTotal}} TRY",
+      "priceComparison": {
+        "originalField": "originalLineTotal",
+        "discountedField": "lineTotal",
+        "currency": "TRY",
+        "precision": 2
+      }
     }
   },
   "summaries": [
