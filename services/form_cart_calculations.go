@@ -24,7 +24,7 @@ func EvaluateFormCart(form models.FormComponentConfig, record map[string]interfa
 			}
 			itemCopy := cloneWorkflowMap(item)
 			for _, calculation := range list.ItemCalculations {
-				if calculation.Operation != "multiply" || len(calculation.Inputs) != 2 {
+				if len(calculation.Inputs) != 2 {
 					return nil, fmt.Errorf("FORM_CONFIG_NOT_FOUND: unsupported item calculation")
 				}
 				left, err := formCartNumber(itemCopy[calculation.Inputs[0]])
@@ -35,7 +35,23 @@ func EvaluateFormCart(form models.FormComponentConfig, record map[string]interfa
 				if err != nil || right <= 0 || calculation.Inputs[1] == "quantity" && right <= 0 {
 					return nil, fmt.Errorf("FORM_INVALID_QUANTITY: item %d field %s", index, calculation.Inputs[1])
 				}
-				itemCopy[calculation.TargetField] = formCartMultiply(left, right, formCartPrecision(calculation.Precision))
+				precision := formCartPrecision(calculation.Precision)
+				switch calculation.Operation {
+				case "multiply":
+					itemCopy[calculation.TargetField] = formCartMultiply(left, right, precision)
+				case "quantityDiscount":
+					if calculation.OriginalTargetField == "" || calculation.MinimumQuantity == nil || calculation.DiscountPercentage == nil || *calculation.MinimumQuantity <= 0 || *calculation.DiscountPercentage <= 0 || *calculation.DiscountPercentage > 100 {
+						return nil, fmt.Errorf("FORM_CONFIG_NOT_FOUND: invalid quantity discount calculation")
+					}
+					original := formCartMultiply(left, right, precision)
+					itemCopy[calculation.OriginalTargetField] = original
+					itemCopy[calculation.TargetField] = original
+					if right >= *calculation.MinimumQuantity {
+						itemCopy[calculation.TargetField] = formCartApplyPercentageDiscount(original, *calculation.DiscountPercentage, precision)
+					}
+				default:
+					return nil, fmt.Errorf("FORM_CONFIG_NOT_FOUND: unsupported item calculation")
+				}
 			}
 			calculated = append(calculated, itemCopy)
 		}
@@ -114,6 +130,13 @@ func formCartMultiply(left, right float64, precision int) float64 {
 	leftRat, _ := formCartRat(left)
 	rightRat, _ := formCartRat(right)
 	return formCartRoundRat(new(big.Rat).Mul(leftRat, rightRat), precision)
+}
+
+func formCartApplyPercentageDiscount(original, percentage float64, precision int) float64 {
+	originalRat, _ := formCartRat(original)
+	percentageRat, _ := formCartRat(percentage)
+	factor := new(big.Rat).Sub(big.NewRat(1, 1), new(big.Rat).Quo(percentageRat, big.NewRat(100, 1)))
+	return formCartRoundRat(new(big.Rat).Mul(originalRat, factor), precision)
 }
 
 func formCartRoundRat(value *big.Rat, precision int) float64 {

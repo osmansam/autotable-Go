@@ -8,7 +8,8 @@ import (
 	"github.com/osmansam/autotableGo/models"
 )
 
-func calculationPrecision(value int) *int { return &value }
+func calculationPrecision(value int) *int      { return &value }
+func calculationNumber(value float64) *float64 { return &value }
 
 func calculatedOrderForm() models.FormComponentConfig {
 	return models.FormComponentConfig{
@@ -69,5 +70,76 @@ func TestEvaluateFormCartRejectsInvalidValues(t *testing.T) {
 	_, err := EvaluateFormCart(calculatedOrderForm(), map[string]interface{}{"items": []interface{}{map[string]interface{}{"quantity": 1}}})
 	if err == nil || !strings.Contains(err.Error(), "FORM_PRODUCT_PRICE_MISSING") {
 		t.Fatalf("missing price error = %v", err)
+	}
+}
+
+func TestEvaluateFormCartQuantityDiscount(t *testing.T) {
+	form := models.FormComponentConfig{
+		ObjectLists: []models.FormObjectListConfig{{
+			Key: "items",
+			ItemCalculations: []models.FormItemCalculationConfig{{
+				Operation: "quantityDiscount", Inputs: []string{"unitPrice", "quantity"},
+				OriginalTargetField: "originalLineTotal", TargetField: "lineTotal",
+				MinimumQuantity: calculationNumber(6), DiscountPercentage: calculationNumber(30), Precision: calculationPrecision(2),
+			}},
+		}},
+		Summaries: []models.FormSummaryConfig{{
+			Key: "total", Operation: "sum", ObjectListKey: "items", SourceField: "lineTotal", TargetField: "total",
+			Format: &models.FormValueFormatConfig{Precision: calculationPrecision(2)},
+		}},
+	}
+	record := map[string]interface{}{"items": []interface{}{
+		map[string]interface{}{"unitPrice": 100, "quantity": 5, "originalLineTotal": 1, "lineTotal": 1},
+		map[string]interface{}{"unitPrice": 100, "quantity": 6, "originalLineTotal": 1, "lineTotal": 1},
+		map[string]interface{}{"unitPrice": 100, "quantity": 7, "originalLineTotal": 1, "lineTotal": 1},
+	}}
+
+	got, err := EvaluateFormCart(form, record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := got["items"].([]interface{})
+	want := [][2]float64{{500, 500}, {600, 420}, {700, 490}}
+	for index, expected := range want {
+		item := items[index].(map[string]interface{})
+		if item["originalLineTotal"] != expected[0] || item["lineTotal"] != expected[1] {
+			t.Fatalf("item %d = %#v, want original=%v line=%v", index, item, expected[0], expected[1])
+		}
+	}
+	if got["total"] != float64(1410) {
+		t.Fatalf("total = %#v, want 1410", got["total"])
+	}
+	if record["items"].([]interface{})[1].(map[string]interface{})["lineTotal"] != 1 {
+		t.Fatal("input record was mutated")
+	}
+}
+
+func TestEvaluateFormCartQuantityDiscountRoundingAndFullDiscount(t *testing.T) {
+	form := models.FormComponentConfig{ObjectLists: []models.FormObjectListConfig{{
+		Key: "items",
+		ItemCalculations: []models.FormItemCalculationConfig{{
+			Operation: "quantityDiscount", Inputs: []string{"unitPrice", "quantity"},
+			OriginalTargetField: "originalLineTotal", TargetField: "lineTotal",
+			MinimumQuantity: calculationNumber(6), DiscountPercentage: calculationNumber(30), Precision: calculationPrecision(2),
+		}},
+	}}}
+
+	got, err := EvaluateFormCart(form, map[string]interface{}{"items": []interface{}{
+		map[string]interface{}{"unitPrice": 19.99, "quantity": 6},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := got["items"].([]interface{})[0].(map[string]interface{})
+	if item["originalLineTotal"] != 119.94 || item["lineTotal"] != 83.96 {
+		t.Fatalf("rounded item = %#v", item)
+	}
+
+	form.ObjectLists[0].ItemCalculations[0].DiscountPercentage = calculationNumber(100)
+	got, err = EvaluateFormCart(form, map[string]interface{}{"items": []interface{}{
+		map[string]interface{}{"unitPrice": 19.99, "quantity": 6},
+	}})
+	if err != nil || got["items"].([]interface{})[0].(map[string]interface{})["lineTotal"] != float64(0) {
+		t.Fatalf("full discount = %#v, %v", got, err)
 	}
 }
