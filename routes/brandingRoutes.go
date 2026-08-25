@@ -45,7 +45,7 @@ func registerBrandingRoutes(app *fiber.App, handlers brandingRouteHandlers) {
 	tenant.Use(middlewares.GeneralRateLimit())
 	tenant.Get("/", handlers.GetTenant)
 	tenant.Patch("/", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchTenant)
-	tenant.Post("/assets/:slot", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadTenant)
+	tenant.Post("/assets/:slot", middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadTenant)
 	tenant.Delete("/assets/:slot", middlewares.WriteRateLimit(), handlers.DeleteTenant)
 
 	project := app.Group("/api/v1/tenant/projects/:id/branding")
@@ -53,6 +53,6 @@ func registerBrandingRoutes(app *fiber.App, handlers brandingRouteHandlers) {
 	project.Use(middlewares.GeneralRateLimit())
 	project.Get("/", handlers.GetProject)
 	project.Patch("/", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchProject)
-	project.Post("/assets/:slot", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadProject)
+	project.Post("/assets/:slot", middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadProject)
 	project.Delete("/assets/:slot", middlewares.WriteRateLimit(), handlers.DeleteProject)
 }
