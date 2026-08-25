@@ -25,6 +25,7 @@ func validCalculatedOrderForm() FormComponentConfig {
 		ObjectLists: []FormObjectListConfig{{
 			Key:        "items",
 			ItemFields: []string{"productId", "quantity"},
+			MergeOnAdd: &FormObjectListMergeConfig{MatchField: "productId", QuantityField: "quantity"},
 			FieldMappings: []FormFieldMappingConfig{{
 				SourceFormKey: "productId", SourceField: "price", TargetField: "unitPrice", Required: true,
 			}},
@@ -59,7 +60,7 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	jsonForm := jsonPage.Sections[0].Cells[0].Components[0].Form
 	jsonCalculation := jsonForm.ObjectLists[0].ItemCalculations[0]
 	jsonComparison := jsonForm.ObjectLists[0].Display.PriceComparison
-	if jsonCalculation.OriginalTargetField != "originalLineTotal" || *jsonCalculation.MinimumQuantity != 6 || *jsonCalculation.DiscountPercentage != 30 || jsonComparison.OriginalField != "originalLineTotal" || jsonComparison.DiscountedField != "lineTotal" {
+	if jsonCalculation.OriginalTargetField != "originalLineTotal" || *jsonCalculation.MinimumQuantity != 6 || *jsonCalculation.DiscountPercentage != 30 || jsonComparison.OriginalField != "originalLineTotal" || jsonComparison.DiscountedField != "lineTotal" || jsonForm.ObjectLists[0].MergeOnAdd.MatchField != "productId" {
 		t.Fatalf("JSON calculation config was not preserved: %#v", jsonForm)
 	}
 
@@ -74,7 +75,7 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	bsonForm := bsonPage.Sections[0].Cells[0].Components[0].Form
 	bsonCalculation := bsonForm.ObjectLists[0].ItemCalculations[0]
 	bsonComparison := bsonForm.ObjectLists[0].Display.PriceComparison
-	if bsonCalculation.OriginalTargetField != "originalLineTotal" || *bsonCalculation.MinimumQuantity != 6 || *bsonCalculation.DiscountPercentage != 30 || bsonComparison.Currency != "TRY" || *bsonComparison.Precision != 2 {
+	if bsonCalculation.OriginalTargetField != "originalLineTotal" || *bsonCalculation.MinimumQuantity != 6 || *bsonCalculation.DiscountPercentage != 30 || bsonComparison.Currency != "TRY" || *bsonComparison.Precision != 2 || bsonForm.ObjectLists[0].MergeOnAdd.QuantityField != "quantity" {
 		t.Fatalf("BSON calculation config was not preserved: %#v", bsonForm)
 	}
 }
@@ -96,6 +97,9 @@ func TestValidateFormCalculationConfig(t *testing.T) {
 		{name: "duplicate mapping target", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].FieldMappings = append(form.ObjectLists[0].FieldMappings, form.ObjectLists[0].FieldMappings[0])
 		}, wantErr: "duplicate item target"},
+		{name: "merge match field required", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.MatchField = "" }, wantErr: "mergeOnAdd requires matchField and quantityField"},
+		{name: "merge match field unknown", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.MatchField = "missing" }, wantErr: "mergeOnAdd matchField"},
+		{name: "merge quantity field unknown", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.QuantityField = "missing" }, wantErr: "mergeOnAdd quantityField"},
 		{name: "unknown calculation input", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].ItemCalculations[0].Inputs[1] = "missing" }, wantErr: "unknown input"},
 		{name: "wrong quantity discount arity", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].ItemCalculations[0].Inputs = []string{"unitPrice"}

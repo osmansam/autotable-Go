@@ -410,6 +410,12 @@ type FormFieldMappingConfig struct {
 	Required      bool   `bson:"required,omitempty" json:"required,omitempty"`
 }
 
+// FormObjectListMergeConfig combines newly added items with an existing matching item.
+type FormObjectListMergeConfig struct {
+	MatchField    string `bson:"matchField" json:"matchField"`
+	QuantityField string `bson:"quantityField" json:"quantityField"`
+}
+
 // FormItemCalculationConfig calculates one embedded item field.
 type FormItemCalculationConfig struct {
 	Operation           string   `bson:"operation" json:"operation"`
@@ -462,6 +468,7 @@ type FormObjectListConfig struct {
 	Area             string                       `bson:"area,omitempty" json:"area,omitempty"`
 	Source           string                       `bson:"source,omitempty" json:"source,omitempty"`
 	ItemFields       []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
+	MergeOnAdd       *FormObjectListMergeConfig   `bson:"mergeOnAdd,omitempty" json:"mergeOnAdd,omitempty"`
 	FieldMappings    []FormFieldMappingConfig     `bson:"fieldMappings,omitempty" json:"fieldMappings,omitempty"`
 	ItemCalculations []FormItemCalculationConfig  `bson:"itemCalculations,omitempty" json:"itemCalculations,omitempty"`
 	AddAction        *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`

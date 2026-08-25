@@ -286,6 +286,17 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 		for _, field := range list.ItemFields {
 			available[field] = true
 		}
+		if list.MergeOnAdd != nil {
+			if list.MergeOnAdd.MatchField == "" || list.MergeOnAdd.QuantityField == "" {
+				return fmt.Errorf("object list '%s' mergeOnAdd requires matchField and quantityField", list.Key)
+			}
+			if !available[list.MergeOnAdd.MatchField] {
+				return fmt.Errorf("object list '%s' mergeOnAdd matchField references unknown item field '%s'", list.Key, list.MergeOnAdd.MatchField)
+			}
+			if !available[list.MergeOnAdd.QuantityField] {
+				return fmt.Errorf("object list '%s' mergeOnAdd quantityField references unknown item field '%s'", list.Key, list.MergeOnAdd.QuantityField)
+			}
+		}
 		for _, field := range form.Fields {
 			if field.Type != "select" || field.OptionsSource != "schema" {
 				continue
