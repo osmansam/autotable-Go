@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -313,18 +314,38 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 			available[mapping.TargetField] = true
 		}
 		for index, calculation := range list.ItemCalculations {
-			if calculation.Operation != "multiply" {
+			if calculation.Operation != "multiply" && calculation.Operation != "quantityDiscount" {
 				return fmt.Errorf("object list '%s' item calculation %d has unsupported item calculation operation '%s'", list.Key, index, calculation.Operation)
 			}
 			if len(calculation.Inputs) != 2 {
-				return fmt.Errorf("object list '%s' multiply calculation %d requires exactly two inputs", list.Key, index)
+				return fmt.Errorf("object list '%s' %s calculation %d requires exactly two inputs", list.Key, calculation.Operation, index)
 			}
 			for _, input := range calculation.Inputs {
 				if !available[input] {
 					return fmt.Errorf("object list '%s' item calculation %d references unknown input '%s'", list.Key, index, input)
 				}
-				if calculation.TargetField == input {
+				if calculation.TargetField == input || calculation.OriginalTargetField == input {
 					return fmt.Errorf("object list '%s' item calculation %d cannot overwrite an input field", list.Key, index)
+				}
+			}
+			if calculation.Operation == "quantityDiscount" {
+				if calculation.OriginalTargetField == "" {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d requires originalTargetField", list.Key, index)
+				}
+				if calculation.OriginalTargetField == calculation.TargetField {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d requires distinct output fields", list.Key, index)
+				}
+				if available[calculation.OriginalTargetField] {
+					return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, calculation.OriginalTargetField)
+				}
+				if calculation.MinimumQuantity == nil || math.IsNaN(*calculation.MinimumQuantity) || math.IsInf(*calculation.MinimumQuantity, 0) || *calculation.MinimumQuantity <= 0 {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d minimumQuantity must be greater than 0", list.Key, index)
+				}
+				if calculation.DiscountPercentage == nil || math.IsNaN(*calculation.DiscountPercentage) || math.IsInf(*calculation.DiscountPercentage, 0) || *calculation.DiscountPercentage <= 0 {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d discountPercentage must be greater than 0", list.Key, index)
+				}
+				if *calculation.DiscountPercentage > 100 {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d discountPercentage must not exceed 100", list.Key, index)
 				}
 			}
 			if calculation.TargetField == "" || available[calculation.TargetField] {
@@ -333,7 +354,28 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 			if err := validateFormPrecision(calculation.Precision); err != nil {
 				return fmt.Errorf("object list '%s' item calculation %d: %w", list.Key, index, err)
 			}
+			if calculation.Operation == "quantityDiscount" {
+				available[calculation.OriginalTargetField] = true
+			}
 			available[calculation.TargetField] = true
+		}
+		if list.Display != nil && list.Display.PriceComparison != nil {
+			comparison := list.Display.PriceComparison
+			if comparison.OriginalField == "" || comparison.DiscountedField == "" {
+				return fmt.Errorf("object list '%s' price comparison requires originalField and discountedField", list.Key)
+			}
+			if !available[comparison.OriginalField] {
+				return fmt.Errorf("object list '%s' price comparison originalField references unknown item field '%s'", list.Key, comparison.OriginalField)
+			}
+			if !available[comparison.DiscountedField] {
+				return fmt.Errorf("object list '%s' price comparison discountedField references unknown item field '%s'", list.Key, comparison.DiscountedField)
+			}
+			if comparison.Currency != "" && !formCurrencyPattern.MatchString(comparison.Currency) {
+				return fmt.Errorf("object list '%s' price comparison currency must be three uppercase ASCII letters", list.Key)
+			}
+			if err := validateFormPrecision(comparison.Precision); err != nil {
+				return fmt.Errorf("object list '%s' price comparison: %w", list.Key, err)
+			}
 		}
 		lists[list.Key] = available
 	}

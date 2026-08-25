@@ -373,12 +373,21 @@ type FormFieldConfig struct {
 
 // FormObjectListDisplayConfig controls how embedded list items are displayed.
 type FormObjectListDisplayConfig struct {
-	PrimaryField      string `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
-	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
-	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
-	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
-	RightTemplate     string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
-	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
+	PrimaryField      string                     `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
+	PrimaryTemplate   string                     `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
+	SecondaryField    string                     `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
+	SecondaryTemplate string                     `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	RightTemplate     string                     `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
+	ImageField        string                     `bson:"imageField,omitempty" json:"imageField,omitempty"`
+	PriceComparison   *FormPriceComparisonConfig `bson:"priceComparison,omitempty" json:"priceComparison,omitempty"`
+}
+
+// FormPriceComparisonConfig renders an original and discounted item price.
+type FormPriceComparisonConfig struct {
+	OriginalField   string `bson:"originalField" json:"originalField"`
+	DiscountedField string `bson:"discountedField" json:"discountedField"`
+	Currency        string `bson:"currency,omitempty" json:"currency,omitempty"`
+	Precision       *int   `bson:"precision,omitempty" json:"precision,omitempty"`
 }
 
 // FormObjectActionConfig defines a local action for an embedded object list item.
@@ -403,10 +412,13 @@ type FormFieldMappingConfig struct {
 
 // FormItemCalculationConfig calculates one embedded item field.
 type FormItemCalculationConfig struct {
-	Operation   string   `bson:"operation" json:"operation"`
-	Inputs      []string `bson:"inputs" json:"inputs"`
-	TargetField string   `bson:"targetField" json:"targetField"`
-	Precision   *int     `bson:"precision,omitempty" json:"precision,omitempty"`
+	Operation           string   `bson:"operation" json:"operation"`
+	Inputs              []string `bson:"inputs" json:"inputs"`
+	OriginalTargetField string   `bson:"originalTargetField,omitempty" json:"originalTargetField,omitempty"`
+	TargetField         string   `bson:"targetField" json:"targetField"`
+	MinimumQuantity     *float64 `bson:"minimumQuantity,omitempty" json:"minimumQuantity,omitempty"`
+	DiscountPercentage  *float64 `bson:"discountPercentage,omitempty" json:"discountPercentage,omitempty"`
+	Precision           *int     `bson:"precision,omitempty" json:"precision,omitempty"`
 }
 
 // FormValueFormatConfig controls presentation without changing persisted numbers.
