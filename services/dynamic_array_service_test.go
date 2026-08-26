@@ -119,6 +119,22 @@ func TestDeleteArrayRowRemovesExactlyOneMatch(t *testing.T) {
 	}
 }
 
+func TestDeleteArrayRowMatchesObjectIDWithHexIdentity(t *testing.T) {
+	productID := primitive.NewObjectID()
+	rows := []map[string]interface{}{
+		{"product": productID},
+		{"product": primitive.NewObjectID()},
+	}
+
+	next, deleted, err := deleteArrayRow(rows, "product", productID.Hex())
+	if err != nil {
+		t.Fatalf("deleteArrayRow() error = %v", err)
+	}
+	if len(next) != 1 || next[0]["product"] == productID || deleted["product"] != productID {
+		t.Fatalf("deleteArrayRow() next = %#v, deleted = %#v", next, deleted)
+	}
+}
+
 func TestReorderArrayRowsRequiresCompleteUniqueIdentitySet(t *testing.T) {
 	next, err := reorderArrayRows(checklistDutyRows(), "duty", "order", []interface{}{"Clean", "Open"})
 	if err != nil {

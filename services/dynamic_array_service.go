@@ -152,6 +152,16 @@ func arrayIdentityEqual(left, right interface{}) bool {
 	if reflect.DeepEqual(left, right) {
 		return true
 	}
+	if leftID, ok := left.(primitive.ObjectID); ok {
+		if rightString, ok := right.(string); ok {
+			return leftID.Hex() == strings.TrimSpace(rightString)
+		}
+	}
+	if rightID, ok := right.(primitive.ObjectID); ok {
+		if leftString, ok := left.(string); ok {
+			return rightID.Hex() == strings.TrimSpace(leftString)
+		}
+	}
 	return fmt.Sprint(left) == fmt.Sprint(right)
 }
 
