@@ -111,6 +111,25 @@ func TestProjectTemplateVisibleToTenant(t *testing.T) {
 	}
 }
 
+func TestProjectBrandingForTemplateCloneCopiesMetadata(t *testing.T) {
+	template := &models.Project{Branding: &models.Branding{
+		DisplayName: controllerString("Template Brand"),
+		Logo: &models.BrandingAsset{
+			URL: "https://cdn.example/logo.png", AssetID: "branding/template/logo",
+		},
+		Version: 4,
+	}}
+
+	got := projectBrandingForCreate(template)
+
+	if got == nil || got.DisplayName == nil || *got.DisplayName != "Template Brand" || got.Logo == nil || got.Logo.AssetID != "branding/template/logo" {
+		t.Fatalf("branding metadata not copied: %#v", got)
+	}
+	if got == template.Branding || got.Logo == template.Branding.Logo {
+		t.Fatal("clone shares mutable branding pointers with template")
+	}
+}
+
 func TestResolveIncludeTemplateItems(t *testing.T) {
 	template := models.Project{TemplateIncludeItems: true}
 	if got := resolveIncludeTemplateItems(template, nil); !got {

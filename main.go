@@ -127,6 +127,7 @@ func main() {
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes
+	routes.BrandingRoutes(app)   // Tenant and project branding routes
 
 	// Global OAuth callback route (doesn't require tenant/project in URL)
 	// This is the fixed URL registered in Google Cloud Console

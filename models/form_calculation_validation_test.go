@@ -2,13 +2,15 @@ package models
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-func intPointer(value int) *int { return &value }
+func intPointer(value int) *int           { return &value }
+func floatPointer(value float64) *float64 { return &value }
 
 func validCalculatedOrderForm() FormComponentConfig {
 	return FormComponentConfig{
@@ -24,11 +26,17 @@ func validCalculatedOrderForm() FormComponentConfig {
 		ObjectLists: []FormObjectListConfig{{
 			Key:        "items",
 			ItemFields: []string{"productId", "quantity"},
+			MergeOnAdd: &FormObjectListMergeConfig{MatchField: "productId", QuantityField: "quantity"},
 			FieldMappings: []FormFieldMappingConfig{{
 				SourceFormKey: "productId", SourceField: "price", TargetField: "unitPrice", Required: true,
 			}},
 			ItemCalculations: []FormItemCalculationConfig{{
-				Operation: "multiply", Inputs: []string{"unitPrice", "quantity"}, TargetField: "lineTotal", Precision: intPointer(2),
+				Operation: "quantityDiscount", Inputs: []string{"unitPrice", "quantity"},
+				OriginalTargetField: "originalLineTotal", TargetField: "lineTotal",
+				MinimumQuantity: floatPointer(6), DiscountPercentage: floatPointer(30), Precision: intPointer(2),
+			}},
+			Display: &FormObjectListDisplayConfig{PriceComparison: &FormPriceComparisonConfig{
+				OriginalField: "originalLineTotal", DiscountedField: "lineTotal", Currency: "TRY", Precision: intPointer(2),
 			}},
 		}},
 		Summaries: []FormSummaryConfig{
@@ -40,6 +48,7 @@ func validCalculatedOrderForm() FormComponentConfig {
 
 func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	want := validCalculatedOrderForm()
+	want.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
 	page := PageModel{Sections: []Section{{Cells: []GridCell{{Components: []ComponentBlock{{Type: ComponentTypeForm, Form: &want}}}}}}}
 
 	jsonBytes, err := json.Marshal(page)
@@ -51,7 +60,9 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	jsonForm := jsonPage.Sections[0].Cells[0].Components[0].Form
-	if jsonForm.ObjectLists[0].FieldMappings[0].TargetField != "unitPrice" || jsonForm.Summaries[1].Operation != "copy" {
+	jsonCalculation := jsonForm.ObjectLists[0].ItemCalculations[0]
+	jsonComparison := jsonForm.ObjectLists[0].Display.PriceComparison
+	if jsonCalculation.OriginalTargetField != "originalLineTotal" || len(jsonCalculation.DiscountTiers) != 2 || *jsonCalculation.DiscountTiers[1].MinimumQuantity != 10 || *jsonCalculation.DiscountTiers[1].DiscountPercentage != 40 || jsonComparison.OriginalField != "originalLineTotal" || jsonComparison.DiscountedField != "lineTotal" || jsonForm.ObjectLists[0].MergeOnAdd.MatchField != "productId" {
 		t.Fatalf("JSON calculation config was not preserved: %#v", jsonForm)
 	}
 
@@ -64,8 +75,17 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	bsonForm := bsonPage.Sections[0].Cells[0].Components[0].Form
-	if bsonForm.ObjectLists[0].ItemCalculations[0].TargetField != "lineTotal" || *bsonForm.Summaries[0].Format.Precision != 2 {
+	bsonCalculation := bsonForm.ObjectLists[0].ItemCalculations[0]
+	bsonComparison := bsonForm.ObjectLists[0].Display.PriceComparison
+	if bsonCalculation.OriginalTargetField != "originalLineTotal" || len(bsonCalculation.DiscountTiers) != 2 || *bsonCalculation.DiscountTiers[0].MinimumQuantity != 6 || *bsonCalculation.DiscountTiers[0].DiscountPercentage != 30 || bsonComparison.Currency != "TRY" || *bsonComparison.Precision != 2 || bsonForm.ObjectLists[0].MergeOnAdd.QuantityField != "quantity" {
 		t.Fatalf("BSON calculation config was not preserved: %#v", bsonForm)
+	}
+}
+
+func validDiscountTiers() []FormQuantityDiscountTierConfig {
+	return []FormQuantityDiscountTierConfig{
+		{MinimumQuantity: floatPointer(6), DiscountPercentage: floatPointer(30)},
+		{MinimumQuantity: floatPointer(10), DiscountPercentage: floatPointer(40)},
 	}
 }
 
@@ -86,12 +106,74 @@ func TestValidateFormCalculationConfig(t *testing.T) {
 		{name: "duplicate mapping target", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].FieldMappings = append(form.ObjectLists[0].FieldMappings, form.ObjectLists[0].FieldMappings[0])
 		}, wantErr: "duplicate item target"},
+		{name: "merge match field required", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.MatchField = "" }, wantErr: "mergeOnAdd requires matchField and quantityField"},
+		{name: "merge match field unknown", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.MatchField = "missing" }, wantErr: "mergeOnAdd matchField"},
+		{name: "merge quantity field unknown", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].MergeOnAdd.QuantityField = "missing" }, wantErr: "mergeOnAdd quantityField"},
 		{name: "unknown calculation input", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].ItemCalculations[0].Inputs[1] = "missing" }, wantErr: "unknown input"},
-		{name: "wrong multiply arity", mutate: func(form *FormComponentConfig) {
+		{name: "wrong quantity discount arity", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].ItemCalculations[0].Inputs = []string{"unitPrice"}
 		}, wantErr: "exactly two inputs"},
 		{name: "unsupported item operation", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].ItemCalculations[0].Operation = "divide" }, wantErr: "unsupported item calculation operation"},
 		{name: "overwrite input", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].ItemCalculations[0].TargetField = "quantity" }, wantErr: "cannot overwrite an input"},
+		{name: "missing original target", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].ItemCalculations[0].OriginalTargetField = "" }, wantErr: "originalTargetField"},
+		{name: "matching outputs", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].OriginalTargetField = "lineTotal"
+		}, wantErr: "distinct output"},
+		{name: "original target overwrites input", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].OriginalTargetField = "unitPrice"
+		}, wantErr: "cannot overwrite an input"},
+		{name: "minimum quantity must be positive", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].MinimumQuantity = floatPointer(0)
+		}, wantErr: "minimumQuantity must be greater than 0"},
+		{name: "discount percentage must be positive", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountPercentage = floatPointer(0)
+		}, wantErr: "discountPercentage must be greater than 0"},
+		{name: "discount percentage maximum", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountPercentage = floatPointer(101)
+		}, wantErr: "discountPercentage must not exceed 100"},
+		{name: "tiers replace missing legacy fields", mutate: func(form *FormComponentConfig) {
+			calculation := &form.ObjectLists[0].ItemCalculations[0]
+			calculation.DiscountTiers = validDiscountTiers()
+			calculation.MinimumQuantity = nil
+			calculation.DiscountPercentage = nil
+		}, wantErr: ""},
+		{name: "empty tiers require legacy fields", mutate: func(form *FormComponentConfig) {
+			calculation := &form.ObjectLists[0].ItemCalculations[0]
+			calculation.DiscountTiers = []FormQuantityDiscountTierConfig{}
+			calculation.MinimumQuantity = nil
+			calculation.DiscountPercentage = nil
+		}, wantErr: "requires discountTiers or legacy minimumQuantity and discountPercentage"},
+		{name: "tier minimum quantity required", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].MinimumQuantity = nil
+		}, wantErr: "discount tier 1 minimumQuantity must be greater than 0"},
+		{name: "tier minimum quantity finite", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].MinimumQuantity = floatPointer(math.NaN())
+		}, wantErr: "discount tier 1 minimumQuantity must be greater than 0"},
+		{name: "tier discount required", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].DiscountPercentage = nil
+		}, wantErr: "discount tier 1 discountPercentage must be greater than 0"},
+		{name: "tier discount maximum", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].DiscountPercentage = floatPointer(101)
+		}, wantErr: "discount tier 1 discountPercentage must not exceed 100"},
+		{name: "tier quantities strictly ascend", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[1].MinimumQuantity = floatPointer(6)
+		}, wantErr: "discount tiers must have strictly ascending minimumQuantity"},
+		{name: "tier discounts strictly ascend", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[1].DiscountPercentage = floatPointer(30)
+		}, wantErr: "discount tiers must have strictly ascending discountPercentage"},
+		{name: "unknown comparison original", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].Display.PriceComparison.OriginalField = "missing" }, wantErr: "price comparison originalField"},
+		{name: "unknown comparison discounted", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].Display.PriceComparison.DiscountedField = "missing"
+		}, wantErr: "price comparison discountedField"},
+		{name: "partial price comparison", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].Display.PriceComparison.DiscountedField = "" }, wantErr: "requires originalField and discountedField"},
+		{name: "invalid comparison currency", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].Display.PriceComparison.Currency = "try" }, wantErr: "three uppercase"},
+		{name: "invalid comparison precision", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].Display.PriceComparison.Precision = intPointer(7) }, wantErr: "precision must be between 0 and 6"},
 		{name: "unknown summary list", mutate: func(form *FormComponentConfig) { form.Summaries[0].ObjectListKey = "missing" }, wantErr: "unknown object list"},
 		{name: "unknown summary field", mutate: func(form *FormComponentConfig) { form.Summaries[0].SourceField = "missing" }, wantErr: "unknown item field"},
 		{name: "forward summary reference", mutate: func(form *FormComponentConfig) {

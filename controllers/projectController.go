@@ -48,6 +48,42 @@ const (
 
 type projectCloneIDMap map[string]map[primitive.ObjectID]primitive.ObjectID
 
+func projectBrandingForCreate(template *models.Project) *models.Branding {
+	if template == nil || template.Branding == nil {
+		return nil
+	}
+	copyBranding := *template.Branding
+	copyAsset := func(asset *models.BrandingAsset) *models.BrandingAsset {
+		if asset == nil {
+			return nil
+		}
+		cloned := *asset
+		return &cloned
+	}
+	copyString := func(value *string) *string {
+		if value == nil {
+			return nil
+		}
+		cloned := *value
+		return &cloned
+	}
+	copyBool := func(value *bool) *bool {
+		if value == nil {
+			return nil
+		}
+		cloned := *value
+		return &cloned
+	}
+	copyBranding.DisplayName = copyString(template.Branding.DisplayName)
+	copyBranding.LogoAlt = copyString(template.Branding.LogoAlt)
+	copyBranding.PrimaryColor = copyString(template.Branding.PrimaryColor)
+	copyBranding.LoginBrandingEnabled = copyBool(template.Branding.LoginBrandingEnabled)
+	copyBranding.Logo = copyAsset(template.Branding.Logo)
+	copyBranding.CompactLogo = copyAsset(template.Branding.CompactLogo)
+	copyBranding.Favicon = copyAsset(template.Branding.Favicon)
+	return &copyBranding
+}
+
 // GetCollectionNameForProject generates a unique collection name for a project
 // Format: "tenant_{tenantId}_project_{projectId}_{schemaName}"
 func GetCollectionNameForProject(tenantID, projectID, schemaName string) string {
@@ -671,6 +707,7 @@ func CreateProject(c *fiber.Ctx) error {
 		Name:       input.Name,
 		Slug:       input.Slug,
 		IsActive:   true,
+		Branding:   projectBrandingForCreate(templateProject),
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}

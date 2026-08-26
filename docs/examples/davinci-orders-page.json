@@ -94,6 +94,10 @@
                       "productId",
                       "quantity"
                     ],
+                    "mergeOnAdd": {
+                      "matchField": "productId",
+                      "quantityField": "quantity"
+                    },
                     "fieldMappings": [
                       {
                         "sourceFormKey": "productId",
@@ -104,12 +108,23 @@
                     ],
                     "itemCalculations": [
                       {
-                        "operation": "multiply",
+                        "operation": "quantityDiscount",
                         "inputs": [
                           "unitPrice",
                           "quantity"
                         ],
+                        "originalTargetField": "originalLineTotal",
                         "targetField": "lineTotal",
+                        "discountTiers": [
+                          {
+                            "minimumQuantity": 6,
+                            "discountPercentage": 30
+                          },
+                          {
+                            "minimumQuantity": 10,
+                            "discountPercentage": 40
+                          }
+                        ],
                         "precision": 2
                       }
                     ],
@@ -132,7 +147,13 @@
                     "display": {
                       "primaryField": "productId",
                       "secondaryTemplate": "{{quantity}} adet",
-                      "rightTemplate": "{{lineTotal}} TRY"
+                      "rightTemplate": "{{lineTotal}} TRY",
+                      "priceComparison": {
+                        "originalField": "originalLineTotal",
+                        "discountedField": "lineTotal",
+                        "currency": "TRY",
+                        "precision": 2
+                      }
                     },
                     "actions": [
                       {

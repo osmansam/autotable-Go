@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
@@ -285,6 +286,17 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 		for _, field := range list.ItemFields {
 			available[field] = true
 		}
+		if list.MergeOnAdd != nil {
+			if list.MergeOnAdd.MatchField == "" || list.MergeOnAdd.QuantityField == "" {
+				return fmt.Errorf("object list '%s' mergeOnAdd requires matchField and quantityField", list.Key)
+			}
+			if !available[list.MergeOnAdd.MatchField] {
+				return fmt.Errorf("object list '%s' mergeOnAdd matchField references unknown item field '%s'", list.Key, list.MergeOnAdd.MatchField)
+			}
+			if !available[list.MergeOnAdd.QuantityField] {
+				return fmt.Errorf("object list '%s' mergeOnAdd quantityField references unknown item field '%s'", list.Key, list.MergeOnAdd.QuantityField)
+			}
+		}
 		for _, field := range form.Fields {
 			if field.Type != "select" || field.OptionsSource != "schema" {
 				continue
@@ -313,18 +325,32 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 			available[mapping.TargetField] = true
 		}
 		for index, calculation := range list.ItemCalculations {
-			if calculation.Operation != "multiply" {
+			if calculation.Operation != "multiply" && calculation.Operation != "quantityDiscount" {
 				return fmt.Errorf("object list '%s' item calculation %d has unsupported item calculation operation '%s'", list.Key, index, calculation.Operation)
 			}
 			if len(calculation.Inputs) != 2 {
-				return fmt.Errorf("object list '%s' multiply calculation %d requires exactly two inputs", list.Key, index)
+				return fmt.Errorf("object list '%s' %s calculation %d requires exactly two inputs", list.Key, calculation.Operation, index)
 			}
 			for _, input := range calculation.Inputs {
 				if !available[input] {
 					return fmt.Errorf("object list '%s' item calculation %d references unknown input '%s'", list.Key, index, input)
 				}
-				if calculation.TargetField == input {
+				if calculation.TargetField == input || calculation.OriginalTargetField == input {
 					return fmt.Errorf("object list '%s' item calculation %d cannot overwrite an input field", list.Key, index)
+				}
+			}
+			if calculation.Operation == "quantityDiscount" {
+				if calculation.OriginalTargetField == "" {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d requires originalTargetField", list.Key, index)
+				}
+				if calculation.OriginalTargetField == calculation.TargetField {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d requires distinct output fields", list.Key, index)
+				}
+				if available[calculation.OriginalTargetField] {
+					return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, calculation.OriginalTargetField)
+				}
+				if err := validateQuantityDiscountConfig(calculation); err != nil {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d %w", list.Key, index, err)
 				}
 			}
 			if calculation.TargetField == "" || available[calculation.TargetField] {
@@ -333,7 +359,28 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 			if err := validateFormPrecision(calculation.Precision); err != nil {
 				return fmt.Errorf("object list '%s' item calculation %d: %w", list.Key, index, err)
 			}
+			if calculation.Operation == "quantityDiscount" {
+				available[calculation.OriginalTargetField] = true
+			}
 			available[calculation.TargetField] = true
+		}
+		if list.Display != nil && list.Display.PriceComparison != nil {
+			comparison := list.Display.PriceComparison
+			if comparison.OriginalField == "" || comparison.DiscountedField == "" {
+				return fmt.Errorf("object list '%s' price comparison requires originalField and discountedField", list.Key)
+			}
+			if !available[comparison.OriginalField] {
+				return fmt.Errorf("object list '%s' price comparison originalField references unknown item field '%s'", list.Key, comparison.OriginalField)
+			}
+			if !available[comparison.DiscountedField] {
+				return fmt.Errorf("object list '%s' price comparison discountedField references unknown item field '%s'", list.Key, comparison.DiscountedField)
+			}
+			if comparison.Currency != "" && !formCurrencyPattern.MatchString(comparison.Currency) {
+				return fmt.Errorf("object list '%s' price comparison currency must be three uppercase ASCII letters", list.Key)
+			}
+			if err := validateFormPrecision(comparison.Precision); err != nil {
+				return fmt.Errorf("object list '%s' price comparison: %w", list.Key, err)
+			}
 		}
 		lists[list.Key] = available
 	}
@@ -376,6 +423,46 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 		}
 		summaryTargets[summary.TargetField] = true
 		availableSummaries[summary.TargetField] = true
+	}
+	return nil
+}
+
+func validateQuantityDiscountConfig(calculation FormItemCalculationConfig) error {
+	if len(calculation.DiscountTiers) == 0 {
+		if calculation.MinimumQuantity == nil && calculation.DiscountPercentage == nil {
+			return fmt.Errorf("requires discountTiers or legacy minimumQuantity and discountPercentage")
+		}
+		if calculation.MinimumQuantity == nil || math.IsNaN(*calculation.MinimumQuantity) || math.IsInf(*calculation.MinimumQuantity, 0) || *calculation.MinimumQuantity <= 0 {
+			return fmt.Errorf("minimumQuantity must be greater than 0")
+		}
+		if calculation.DiscountPercentage == nil || math.IsNaN(*calculation.DiscountPercentage) || math.IsInf(*calculation.DiscountPercentage, 0) || *calculation.DiscountPercentage <= 0 {
+			return fmt.Errorf("discountPercentage must be greater than 0")
+		}
+		if *calculation.DiscountPercentage > 100 {
+			return fmt.Errorf("discountPercentage must not exceed 100")
+		}
+		return nil
+	}
+
+	var previousQuantity, previousPercentage float64
+	for index, tier := range calculation.DiscountTiers {
+		if tier.MinimumQuantity == nil || math.IsNaN(*tier.MinimumQuantity) || math.IsInf(*tier.MinimumQuantity, 0) || *tier.MinimumQuantity <= 0 {
+			return fmt.Errorf("discount tier %d minimumQuantity must be greater than 0", index+1)
+		}
+		if tier.DiscountPercentage == nil || math.IsNaN(*tier.DiscountPercentage) || math.IsInf(*tier.DiscountPercentage, 0) || *tier.DiscountPercentage <= 0 {
+			return fmt.Errorf("discount tier %d discountPercentage must be greater than 0", index+1)
+		}
+		if *tier.DiscountPercentage > 100 {
+			return fmt.Errorf("discount tier %d discountPercentage must not exceed 100", index+1)
+		}
+		if index > 0 && *tier.MinimumQuantity <= previousQuantity {
+			return fmt.Errorf("discount tiers must have strictly ascending minimumQuantity")
+		}
+		if index > 0 && *tier.DiscountPercentage <= previousPercentage {
+			return fmt.Errorf("discount tiers must have strictly ascending discountPercentage")
+		}
+		previousQuantity = *tier.MinimumQuantity
+		previousPercentage = *tier.DiscountPercentage
 	}
 	return nil
 }
@@ -546,6 +633,21 @@ func validateTableToggles(table *TableComponentConfig) error {
 	return nil
 }
 
+func validateTableDateFormat(format string) error {
+	if format == "" {
+		return nil
+	}
+	for _, allowed := range []string{
+		"MM/DD/YYYY", "DD/MM/YYYY", "YYYY/MM/DD",
+		"DD-MM-YYYY", "MM-DD-YYYY", "YYYY-MM-DD",
+	} {
+		if format == allowed {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid dateFormat '%s'", format)
+}
+
 func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	if table == nil {
 		return nil
@@ -591,6 +693,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 	}
 
 	for _, column := range table.Columns {
+		if err := validateTableDateFormat(column.DateFormat); err != nil {
+			return fmt.Errorf("table column '%s': %w", column.Field, err)
+		}
 		if column.Type == "template" && strings.TrimSpace(column.Template) == "" {
 			return fmt.Errorf("table column '%s' requires template", column.Field)
 		}
@@ -611,6 +716,9 @@ func ValidateTableComponentConfig(table *TableComponentConfig) error {
 		for index, column := range table.NestedRows.Columns {
 			if strings.TrimSpace(column.Field) == "" {
 				return fmt.Errorf("table nestedRows column %d requires field", index)
+			}
+			if err := validateTableDateFormat(column.DateFormat); err != nil {
+				return fmt.Errorf("table nestedRows column '%s': %w", column.Field, err)
 			}
 		}
 	}

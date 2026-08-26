@@ -626,6 +626,31 @@ func TestValidatePageTableConfig(t *testing.T) {
 	}
 }
 
+func TestValidatePageTableConfigDateFormat(t *testing.T) {
+	page := &PageModel{
+		Name: "Dates",
+		Sections: []Section{{
+			Type: SectionTypeComponent,
+			Component: &ComponentBlock{
+				ID:   "dates-table",
+				Type: ComponentTypeTable,
+				Table: &TableComponentConfig{Columns: []TableColumnConfig{{
+					Field: "deliveryDate", Type: "date", DateFormat: "DD/MM/YYYY",
+				}}},
+			},
+		}},
+	}
+	if err := ValidatePageTableConfig(page); err != nil {
+		t.Fatalf("ValidatePageTableConfig() valid date format error = %v", err)
+	}
+
+	page.Sections[0].Component.Table.Columns[0].DateFormat = "day/month/year"
+	err := ValidatePageTableConfig(page)
+	if err == nil || !strings.Contains(err.Error(), "invalid dateFormat 'day/month/year'") {
+		t.Fatalf("ValidatePageTableConfig() error = %v, want invalid date format", err)
+	}
+}
+
 func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
 	validConfig := &RelationMatrixConfig{
 		RowSchemaName:        "product",

@@ -161,6 +161,7 @@ type TableColumnConfig struct {
 	Field                string                   `bson:"field" json:"field"`
 	Type                 string                   `bson:"type,omitempty" json:"type,omitempty"`
 	DisplayName          string                   `bson:"displayName,omitempty" json:"displayName,omitempty"`
+	DateFormat           string                   `bson:"dateFormat,omitempty" json:"dateFormat,omitempty"`
 	Lookup               *TableLookupLabelConfig  `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	ComputedLabelRules   []TableComputedLabelRule `bson:"computedLabelRules,omitempty" json:"computedLabelRules,omitempty"`
 	Template             string                   `bson:"template,omitempty" json:"template,omitempty"`
@@ -228,6 +229,7 @@ type TableNestedRowColumnConfig struct {
 	Field         string                  `bson:"field,omitempty" json:"field,omitempty"`
 	DisplayName   string                  `bson:"displayName,omitempty" json:"displayName,omitempty"`
 	Type          string                  `bson:"type,omitempty" json:"type,omitempty"`
+	DateFormat    string                  `bson:"dateFormat,omitempty" json:"dateFormat,omitempty"`
 	Lookup        *TableLookupLabelConfig `bson:"lookup,omitempty" json:"lookup,omitempty"`
 	FallbackValue string                  `bson:"fallbackValue,omitempty" json:"fallbackValue,omitempty"`
 }
@@ -371,12 +373,21 @@ type FormFieldConfig struct {
 
 // FormObjectListDisplayConfig controls how embedded list items are displayed.
 type FormObjectListDisplayConfig struct {
-	PrimaryField      string `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
-	PrimaryTemplate   string `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
-	SecondaryField    string `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
-	SecondaryTemplate string `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
-	RightTemplate     string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
-	ImageField        string `bson:"imageField,omitempty" json:"imageField,omitempty"`
+	PrimaryField      string                     `bson:"primaryField,omitempty" json:"primaryField,omitempty"`
+	PrimaryTemplate   string                     `bson:"primaryTemplate,omitempty" json:"primaryTemplate,omitempty"`
+	SecondaryField    string                     `bson:"secondaryField,omitempty" json:"secondaryField,omitempty"`
+	SecondaryTemplate string                     `bson:"secondaryTemplate,omitempty" json:"secondaryTemplate,omitempty"`
+	RightTemplate     string                     `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
+	ImageField        string                     `bson:"imageField,omitempty" json:"imageField,omitempty"`
+	PriceComparison   *FormPriceComparisonConfig `bson:"priceComparison,omitempty" json:"priceComparison,omitempty"`
+}
+
+// FormPriceComparisonConfig renders an original and discounted item price.
+type FormPriceComparisonConfig struct {
+	OriginalField   string `bson:"originalField" json:"originalField"`
+	DiscountedField string `bson:"discountedField" json:"discountedField"`
+	Currency        string `bson:"currency,omitempty" json:"currency,omitempty"`
+	Precision       *int   `bson:"precision,omitempty" json:"precision,omitempty"`
 }
 
 // FormObjectActionConfig defines a local action for an embedded object list item.
@@ -399,12 +410,28 @@ type FormFieldMappingConfig struct {
 	Required      bool   `bson:"required,omitempty" json:"required,omitempty"`
 }
 
+// FormObjectListMergeConfig combines newly added items with an existing matching item.
+type FormObjectListMergeConfig struct {
+	MatchField    string `bson:"matchField" json:"matchField"`
+	QuantityField string `bson:"quantityField" json:"quantityField"`
+}
+
+// FormQuantityDiscountTierConfig defines one row quantity threshold and its discount.
+type FormQuantityDiscountTierConfig struct {
+	MinimumQuantity    *float64 `bson:"minimumQuantity" json:"minimumQuantity"`
+	DiscountPercentage *float64 `bson:"discountPercentage" json:"discountPercentage"`
+}
+
 // FormItemCalculationConfig calculates one embedded item field.
 type FormItemCalculationConfig struct {
-	Operation   string   `bson:"operation" json:"operation"`
-	Inputs      []string `bson:"inputs" json:"inputs"`
-	TargetField string   `bson:"targetField" json:"targetField"`
-	Precision   *int     `bson:"precision,omitempty" json:"precision,omitempty"`
+	Operation           string                           `bson:"operation" json:"operation"`
+	Inputs              []string                         `bson:"inputs" json:"inputs"`
+	OriginalTargetField string                           `bson:"originalTargetField,omitempty" json:"originalTargetField,omitempty"`
+	TargetField         string                           `bson:"targetField" json:"targetField"`
+	MinimumQuantity     *float64                         `bson:"minimumQuantity,omitempty" json:"minimumQuantity,omitempty"`
+	DiscountPercentage  *float64                         `bson:"discountPercentage,omitempty" json:"discountPercentage,omitempty"`
+	DiscountTiers       []FormQuantityDiscountTierConfig `bson:"discountTiers,omitempty" json:"discountTiers,omitempty"`
+	Precision           *int                             `bson:"precision,omitempty" json:"precision,omitempty"`
 }
 
 // FormValueFormatConfig controls presentation without changing persisted numbers.
@@ -448,6 +475,7 @@ type FormObjectListConfig struct {
 	Area             string                       `bson:"area,omitempty" json:"area,omitempty"`
 	Source           string                       `bson:"source,omitempty" json:"source,omitempty"`
 	ItemFields       []string                     `bson:"itemFields,omitempty" json:"itemFields,omitempty"`
+	MergeOnAdd       *FormObjectListMergeConfig   `bson:"mergeOnAdd,omitempty" json:"mergeOnAdd,omitempty"`
 	FieldMappings    []FormFieldMappingConfig     `bson:"fieldMappings,omitempty" json:"fieldMappings,omitempty"`
 	ItemCalculations []FormItemCalculationConfig  `bson:"itemCalculations,omitempty" json:"itemCalculations,omitempty"`
 	AddAction        *FormActionConfig            `bson:"addAction,omitempty" json:"addAction,omitempty"`
@@ -630,6 +658,48 @@ type Section struct {
 	Cells   []GridCell `bson:"cells,omitempty" json:"cells,omitempty"`
 }
 
+type PageNavigatorMode string
+
+const (
+	PageNavigatorModeAutomatic PageNavigatorMode = "automatic"
+	PageNavigatorModeCustom    PageNavigatorMode = "custom"
+)
+
+type PageNavigatorDestinationType string
+
+const (
+	PageNavigatorDestinationPage     PageNavigatorDestinationType = "page"
+	PageNavigatorDestinationExternal PageNavigatorDestinationType = "external"
+)
+
+type PageNavigatorDestination struct {
+	Type   PageNavigatorDestinationType `bson:"type" json:"type"`
+	PageID string                       `bson:"pageId,omitempty" json:"pageId,omitempty"`
+	URL    string                       `bson:"url,omitempty" json:"url,omitempty"`
+}
+
+type PageNavigatorOverride struct {
+	PageID string `bson:"pageId" json:"pageId"`
+	Label  string `bson:"label,omitempty" json:"label,omitempty"`
+	Hidden bool   `bson:"hidden,omitempty" json:"hidden,omitempty"`
+}
+
+type PageNavigatorAdditionalItem struct {
+	ID           string                   `bson:"id" json:"id"`
+	Label        string                   `bson:"label" json:"label"`
+	Destination  PageNavigatorDestination `bson:"destination" json:"destination"`
+	OpenInNewTab bool                     `bson:"openInNewTab,omitempty" json:"openInNewTab,omitempty"`
+}
+
+type PageNavigatorConfig struct {
+	Enabled         bool                          `bson:"enabled" json:"enabled"`
+	Mode            PageNavigatorMode             `bson:"mode" json:"mode"`
+	ShowHome        bool                          `bson:"showHome" json:"showHome"`
+	HomeLabel       string                        `bson:"homeLabel,omitempty" json:"homeLabel,omitempty"`
+	Overrides       []PageNavigatorOverride       `bson:"overrides,omitempty" json:"overrides,omitempty"`
+	AdditionalItems []PageNavigatorAdditionalItem `bson:"additionalItems,omitempty" json:"additionalItems,omitempty"`
+}
+
 // PageModel represents a page with hierarchical structure, auth, and layout
 type PageModel struct {
 	ID              primitive.ObjectID       `bson:"_id,omitempty" json:"id,omitempty"`
@@ -646,6 +716,7 @@ type PageModel struct {
 	AuthorizeRole   []string                 `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"` // Page-level roles
 	Variables       []PageVariableDefinition `bson:"variables,omitempty" json:"variables,omitempty"`
 	Filters         []PageFilterDefinition   `bson:"filters,omitempty" json:"filters,omitempty"`
+	PageNavigator   *PageNavigatorConfig     `bson:"pageNavigator,omitempty" json:"pageNavigator,omitempty"`
 	Sections        []Section                `bson:"sections,omitempty" json:"sections,omitempty"` // Layout: list of top-level sections
 	SubPage         *PageModel               `bson:"subPage,omitempty" json:"subPage,omitempty"`   // Nested subpage (alternative to ParentPageID)
 }

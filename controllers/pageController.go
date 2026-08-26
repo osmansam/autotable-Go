@@ -105,6 +105,9 @@ func CreatePage(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 	models.NormalizePageRuntimeConfig(&page)
+	if validationErr := models.ValidatePageNavigatorConfig(&page); validationErr != nil {
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Page navigator configuration contains invalid values.")
+	}
 	if validationErr := models.ValidatePageTableConfig(&page); validationErr != nil {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")
@@ -376,6 +379,9 @@ func UpdatePage(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 	models.NormalizePageRuntimeConfig(&updatedPage)
+	if validationErr := models.ValidatePageNavigatorConfig(&updatedPage); validationErr != nil {
+		return utils.SendErrorResponse(c, validationErr, "Validation error. Page navigator configuration contains invalid values.")
+	}
 	if validationErr := models.ValidatePageTableConfig(&updatedPage); validationErr != nil {
 		log.Printf("Table config validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, "Validation error. Table component configuration contains invalid values.")

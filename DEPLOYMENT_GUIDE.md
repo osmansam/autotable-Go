@@ -172,6 +172,26 @@ openssl rand -base64 32
 **Cloudinary Keys:**
 
 - Go to [Cloudinary Dashboard](https://cloudinary.com/console)
+
+### Tenant and Project Branding Assets
+
+TenantPanel branding uploads use the existing Cloudinary configuration:
+
+- `CLOUD_NAME`
+- `CLOUD_API_KEY`
+- `CLOUD_API_SECRET`
+
+Accepted branding formats are PNG, JPEG, and WebP. Each file is limited to 2 MB and decoded dimensions are limited to 4096 pixels per side. SVG and external image URLs are intentionally unsupported in this release.
+
+Uploads and branding-management endpoints require authenticated tenant access. Delivered Cloudinary HTTPS URLs and the resolved project-branding endpoint are public so the correct logo can appear on the login screen before authentication. The public response contains only renderable effective values and never returns Cloudinary asset identifiers or management metadata.
+
+Deploy in this order:
+
+1. `autotable-Go`, which adds backward-compatible models and branding APIs.
+2. `tenantPanel`, which adds tenant defaults and project override management.
+3. `react-template`, which renders the effective project identity.
+
+Replacing an asset uploads the new image, persists it, and then deletes the old Cloudinary asset. A failed old-asset deletion is logged but does not roll back a successfully saved setting; monitor backend logs for `failed to delete replaced branding asset` or `failed to delete removed branding asset` and remove those orphaned Cloudinary assets operationally.
 - Find your Cloud Name, API Key, and API Secret
 
 **Google OAuth:**
