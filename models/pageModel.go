@@ -416,15 +416,22 @@ type FormObjectListMergeConfig struct {
 	QuantityField string `bson:"quantityField" json:"quantityField"`
 }
 
+// FormQuantityDiscountTierConfig defines one row quantity threshold and its discount.
+type FormQuantityDiscountTierConfig struct {
+	MinimumQuantity    *float64 `bson:"minimumQuantity" json:"minimumQuantity"`
+	DiscountPercentage *float64 `bson:"discountPercentage" json:"discountPercentage"`
+}
+
 // FormItemCalculationConfig calculates one embedded item field.
 type FormItemCalculationConfig struct {
-	Operation           string   `bson:"operation" json:"operation"`
-	Inputs              []string `bson:"inputs" json:"inputs"`
-	OriginalTargetField string   `bson:"originalTargetField,omitempty" json:"originalTargetField,omitempty"`
-	TargetField         string   `bson:"targetField" json:"targetField"`
-	MinimumQuantity     *float64 `bson:"minimumQuantity,omitempty" json:"minimumQuantity,omitempty"`
-	DiscountPercentage  *float64 `bson:"discountPercentage,omitempty" json:"discountPercentage,omitempty"`
-	Precision           *int     `bson:"precision,omitempty" json:"precision,omitempty"`
+	Operation           string                           `bson:"operation" json:"operation"`
+	Inputs              []string                         `bson:"inputs" json:"inputs"`
+	OriginalTargetField string                           `bson:"originalTargetField,omitempty" json:"originalTargetField,omitempty"`
+	TargetField         string                           `bson:"targetField" json:"targetField"`
+	MinimumQuantity     *float64                         `bson:"minimumQuantity,omitempty" json:"minimumQuantity,omitempty"`
+	DiscountPercentage  *float64                         `bson:"discountPercentage,omitempty" json:"discountPercentage,omitempty"`
+	DiscountTiers       []FormQuantityDiscountTierConfig `bson:"discountTiers,omitempty" json:"discountTiers,omitempty"`
+	Precision           *int                             `bson:"precision,omitempty" json:"precision,omitempty"`
 }
 
 // FormValueFormatConfig controls presentation without changing persisted numbers.

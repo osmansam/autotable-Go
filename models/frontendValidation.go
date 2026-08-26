@@ -349,14 +349,8 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 				if available[calculation.OriginalTargetField] {
 					return fmt.Errorf("object list '%s' has duplicate item target '%s'", list.Key, calculation.OriginalTargetField)
 				}
-				if calculation.MinimumQuantity == nil || math.IsNaN(*calculation.MinimumQuantity) || math.IsInf(*calculation.MinimumQuantity, 0) || *calculation.MinimumQuantity <= 0 {
-					return fmt.Errorf("object list '%s' quantity discount calculation %d minimumQuantity must be greater than 0", list.Key, index)
-				}
-				if calculation.DiscountPercentage == nil || math.IsNaN(*calculation.DiscountPercentage) || math.IsInf(*calculation.DiscountPercentage, 0) || *calculation.DiscountPercentage <= 0 {
-					return fmt.Errorf("object list '%s' quantity discount calculation %d discountPercentage must be greater than 0", list.Key, index)
-				}
-				if *calculation.DiscountPercentage > 100 {
-					return fmt.Errorf("object list '%s' quantity discount calculation %d discountPercentage must not exceed 100", list.Key, index)
+				if err := validateQuantityDiscountConfig(calculation); err != nil {
+					return fmt.Errorf("object list '%s' quantity discount calculation %d %w", list.Key, index, err)
 				}
 			}
 			if calculation.TargetField == "" || available[calculation.TargetField] {
@@ -429,6 +423,46 @@ func validateFormCalculationConfig(form FormComponentConfig) error {
 		}
 		summaryTargets[summary.TargetField] = true
 		availableSummaries[summary.TargetField] = true
+	}
+	return nil
+}
+
+func validateQuantityDiscountConfig(calculation FormItemCalculationConfig) error {
+	if len(calculation.DiscountTiers) == 0 {
+		if calculation.MinimumQuantity == nil && calculation.DiscountPercentage == nil {
+			return fmt.Errorf("requires discountTiers or legacy minimumQuantity and discountPercentage")
+		}
+		if calculation.MinimumQuantity == nil || math.IsNaN(*calculation.MinimumQuantity) || math.IsInf(*calculation.MinimumQuantity, 0) || *calculation.MinimumQuantity <= 0 {
+			return fmt.Errorf("minimumQuantity must be greater than 0")
+		}
+		if calculation.DiscountPercentage == nil || math.IsNaN(*calculation.DiscountPercentage) || math.IsInf(*calculation.DiscountPercentage, 0) || *calculation.DiscountPercentage <= 0 {
+			return fmt.Errorf("discountPercentage must be greater than 0")
+		}
+		if *calculation.DiscountPercentage > 100 {
+			return fmt.Errorf("discountPercentage must not exceed 100")
+		}
+		return nil
+	}
+
+	var previousQuantity, previousPercentage float64
+	for index, tier := range calculation.DiscountTiers {
+		if tier.MinimumQuantity == nil || math.IsNaN(*tier.MinimumQuantity) || math.IsInf(*tier.MinimumQuantity, 0) || *tier.MinimumQuantity <= 0 {
+			return fmt.Errorf("discount tier %d minimumQuantity must be greater than 0", index+1)
+		}
+		if tier.DiscountPercentage == nil || math.IsNaN(*tier.DiscountPercentage) || math.IsInf(*tier.DiscountPercentage, 0) || *tier.DiscountPercentage <= 0 {
+			return fmt.Errorf("discount tier %d discountPercentage must be greater than 0", index+1)
+		}
+		if *tier.DiscountPercentage > 100 {
+			return fmt.Errorf("discount tier %d discountPercentage must not exceed 100", index+1)
+		}
+		if index > 0 && *tier.MinimumQuantity <= previousQuantity {
+			return fmt.Errorf("discount tiers must have strictly ascending minimumQuantity")
+		}
+		if index > 0 && *tier.DiscountPercentage <= previousPercentage {
+			return fmt.Errorf("discount tiers must have strictly ascending discountPercentage")
+		}
+		previousQuantity = *tier.MinimumQuantity
+		previousPercentage = *tier.DiscountPercentage
 	}
 	return nil
 }

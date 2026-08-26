@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -47,6 +48,7 @@ func validCalculatedOrderForm() FormComponentConfig {
 
 func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	want := validCalculatedOrderForm()
+	want.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
 	page := PageModel{Sections: []Section{{Cells: []GridCell{{Components: []ComponentBlock{{Type: ComponentTypeForm, Form: &want}}}}}}}
 
 	jsonBytes, err := json.Marshal(page)
@@ -60,7 +62,7 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	jsonForm := jsonPage.Sections[0].Cells[0].Components[0].Form
 	jsonCalculation := jsonForm.ObjectLists[0].ItemCalculations[0]
 	jsonComparison := jsonForm.ObjectLists[0].Display.PriceComparison
-	if jsonCalculation.OriginalTargetField != "originalLineTotal" || *jsonCalculation.MinimumQuantity != 6 || *jsonCalculation.DiscountPercentage != 30 || jsonComparison.OriginalField != "originalLineTotal" || jsonComparison.DiscountedField != "lineTotal" || jsonForm.ObjectLists[0].MergeOnAdd.MatchField != "productId" {
+	if jsonCalculation.OriginalTargetField != "originalLineTotal" || len(jsonCalculation.DiscountTiers) != 2 || *jsonCalculation.DiscountTiers[1].MinimumQuantity != 10 || *jsonCalculation.DiscountTiers[1].DiscountPercentage != 40 || jsonComparison.OriginalField != "originalLineTotal" || jsonComparison.DiscountedField != "lineTotal" || jsonForm.ObjectLists[0].MergeOnAdd.MatchField != "productId" {
 		t.Fatalf("JSON calculation config was not preserved: %#v", jsonForm)
 	}
 
@@ -75,8 +77,15 @@ func TestPageModelFormCalculationJSONAndBSONRoundTrip(t *testing.T) {
 	bsonForm := bsonPage.Sections[0].Cells[0].Components[0].Form
 	bsonCalculation := bsonForm.ObjectLists[0].ItemCalculations[0]
 	bsonComparison := bsonForm.ObjectLists[0].Display.PriceComparison
-	if bsonCalculation.OriginalTargetField != "originalLineTotal" || *bsonCalculation.MinimumQuantity != 6 || *bsonCalculation.DiscountPercentage != 30 || bsonComparison.Currency != "TRY" || *bsonComparison.Precision != 2 || bsonForm.ObjectLists[0].MergeOnAdd.QuantityField != "quantity" {
+	if bsonCalculation.OriginalTargetField != "originalLineTotal" || len(bsonCalculation.DiscountTiers) != 2 || *bsonCalculation.DiscountTiers[0].MinimumQuantity != 6 || *bsonCalculation.DiscountTiers[0].DiscountPercentage != 30 || bsonComparison.Currency != "TRY" || *bsonComparison.Precision != 2 || bsonForm.ObjectLists[0].MergeOnAdd.QuantityField != "quantity" {
 		t.Fatalf("BSON calculation config was not preserved: %#v", bsonForm)
+	}
+}
+
+func validDiscountTiers() []FormQuantityDiscountTierConfig {
+	return []FormQuantityDiscountTierConfig{
+		{MinimumQuantity: floatPointer(6), DiscountPercentage: floatPointer(30)},
+		{MinimumQuantity: floatPointer(10), DiscountPercentage: floatPointer(40)},
 	}
 }
 
@@ -122,6 +131,42 @@ func TestValidateFormCalculationConfig(t *testing.T) {
 		{name: "discount percentage maximum", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].ItemCalculations[0].DiscountPercentage = floatPointer(101)
 		}, wantErr: "discountPercentage must not exceed 100"},
+		{name: "tiers replace missing legacy fields", mutate: func(form *FormComponentConfig) {
+			calculation := &form.ObjectLists[0].ItemCalculations[0]
+			calculation.DiscountTiers = validDiscountTiers()
+			calculation.MinimumQuantity = nil
+			calculation.DiscountPercentage = nil
+		}, wantErr: ""},
+		{name: "empty tiers require legacy fields", mutate: func(form *FormComponentConfig) {
+			calculation := &form.ObjectLists[0].ItemCalculations[0]
+			calculation.DiscountTiers = []FormQuantityDiscountTierConfig{}
+			calculation.MinimumQuantity = nil
+			calculation.DiscountPercentage = nil
+		}, wantErr: "requires discountTiers or legacy minimumQuantity and discountPercentage"},
+		{name: "tier minimum quantity required", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].MinimumQuantity = nil
+		}, wantErr: "discount tier 1 minimumQuantity must be greater than 0"},
+		{name: "tier minimum quantity finite", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].MinimumQuantity = floatPointer(math.NaN())
+		}, wantErr: "discount tier 1 minimumQuantity must be greater than 0"},
+		{name: "tier discount required", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].DiscountPercentage = nil
+		}, wantErr: "discount tier 1 discountPercentage must be greater than 0"},
+		{name: "tier discount maximum", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[0].DiscountPercentage = floatPointer(101)
+		}, wantErr: "discount tier 1 discountPercentage must not exceed 100"},
+		{name: "tier quantities strictly ascend", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[1].MinimumQuantity = floatPointer(6)
+		}, wantErr: "discount tiers must have strictly ascending minimumQuantity"},
+		{name: "tier discounts strictly ascend", mutate: func(form *FormComponentConfig) {
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers = validDiscountTiers()
+			form.ObjectLists[0].ItemCalculations[0].DiscountTiers[1].DiscountPercentage = floatPointer(30)
+		}, wantErr: "discount tiers must have strictly ascending discountPercentage"},
 		{name: "unknown comparison original", mutate: func(form *FormComponentConfig) { form.ObjectLists[0].Display.PriceComparison.OriginalField = "missing" }, wantErr: "price comparison originalField"},
 		{name: "unknown comparison discounted", mutate: func(form *FormComponentConfig) {
 			form.ObjectLists[0].Display.PriceComparison.DiscountedField = "missing"
