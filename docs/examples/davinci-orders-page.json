@@ -115,8 +115,16 @@
                         ],
                         "originalTargetField": "originalLineTotal",
                         "targetField": "lineTotal",
-                        "minimumQuantity": 6,
-                        "discountPercentage": 30,
+                        "discountTiers": [
+                          {
+                            "minimumQuantity": 6,
+                            "discountPercentage": 30
+                          },
+                          {
+                            "minimumQuantity": 10,
+                            "discountPercentage": 40
+                          }
+                        ],
                         "precision": 2
                       }
                     ],
