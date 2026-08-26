@@ -114,6 +114,47 @@ func TestEvaluateFormCartQuantityDiscount(t *testing.T) {
 	}
 }
 
+func TestEvaluateFormCartUsesHighestReachedDiscountTierPerRow(t *testing.T) {
+	form := models.FormComponentConfig{
+		ObjectLists: []models.FormObjectListConfig{{
+			Key: "items",
+			ItemCalculations: []models.FormItemCalculationConfig{{
+				Operation: "quantityDiscount", Inputs: []string{"unitPrice", "quantity"},
+				OriginalTargetField: "originalLineTotal", TargetField: "lineTotal",
+				DiscountTiers: []models.FormQuantityDiscountTierConfig{
+					{MinimumQuantity: calculationNumber(6), DiscountPercentage: calculationNumber(30)},
+					{MinimumQuantity: calculationNumber(10), DiscountPercentage: calculationNumber(40)},
+				},
+				Precision: calculationPrecision(2),
+			}},
+		}},
+		Summaries: []models.FormSummaryConfig{{
+			Key: "total", Operation: "sum", ObjectListKey: "items", SourceField: "lineTotal", TargetField: "total",
+			Format: &models.FormValueFormatConfig{Precision: calculationPrecision(2)},
+		}},
+	}
+	quantities := []int{3, 6, 8, 10, 12}
+	items := make([]interface{}, 0, len(quantities))
+	for _, quantity := range quantities {
+		items = append(items, map[string]interface{}{"unitPrice": 100, "quantity": quantity})
+	}
+
+	got, err := EvaluateFormCart(form, map[string]interface{}{"items": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][2]float64{{300, 300}, {600, 420}, {800, 560}, {1000, 600}, {1200, 720}}
+	for index, expected := range want {
+		item := got["items"].([]interface{})[index].(map[string]interface{})
+		if item["originalLineTotal"] != expected[0] || item["lineTotal"] != expected[1] {
+			t.Fatalf("item %d = %#v, want original=%v line=%v", index, item, expected[0], expected[1])
+		}
+	}
+	if got["total"] != float64(2600) {
+		t.Fatalf("total = %#v, want 2600", got["total"])
+	}
+}
+
 func TestEvaluateFormCartQuantityDiscountRoundingAndFullDiscount(t *testing.T) {
 	form := models.FormComponentConfig{ObjectLists: []models.FormObjectListConfig{{
 		Key: "items",

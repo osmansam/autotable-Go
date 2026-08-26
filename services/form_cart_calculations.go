@@ -40,14 +40,14 @@ func EvaluateFormCart(form models.FormComponentConfig, record map[string]interfa
 				case "multiply":
 					itemCopy[calculation.TargetField] = formCartMultiply(left, right, precision)
 				case "quantityDiscount":
-					if calculation.OriginalTargetField == "" || calculation.MinimumQuantity == nil || calculation.DiscountPercentage == nil || *calculation.MinimumQuantity <= 0 || *calculation.DiscountPercentage <= 0 || *calculation.DiscountPercentage > 100 {
+					if calculation.OriginalTargetField == "" || !formCartQuantityDiscountConfigured(calculation) {
 						return nil, fmt.Errorf("FORM_CONFIG_NOT_FOUND: invalid quantity discount calculation")
 					}
 					original := formCartMultiply(left, right, precision)
 					itemCopy[calculation.OriginalTargetField] = original
 					itemCopy[calculation.TargetField] = original
-					if right >= *calculation.MinimumQuantity {
-						itemCopy[calculation.TargetField] = formCartApplyPercentageDiscount(original, *calculation.DiscountPercentage, precision)
+					if percentage, qualified := formCartDiscountPercentage(calculation, right); qualified {
+						itemCopy[calculation.TargetField] = formCartApplyPercentageDiscount(original, percentage, precision)
 					}
 				default:
 					return nil, fmt.Errorf("FORM_CONFIG_NOT_FOUND: unsupported item calculation")
@@ -90,6 +90,37 @@ func EvaluateFormCart(form models.FormComponentConfig, record map[string]interfa
 		}
 	}
 	return next, nil
+}
+
+func formCartQuantityDiscountConfigured(calculation models.FormItemCalculationConfig) bool {
+	if len(calculation.DiscountTiers) == 0 {
+		return calculation.MinimumQuantity != nil && calculation.DiscountPercentage != nil &&
+			*calculation.MinimumQuantity > 0 && *calculation.DiscountPercentage > 0 && *calculation.DiscountPercentage <= 100
+	}
+	for _, tier := range calculation.DiscountTiers {
+		if tier.MinimumQuantity == nil || tier.DiscountPercentage == nil ||
+			*tier.MinimumQuantity <= 0 || *tier.DiscountPercentage <= 0 || *tier.DiscountPercentage > 100 {
+			return false
+		}
+	}
+	return true
+}
+
+func formCartDiscountPercentage(calculation models.FormItemCalculationConfig, quantity float64) (float64, bool) {
+	if len(calculation.DiscountTiers) == 0 {
+		if quantity >= *calculation.MinimumQuantity {
+			return *calculation.DiscountPercentage, true
+		}
+		return 0, false
+	}
+	percentage, qualified := float64(0), false
+	for _, tier := range calculation.DiscountTiers {
+		if quantity < *tier.MinimumQuantity {
+			break
+		}
+		percentage, qualified = *tier.DiscountPercentage, true
+	}
+	return percentage, qualified
 }
 
 func formCartNumber(value interface{}) (float64, error) {
