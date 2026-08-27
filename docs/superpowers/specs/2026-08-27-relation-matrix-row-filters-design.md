@@ -42,7 +42,7 @@ The relation matrix continues to issue two independent paginated requests:
 1. The row request uses `rowSchemaName`, the existing row limit, and the applied filter-panel values.
 2. The column request uses `columnSchemaName`, `columnLimit`, and no row filter values.
 
-The runtime initializes filter form state from configured defaults using the same table-filter helpers. Users edit draft values in the shared filter panel. Applying filters updates the applied row-filter state and therefore the row query key and request. Resetting filters restores configured defaults and refreshes rows. Columns are not refetched because their request parameters do not change.
+The runtime initializes filter form state from configured defaults using the same table-filter helpers. Users edit draft values in the shared filter panel. Applying filters updates the applied row-filter state and therefore the row query key and request. Clear All Filters empties the values using the existing table behavior and refreshes rows. Columns are not refetched because their request parameters do not change.
 
 Empty filter values follow the existing table serialization rules and are omitted from the row request. Schema-backed select filters load their options through the established table filter option-query behavior.
 
