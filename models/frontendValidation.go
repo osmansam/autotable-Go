@@ -824,6 +824,9 @@ func ValidateRelationMatrixConfig(config *RelationMatrixConfig) error {
 	if config.ColumnLimit < 0 || config.ColumnLimit > 100 {
 		return fmt.Errorf("relationMatrix columnLimit must be between 1 and 100")
 	}
+	if err := ValidateFilterPanelConfig(config.FilterPanel); err != nil {
+		return fmt.Errorf("relationMatrix filterPanel: %w", err)
+	}
 	return nil
 }
 
