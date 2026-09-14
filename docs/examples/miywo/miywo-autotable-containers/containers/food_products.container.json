@@ -1,0 +1,219 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "food_products",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "barcode",
+      "type": "string",
+      "order": 2
+    },
+    {
+      "name": "brand",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "product_name",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "species",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "life_stage",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "protein_pct",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "fat_pct",
+      "type": "float",
+      "order": 8
+    },
+    {
+      "name": "fiber_pct",
+      "type": "float",
+      "order": 9
+    },
+    {
+      "name": "moisture_pct",
+      "type": "float",
+      "order": 10
+    },
+    {
+      "name": "kcal_per_100g",
+      "type": "float",
+      "order": 11
+    },
+    {
+      "name": "ingredients",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "allergens",
+      "type": "stringArray",
+      "order": 13
+    },
+    {
+      "name": "additives",
+      "type": "stringArray",
+      "order": 14
+    },
+    {
+      "name": "ai_score",
+      "type": "int",
+      "order": 15,
+      "tag": "min=0,max=100"
+    },
+    {
+      "name": "ai_summary",
+      "type": "string",
+      "order": 16
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "order": 19,
+      "enumList": [
+        "ai",
+        "open_pet_food_facts",
+        "manufacturer",
+        "manual",
+        "user_submitted"
+      ],
+      "tag": "required"
+    },
+    {
+      "name": "verified",
+      "type": "bool",
+      "order": 20,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

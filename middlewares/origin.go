@@ -9,16 +9,50 @@ import (
 
 func IsTrustedOrigin(origin string, allowed []string) bool {
 	normalized, ok := normalizeOrigin(origin)
-	if !ok {
+	if !ok || strings.Contains(normalized, "*") {
 		return false
 	}
 	for _, candidate := range allowed {
 		trusted, valid := normalizeOrigin(candidate)
-		if valid && normalized == trusted {
+		if !valid {
+			continue
+		}
+		if normalized == trusted {
+			return true
+		}
+		if strings.Count(trusted, "*") != 1 {
+			continue
+		}
+		pattern, _ := url.Parse(trusted)
+		actual, _ := url.Parse(normalized)
+		if !strings.HasPrefix(pattern.Hostname(), "*.") || actual.Scheme != pattern.Scheme || actual.Port() != pattern.Port() {
+			continue
+		}
+		suffix := strings.TrimPrefix(pattern.Hostname(), "*")
+		if !strings.HasSuffix(actual.Hostname(), suffix) {
+			continue
+		}
+		prefix := strings.TrimSuffix(actual.Hostname(), suffix)
+		if validSubdomainLabels(prefix) {
 			return true
 		}
 	}
 	return false
+}
+
+// Wildcards match one or more complete DNS labels, never the base domain.
+func validSubdomainLabels(value string) bool {
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, ch := range label {
+			if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func RequireTrustedCookieOrigin(allowed []string) fiber.Handler {

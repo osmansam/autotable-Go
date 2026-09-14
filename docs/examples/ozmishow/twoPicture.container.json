@@ -1,0 +1,203 @@
+{
+  "schemaName": "twoPicture",
+  "fields": [
+    {
+      "name": "page",
+      "type": "string",
+      "tag": "required",
+      "isSearchable": true,
+      "order": 1
+    },
+    {
+      "name": "language",
+      "type": "string",
+      "tag": "required",
+      "enumList": [
+        "EN",
+        "TR"
+      ],
+      "order": 2
+    },
+    {
+      "name": "position",
+      "type": "int",
+      "tag": "required",
+      "order": 3
+    },
+    {
+      "name": "componentName",
+      "type": "string",
+      "tag": "required",
+      "order": 4
+    },
+    {
+      "name": "componentType",
+      "type": "string",
+      "tag": "required",
+      "order": 5
+    },
+    {
+      "name": "selectedSection",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "mainHeader",
+      "type": "object",
+      "order": 7
+    },
+    {
+      "name": "mainMainHeader",
+      "type": "object",
+      "order": 8
+    },
+    {
+      "name": "twoPictureArray",
+      "type": "array",
+      "order": 9
+    },
+    {
+      "name": "style",
+      "type": "object",
+      "order": 10
+    },
+    {
+      "name": "componentStyle",
+      "type": "object",
+      "order": 11
+    },
+    {
+      "name": "props",
+      "type": "object",
+      "order": 12
+    },
+    {
+      "name": "data",
+      "type": "object",
+      "order": 13
+    }
+  ],
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "indexes": [
+    {
+      "name": "idx_page_language_position",
+      "fields": [
+        {
+          "fieldName": "page",
+          "order": 1
+        },
+        {
+          "fieldName": "language",
+          "order": 1
+        },
+        {
+          "fieldName": "position",
+          "order": 1
+        }
+      ]
+    },
+    {
+      "name": "idx_page_position",
+      "fields": [
+        {
+          "fieldName": "page",
+          "order": 1
+        },
+        {
+          "fieldName": "position",
+          "order": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "parasite_treatments",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "treatment_type",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "product_name",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "administered_on",
+      "type": "date",
+      "order": 5
+    },
+    {
+      "name": "due_on",
+      "type": "date",
+      "order": 6
+    },
+    {
+      "name": "reminder_status",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "recurrence_interval_days",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

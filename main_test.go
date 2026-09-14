@@ -108,3 +108,26 @@ func TestConfigurePprof(t *testing.T) {
 		t.Fatalf("development pprof status = %v, error = %v", resp, err)
 	}
 }
+
+func TestCorsWildcardPreflight(t *testing.T) {
+	app := fiber.New()
+	app.Use(corsFromConfig(&configs.Config{CorsWhitelist: []string{"https://*.fastdesign.autoapi.org"}}))
+	app.Post("/", func(c *fiber.Ctx) error { return c.SendStatus(204) })
+	for _, origin := range []string{"https://demo.fastdesign.autoapi.org", "https://demo.fastdesign.autoapi.org.evil.com"} {
+		req := httptest.NewRequest(http.MethodOptions, "/", nil)
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Access-Control-Request-Method", "POST")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		want := ""
+		if origin == "https://demo.fastdesign.autoapi.org" {
+			want = origin
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != want {
+			t.Errorf("origin %s: got %q want %q", origin, got, want)
+		}
+	}
+}

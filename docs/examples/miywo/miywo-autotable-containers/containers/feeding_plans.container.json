@@ -1,0 +1,200 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "feeding_plans",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "goal",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "activity",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "daily_calories",
+      "type": "int",
+      "order": 6
+    },
+    {
+      "name": "daily_grams",
+      "type": "int",
+      "order": 7
+    },
+    {
+      "name": "morning_grams",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "evening_grams",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "snack_grams",
+      "type": "int",
+      "order": 10
+    },
+    {
+      "name": "water_goal_ml",
+      "type": "int",
+      "order": 11
+    },
+    {
+      "name": "active",
+      "type": "bool",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

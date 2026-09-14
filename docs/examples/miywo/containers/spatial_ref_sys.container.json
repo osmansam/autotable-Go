@@ -1,0 +1,131 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "spatial_ref_sys",
+  "fields": [
+    {
+      "name": "srid",
+      "type": "int",
+      "order": 1,
+      "tag": "required,min=1,max=998999"
+    },
+    {
+      "name": "auth_name",
+      "type": "string",
+      "order": 2
+    },
+    {
+      "name": "auth_srid",
+      "type": "int",
+      "order": 3
+    },
+    {
+      "name": "srtext",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "proj4text",
+      "type": "string",
+      "order": 5
+    }
+  ],
+  "indexes": []
+}

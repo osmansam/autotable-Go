@@ -1,0 +1,168 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_invites",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "invited_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "invite_code",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "role",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "can_edit",
+      "type": "bool",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "expires_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "used_at",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "used_by",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

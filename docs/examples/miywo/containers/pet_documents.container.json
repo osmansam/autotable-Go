@@ -1,0 +1,197 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_documents",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "uploaded_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "document_type",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "storage_bucket",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "storage_path",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "mime_type",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "file_size_bytes",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "visibility",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "captured_at",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

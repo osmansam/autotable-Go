@@ -188,8 +188,7 @@ func corsFromConfig(cfg *configs.Config) fiber.Handler {
 
 	return cors.New(cors.Config{
 		AllowOriginsFunc: func(origin string) bool {
-			_, ok := allowedOrigins[origin]
-			return ok
+			return middlewares.IsTrustedOrigin(origin, cfg.CorsWhitelist)
 		},
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, Idempotency-Key, X-AutoTable-Client",
 		AllowCredentials: true,

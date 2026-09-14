@@ -1,0 +1,8037 @@
+# Miywo container JSONs
+
+Paste each definition separately. See README.md for conversion details.
+
+## profiles
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "profiles",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "full_name",
+      "type": "string",
+      "order": 2
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "avatar_url",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "locale",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "timezone",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "is_guest",
+      "type": "bool",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "unit_system",
+      "type": "string",
+      "order": 10,
+      "enumList": [
+        "imperial",
+        "metric"
+      ],
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    }
+  ]
+}
+```
+
+## pets
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pets",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "owner_user_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "species",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "breed",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "sex",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "birth_date",
+      "type": "date",
+      "order": 7
+    },
+    {
+      "name": "adopted_at",
+      "type": "date",
+      "order": 8
+    },
+    {
+      "name": "weight_kg",
+      "type": "float",
+      "order": 9
+    },
+    {
+      "name": "length_cm",
+      "type": "float",
+      "order": 10
+    },
+    {
+      "name": "color",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "photo_url",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "chip_number",
+      "type": "string",
+      "order": 13
+    },
+    {
+      "name": "spayed_neutered",
+      "type": "bool",
+      "order": 14
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 15
+    },
+    {
+      "name": "is_active",
+      "type": "bool",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "archived_at",
+      "type": "string",
+      "order": 17
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 19,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 20,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 21,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "owner_user_id_idx",
+      "fields": [
+        {
+          "fieldName": "owner_user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## pet_members
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_members",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "role",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "can_edit",
+      "type": "bool",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "invited_by",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "accepted_at",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "user_id_idx",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "invited_by_idx",
+      "fields": [
+        {
+          "fieldName": "invited_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## vet_clinics
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "vet_clinics",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "owner_user_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "clinic_name",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "vet_name",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "phone",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "address",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "city",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "country",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "owner_user_id_idx",
+      "fields": [
+        {
+          "fieldName": "owner_user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## pet_vet_links
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_vet_links",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "clinic_id",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "is_primary",
+      "type": "bool",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "clinic_id_idx",
+      "fields": [
+        {
+          "fieldName": "clinic_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## pet_documents
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_documents",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "uploaded_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "document_type",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "storage_bucket",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "storage_path",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "mime_type",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "file_size_bytes",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "visibility",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "captured_at",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "uploaded_by_idx",
+      "fields": [
+        {
+          "fieldName": "uploaded_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## medical_conditions
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "medical_conditions",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "diagnosis",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "clinic_id",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "diagnosed_on",
+      "type": "date",
+      "order": 6
+    },
+    {
+      "name": "resolved_on",
+      "type": "date",
+      "order": 7
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "visibility",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "clinic_id_idx",
+      "fields": [
+        {
+          "fieldName": "clinic_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## allergies
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "allergies",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "allergen",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "severity",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "reaction",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## vaccination_events
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "vaccination_events",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "vaccine_name",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "brand_name",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "lot_number",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "administered_on",
+      "type": "date",
+      "order": 6
+    },
+    {
+      "name": "due_on",
+      "type": "date",
+      "order": 7
+    },
+    {
+      "name": "reminder_status",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "recurrence_interval_days",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "clinic_id",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "label_document_id",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "clinic_id_idx",
+      "fields": [
+        {
+          "fieldName": "clinic_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "label_document_id_idx",
+      "fields": [
+        {
+          "fieldName": "label_document_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## parasite_treatments
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "parasite_treatments",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "treatment_type",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "product_name",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "administered_on",
+      "type": "date",
+      "order": 5
+    },
+    {
+      "name": "due_on",
+      "type": "date",
+      "order": 6
+    },
+    {
+      "name": "reminder_status",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "recurrence_interval_days",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## medications
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "medications",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "form",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "dosage_text",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "frequency_text",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "start_date",
+      "type": "date",
+      "order": 7
+    },
+    {
+      "name": "end_date",
+      "type": "date",
+      "order": 8
+    },
+    {
+      "name": "refill_due_on",
+      "type": "date",
+      "order": 9
+    },
+    {
+      "name": "reminder_enabled",
+      "type": "bool",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "instructions",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "prescribed_by_clinic_id",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "active",
+      "type": "bool",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "prescribed_by_clinic_id_idx",
+      "fields": [
+        {
+          "fieldName": "prescribed_by_clinic_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## medication_schedules
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "medication_schedules",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "medication_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "dose_time",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "dose_amount",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "medication_id_idx",
+      "fields": [
+        {
+          "fieldName": "medication_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## medication_logs
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "medication_logs",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "medication_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "scheduled_for",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "taken_at",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "medication_id_idx",
+      "fields": [
+        {
+          "fieldName": "medication_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## weight_logs
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "weight_logs",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "measured_on",
+      "type": "date",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "weight_kg",
+      "type": "float",
+      "order": 4
+    },
+    {
+      "name": "length_cm",
+      "type": "float",
+      "order": 5
+    },
+    {
+      "name": "height_cm",
+      "type": "float",
+      "order": 6
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## hydration_logs
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "hydration_logs",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "logged_at",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "amount_ml",
+      "type": "int",
+      "order": 4,
+      "tag": "required,min=1"
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## vet_appointments
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "vet_appointments",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "clinic_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "appointment_at",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "reason",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "findings",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "prescription_notes",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "follow_up_at",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "clinic_id_idx",
+      "fields": [
+        {
+          "fieldName": "clinic_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## food_products
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "food_products",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "barcode",
+      "type": "string",
+      "order": 2
+    },
+    {
+      "name": "brand",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "product_name",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "species",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "life_stage",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "protein_pct",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "fat_pct",
+      "type": "float",
+      "order": 8
+    },
+    {
+      "name": "fiber_pct",
+      "type": "float",
+      "order": 9
+    },
+    {
+      "name": "moisture_pct",
+      "type": "float",
+      "order": 10
+    },
+    {
+      "name": "kcal_per_100g",
+      "type": "float",
+      "order": 11
+    },
+    {
+      "name": "ingredients",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "allergens",
+      "type": "stringArray",
+      "order": 13
+    },
+    {
+      "name": "additives",
+      "type": "stringArray",
+      "order": 14
+    },
+    {
+      "name": "ai_score",
+      "type": "int",
+      "order": 15,
+      "tag": "min=0,max=100"
+    },
+    {
+      "name": "ai_summary",
+      "type": "string",
+      "order": 16
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "order": 19,
+      "enumList": [
+        "ai",
+        "open_pet_food_facts",
+        "manufacturer",
+        "manual",
+        "user_submitted"
+      ],
+      "tag": "required"
+    },
+    {
+      "name": "verified",
+      "type": "bool",
+      "order": 20,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "barcode_unique",
+      "fields": [
+        {
+          "fieldName": "barcode",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    }
+  ]
+}
+```
+
+## food_scans
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "food_scans",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "scanned_by",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "barcode",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "package_photo_url",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "ai_score",
+      "type": "int",
+      "order": 7,
+      "tag": "min=0,max=100"
+    },
+    {
+      "name": "protein_quality_score",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "ingredient_quality_score",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "allergen_risk_score",
+      "type": "int",
+      "order": 10
+    },
+    {
+      "name": "additive_warning_score",
+      "type": "int",
+      "order": 11
+    },
+    {
+      "name": "suitability_summary",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 13
+    },
+    {
+      "name": "scanned_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "product_id_idx",
+      "fields": [
+        {
+          "fieldName": "product_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "scanned_by_idx",
+      "fields": [
+        {
+          "fieldName": "scanned_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## feeding_plans
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "feeding_plans",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "goal",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "activity",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "daily_calories",
+      "type": "int",
+      "order": 6
+    },
+    {
+      "name": "daily_grams",
+      "type": "int",
+      "order": 7
+    },
+    {
+      "name": "morning_grams",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "evening_grams",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "snack_grams",
+      "type": "int",
+      "order": 10
+    },
+    {
+      "name": "water_goal_ml",
+      "type": "int",
+      "order": 11
+    },
+    {
+      "name": "active",
+      "type": "bool",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "product_id_idx",
+      "fields": [
+        {
+          "fieldName": "product_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## food_inventory
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "food_inventory",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "label",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "quantity_grams_remaining",
+      "type": "int",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "estimated_daily_usage_grams",
+      "type": "int",
+      "order": 6
+    },
+    {
+      "name": "estimated_runout_on",
+      "type": "date",
+      "order": 7
+    },
+    {
+      "name": "auto_reorder_enabled",
+      "type": "bool",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "reorder_url",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "product_id_idx",
+      "fields": [
+        {
+          "fieldName": "product_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## walk_sessions
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "walk_sessions",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "started_at",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "ended_at",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "duration_seconds",
+      "type": "int",
+      "order": 5
+    },
+    {
+      "name": "distance_meters",
+      "type": "float",
+      "order": 6
+    },
+    {
+      "name": "route_geojson",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## walk_events
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "walk_events",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "walk_session_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "event_type",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "occurred_at",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "lat",
+      "type": "float",
+      "order": 6
+    },
+    {
+      "name": "lng",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "walk_session_id_idx",
+      "fields": [
+        {
+          "fieldName": "walk_session_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## litter_box_logs
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "litter_box_logs",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "event_at",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "event_type",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## timeline_entries
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "timeline_entries",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "entry_type",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "event_at",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "photo_url",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "ai_caption",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## lost_pet_alerts
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "lost_pet_alerts",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "last_seen_at",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "last_seen_address",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "last_seen_lat",
+      "type": "float",
+      "order": 9
+    },
+    {
+      "name": "last_seen_lng",
+      "type": "float",
+      "order": 10
+    },
+    {
+      "name": "radius_km",
+      "type": "float",
+      "order": 11
+    },
+    {
+      "name": "contact_phone",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "contact_note",
+      "type": "string",
+      "order": 13
+    },
+    {
+      "name": "reward_text",
+      "type": "string",
+      "order": 14
+    },
+    {
+      "name": "found_at",
+      "type": "string",
+      "order": 15
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 19,
+      "tag": "required"
+    },
+    {
+      "name": "photo_storage_bucket",
+      "type": "string",
+      "order": 20
+    },
+    {
+      "name": "photo_storage_path",
+      "type": "string",
+      "order": 21
+    },
+    {
+      "name": "last_seen_location",
+      "type": "string",
+      "order": 22
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## lost_pet_sightings
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "lost_pet_sightings",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "alert_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "reported_by",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "sighted_at",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "lat",
+      "type": "float",
+      "order": 6
+    },
+    {
+      "name": "lng",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "photo_url",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "location",
+      "type": "string",
+      "order": 10
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "alert_id_idx",
+      "fields": [
+        {
+          "fieldName": "alert_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "reported_by_idx",
+      "fields": [
+        {
+          "fieldName": "reported_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## expenses
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "expenses",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "amount",
+      "type": "float",
+      "order": 4,
+      "tag": "required,min=0"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "expense_date",
+      "type": "date",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "vendor_name",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "receipt_document_id",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "receipt_document_id_idx",
+      "fields": [
+        {
+          "fieldName": "receipt_document_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## insurance_policies
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "insurance_policies",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "provider_name",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "policy_number",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "coverage_start",
+      "type": "date",
+      "order": 5
+    },
+    {
+      "name": "coverage_end",
+      "type": "date",
+      "order": 6
+    },
+    {
+      "name": "premium_amount",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "created_by_idx",
+      "fields": [
+        {
+          "fieldName": "created_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## user_notification_settings
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "user_notification_settings",
+  "fields": [
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "vaccine_reminders",
+      "type": "bool",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "medication_reminders",
+      "type": "bool",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "hydration_reminders",
+      "type": "bool",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "litter_reminders",
+      "type": "bool",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "food_stock_alerts",
+      "type": "bool",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "lost_pet_alerts",
+      "type": "bool",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "community_alerts",
+      "type": "bool",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "vet_updates",
+      "type": "bool",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "quiet_hours_start",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "quiet_hours_end",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    }
+  ]
+}
+```
+
+## ai_pet_reports
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "ai_pet_reports",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "report_period_start",
+      "type": "date",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "report_period_end",
+      "type": "date",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "health_score",
+      "type": "int",
+      "order": 5,
+      "tag": "min=0,max=100"
+    },
+    {
+      "name": "summary_text",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "concerns",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "recommendations",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "generated_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## spatial_ref_sys
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "spatial_ref_sys",
+  "fields": [
+    {
+      "name": "srid",
+      "type": "int",
+      "order": 1,
+      "tag": "required,min=1,max=998999"
+    },
+    {
+      "name": "auth_name",
+      "type": "string",
+      "order": 2
+    },
+    {
+      "name": "auth_srid",
+      "type": "int",
+      "order": 3
+    },
+    {
+      "name": "srtext",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "proj4text",
+      "type": "string",
+      "order": 5
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "srid",
+          "order": 1
+        }
+      ],
+      "unique": true
+    }
+  ]
+}
+```
+
+## subscriptions
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "subscriptions",
+  "fields": [
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "platform",
+      "type": "string",
+      "order": 4,
+      "enumList": [
+        "app_store",
+        "play_store"
+      ]
+    },
+    {
+      "name": "adapty_profile_id",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "trial_ends_at",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "expires_at",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "auto_renew",
+      "type": "bool",
+      "order": 8
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 10,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    }
+  ]
+}
+```
+
+## user_devices
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "user_devices",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "fcm_token",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "platform",
+      "type": "string",
+      "order": 4,
+      "enumList": [
+        "ios",
+        "android"
+      ]
+    },
+    {
+      "name": "app_version",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "last_seen_at",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "user_id_idx",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## scheduled_notifications
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "scheduled_notifications",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "source_table",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "source_id",
+      "type": "string",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "notify_at",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "body",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "payload",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "sent_at",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "failed_at",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "error",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "user_id_idx",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## pet_invites
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "pet_invites",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "invited_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "invite_code",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "role",
+      "type": "string",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "can_edit",
+      "type": "bool",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "expires_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "used_at",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "used_by",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "invite_code_unique",
+      "fields": [
+        {
+          "fieldName": "invite_code",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "invited_by_idx",
+      "fields": [
+        {
+          "fieldName": "invited_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "used_by_idx",
+      "fields": [
+        {
+          "fieldName": "used_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## care_events
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "care_events",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "event_type",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "performed_at",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "due_on",
+      "type": "date",
+      "order": 5
+    },
+    {
+      "name": "recurrence_interval_days",
+      "type": "int",
+      "order": 6
+    },
+    {
+      "name": "cost",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "vendor_name",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 13,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## feeding_logs
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "feeding_logs",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "fed_at",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "meal_type",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "amount_grams",
+      "type": "int",
+      "order": 5
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "logged_by",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 10,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 11,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "pet_id_idx",
+      "fields": [
+        {
+          "fieldName": "pet_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "product_id_idx",
+      "fields": [
+        {
+          "fieldName": "product_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    },
+    {
+      "name": "logged_by_idx",
+      "fields": [
+        {
+          "fieldName": "logged_by",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
+
+## ai_usage
+
+```json
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "ai_usage",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "feature",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "order": 4
+    },
+    {
+      "name": "input_tokens",
+      "type": "int",
+      "order": 5
+    },
+    {
+      "name": "output_tokens",
+      "type": "int",
+      "order": 6
+    },
+    {
+      "name": "cost_usd",
+      "type": "float",
+      "order": 7
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 8,
+      "tag": "required"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "source_primary_key",
+      "fields": [
+        {
+          "fieldName": "id",
+          "order": 1
+        }
+      ],
+      "unique": true
+    },
+    {
+      "name": "user_id_idx",
+      "fields": [
+        {
+          "fieldName": "user_id",
+          "order": 1
+        }
+      ],
+      "unique": false
+    }
+  ]
+}
+```
