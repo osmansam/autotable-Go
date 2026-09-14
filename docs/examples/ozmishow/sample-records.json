@@ -1,0 +1,57 @@
+{
+  "pageOptions": [
+    {
+      "pageNameEN": "Home",
+      "pageNameTR": "AnaSayfa",
+      "isNavbar": true,
+      "isSubpage": false,
+      "isSectionPage": false,
+      "hasSubpage": false,
+      "motherPageEN": "",
+      "motherPageTR": "",
+      "sectionPageType": "",
+      "sections": [],
+      "pageStyle": {}
+    }
+  ],
+  "navbar": [
+    {
+      "logo": "",
+      "navbarType": "classic"
+    }
+  ],
+  "twoPicture": [
+    {
+      "page": "Home",
+      "language": "EN",
+      "position": 0,
+      "componentName": "PictureAndText",
+      "componentType": "type1",
+      "selectedSection": "",
+      "mainHeader": {
+        "content": "Welcome",
+        "style": {}
+      },
+      "twoPictureArray": [
+        {
+          "header": {
+            "content": "Welcome",
+            "style": {}
+          },
+          "paragraphs": {
+            "content": [
+              "Edit this text in Ozmishow."
+            ],
+            "style": {}
+          },
+          "img": {
+            "content": "",
+            "style": {}
+          },
+          "buttons": []
+        }
+      ],
+      "style": {}
+    }
+  ]
+}

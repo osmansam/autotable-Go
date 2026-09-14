@@ -1,0 +1,204 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "food_scans",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "product_id",
+      "type": "string",
+      "order": 3
+    },
+    {
+      "name": "scanned_by",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "barcode",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "package_photo_url",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "ai_score",
+      "type": "int",
+      "order": 7,
+      "tag": "min=0,max=100"
+    },
+    {
+      "name": "protein_quality_score",
+      "type": "int",
+      "order": 8
+    },
+    {
+      "name": "ingredient_quality_score",
+      "type": "int",
+      "order": 9
+    },
+    {
+      "name": "allergen_risk_score",
+      "type": "int",
+      "order": 10
+    },
+    {
+      "name": "additive_warning_score",
+      "type": "int",
+      "order": 11
+    },
+    {
+      "name": "suitability_summary",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "notes",
+      "type": "string",
+      "order": 13
+    },
+    {
+      "name": "scanned_at",
+      "type": "string",
+      "order": 14,
+      "tag": "required"
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 15,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

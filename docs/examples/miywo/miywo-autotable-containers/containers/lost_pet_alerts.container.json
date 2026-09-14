@@ -1,0 +1,224 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "lost_pet_alerts",
+  "fields": [
+    {
+      "name": "id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "pet_id",
+      "type": "string",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "created_by",
+      "type": "string",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "order": 5
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "order": 6
+    },
+    {
+      "name": "last_seen_at",
+      "type": "string",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "last_seen_address",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "last_seen_lat",
+      "type": "float",
+      "order": 9
+    },
+    {
+      "name": "last_seen_lng",
+      "type": "float",
+      "order": 10
+    },
+    {
+      "name": "radius_km",
+      "type": "float",
+      "order": 11
+    },
+    {
+      "name": "contact_phone",
+      "type": "string",
+      "order": 12
+    },
+    {
+      "name": "contact_note",
+      "type": "string",
+      "order": 13
+    },
+    {
+      "name": "reward_text",
+      "type": "string",
+      "order": 14
+    },
+    {
+      "name": "found_at",
+      "type": "string",
+      "order": 15
+    },
+    {
+      "name": "client_updated_at",
+      "type": "string",
+      "order": 16,
+      "tag": "required"
+    },
+    {
+      "name": "sync_version",
+      "type": "int",
+      "order": 17,
+      "tag": "required"
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 18,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 19,
+      "tag": "required"
+    },
+    {
+      "name": "photo_storage_bucket",
+      "type": "string",
+      "order": 20
+    },
+    {
+      "name": "photo_storage_path",
+      "type": "string",
+      "order": 21
+    },
+    {
+      "name": "last_seen_location",
+      "type": "string",
+      "order": 22
+    }
+  ],
+  "indexes": []
+}

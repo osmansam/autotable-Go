@@ -63,6 +63,8 @@
   },
   "corsWhitelist": [
     "https://tenant.autoapi.org",
+    "https://fastdesign.autoapi.org",
+    "https://*.fastdesign.autoapi.org",
     "https://panel.autoapi.org",
     "https://bayi.davinciboardgame.com"
   ],

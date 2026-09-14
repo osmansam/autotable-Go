@@ -175,3 +175,26 @@ func TestResolveProjectCredentialSelectsCookieForRouteSlugs(t *testing.T) {
 		t.Fatalf("selected token = %q, want goblin-token", body)
 	}
 }
+
+func TestTrustedOriginWildcardSubdomains(t *testing.T) {
+	allowed := []string{"https://*.fastdesign.autoapi.org"}
+	for _, tt := range []struct {
+		origin string
+		want   bool
+	}{
+		{"https://one.fastdesign.autoapi.org", true},
+		{"https://one.two.fastdesign.autoapi.org", true},
+		{"https://fastdesign.autoapi.org", false},
+		{"https://evilfastdesign.autoapi.org", false},
+		{"https://one.fastdesign.autoapi.org.evil.com", false},
+		{"http://one.fastdesign.autoapi.org", false},
+		{"https://one.fastdesign.autoapi.org:444", false},
+		{"https://*.fastdesign.autoapi.org", false},
+		{"https://.fastdesign.autoapi.org", false},
+		{"https://one.fastdesign.autoapi.org/path", false},
+	} {
+		if got := IsTrustedOrigin(tt.origin, allowed); got != tt.want {
+			t.Errorf("%s: got %v want %v", tt.origin, got, tt.want)
+		}
+	}
+}

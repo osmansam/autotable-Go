@@ -652,6 +652,13 @@ func TestValidatePageTableConfigDateFormat(t *testing.T) {
 }
 
 func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
+	filterInputs := []ActionFormFieldConfig{{
+		FormKey:           "status",
+		Type:              "select",
+		Label:             "Status",
+		OptionsSource:     "static",
+		StaticOptionsJson: `[{"value":"active","label":"Active"}]`,
+	}}
 	validConfig := &RelationMatrixConfig{
 		RowSchemaName:        "product",
 		RowIDField:           "_id",
@@ -662,6 +669,7 @@ func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
 		TargetArrayField:     "products",
 		TargetItemMatchField: "product",
 		ColumnLimit:          100,
+		FilterPanel:          &TableFilterPanelConfig{Inputs: &filterInputs},
 		VisibilityToggle:     &ToggleBinding{ToggleID: "show-count-lists", When: true},
 		EditToggle:           &ToggleBinding{ToggleID: "edit-count-lists", When: true},
 	}
@@ -723,6 +731,29 @@ func TestRelationMatrixConfigRoundTripAndValidation(t *testing.T) {
 	}}}
 	if err := ValidatePageTableConfig(&tooMany); err == nil || !strings.Contains(err.Error(), "columnLimit") {
 		t.Fatalf("ValidatePageTableConfig() column limit error = %v", err)
+	}
+
+	invalidFilters := []struct {
+		name    string
+		input   ActionFormFieldConfig
+		wantErr string
+	}{
+		{name: "missing form key", input: ActionFormFieldConfig{Type: "text"}, wantErr: "relationMatrix filterPanel: filter input 0 requires formKey"},
+		{name: "missing type", input: ActionFormFieldConfig{FormKey: "status"}, wantErr: "relationMatrix filterPanel: filter input 'status' requires type"},
+	}
+	for _, test := range invalidFilters {
+		t.Run(test.name, func(t *testing.T) {
+			inputs := []ActionFormFieldConfig{test.input}
+			config := *validConfig
+			config.FilterPanel = &TableFilterPanelConfig{Inputs: &inputs}
+			invalidPage := page
+			invalidPage.Sections = []Section{{Type: SectionTypeComponent, Component: &ComponentBlock{
+				ID: "invalid-filter", Type: ComponentType("relationMatrix"), RelationMatrix: &config,
+			}}}
+			if err := ValidatePageTableConfig(&invalidPage); err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("ValidatePageTableConfig() filter error = %v, want containing %q", err, test.wantErr)
+			}
+		})
 	}
 }
 

@@ -1,0 +1,3367 @@
+{
+  "schema": "public",
+  "generated_for": "Miywo",
+  "tables": [
+    {
+      "name": "profiles",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "full_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "avatar_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "locale",
+          "type": "text",
+          "nullable": true,
+          "default": "'en-US'::text"
+        },
+        {
+          "name": "timezone",
+          "type": "text",
+          "nullable": true,
+          "default": "'America/New_York'::text"
+        },
+        {
+          "name": "is_guest",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "unit_system",
+          "type": "text",
+          "nullable": false,
+          "default": "'imperial'::text",
+          "check": "unit_system = ANY (ARRAY['imperial'::text, 'metric'::text])"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "id",
+          "references_table": "users",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "pets",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "species",
+          "type": "USER-DEFINED",
+          "nullable": false
+        },
+        {
+          "name": "breed",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sex",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'unknown'::pet_sex",
+          "enum_type": "pet_sex"
+        },
+        {
+          "name": "birth_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "adopted_at",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "weight_kg",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "length_cm",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "color",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "photo_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "chip_number",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "spayed_neutered",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "owner_user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "pet_members",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "role",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'caregiver'::membership_role",
+          "enum_type": "membership_role"
+        },
+        {
+          "name": "can_edit",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "invited_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "accepted_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        },
+        {
+          "column": "invited_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "vet_clinics",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "owner_user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "clinic_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "vet_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "address",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "city",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "country",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "owner_user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "pet_vet_links",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "clinic_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "is_primary",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "clinic_id",
+          "references_table": "vet_clinics",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "pet_documents",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "uploaded_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "document_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "storage_bucket",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "storage_path",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "mime_type",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "file_size_bytes",
+          "type": "bigint",
+          "nullable": true
+        },
+        {
+          "name": "visibility",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'private'::record_visibility",
+          "enum_type": "record_visibility"
+        },
+        {
+          "name": "captured_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "uploaded_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "medical_conditions",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "diagnosis",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "clinic_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "diagnosed_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "resolved_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "visibility",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'shared_with_caregivers'::record_visibility",
+          "enum_type": "record_visibility"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "clinic_id",
+          "references_table": "vet_clinics",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "allergies",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "allergen",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "severity",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'medium'::severity_level",
+          "enum_type": "severity_level"
+        },
+        {
+          "name": "reaction",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "vaccination_events",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "vaccine_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "brand_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "lot_number",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "administered_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "due_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "reminder_status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'upcoming'::reminder_status",
+          "enum_type": "reminder_status"
+        },
+        {
+          "name": "recurrence_interval_days",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "clinic_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "label_document_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "clinic_id",
+          "references_table": "vet_clinics",
+          "references_column": "id"
+        },
+        {
+          "column": "label_document_id",
+          "references_table": "pet_documents",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "parasite_treatments",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "treatment_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "product_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "administered_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "due_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "reminder_status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'upcoming'::reminder_status",
+          "enum_type": "reminder_status"
+        },
+        {
+          "name": "recurrence_interval_days",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "medications",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "form",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'other'::medication_form",
+          "enum_type": "medication_form"
+        },
+        {
+          "name": "dosage_text",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "frequency_text",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "refill_due_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "reminder_enabled",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "instructions",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "prescribed_by_clinic_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "prescribed_by_clinic_id",
+          "references_table": "vet_clinics",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "medication_schedules",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "medication_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "dose_time",
+          "type": "time without time zone",
+          "nullable": false
+        },
+        {
+          "name": "dose_amount",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "medication_id",
+          "references_table": "medications",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "medication_logs",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "medication_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "scheduled_for",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "taken_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'completed'::reminder_status",
+          "enum_type": "reminder_status"
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "medication_id",
+          "references_table": "medications",
+          "references_column": "id"
+        },
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "weight_logs",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "measured_on",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "weight_kg",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "length_cm",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "height_cm",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "hydration_logs",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "logged_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "amount_ml",
+          "type": "integer",
+          "nullable": false,
+          "check": "amount_ml > 0"
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "vet_appointments",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "clinic_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "appointment_at",
+          "type": "timestamp with time zone",
+          "nullable": false
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'scheduled'::appointment_status",
+          "enum_type": "appointment_status"
+        },
+        {
+          "name": "findings",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "prescription_notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "follow_up_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "clinic_id",
+          "references_table": "vet_clinics",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "food_products",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "barcode",
+          "type": "text",
+          "nullable": true,
+          "unique": true
+        },
+        {
+          "name": "brand",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "product_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "species",
+          "type": "USER-DEFINED",
+          "nullable": true
+        },
+        {
+          "name": "life_stage",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "protein_pct",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "fat_pct",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "fiber_pct",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "moisture_pct",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "kcal_per_100g",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "ingredients",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "allergens",
+          "type": "ARRAY",
+          "nullable": true
+        },
+        {
+          "name": "additives",
+          "type": "ARRAY",
+          "nullable": true
+        },
+        {
+          "name": "ai_score",
+          "type": "integer",
+          "nullable": true,
+          "check": "ai_score >= 0 AND ai_score <= 100"
+        },
+        {
+          "name": "ai_summary",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "nullable": false,
+          "default": "'ai'::text",
+          "check": "source = ANY (ARRAY['ai'::text, 'open_pet_food_facts'::text, 'manufacturer'::text, 'manual'::text, 'user_submitted'::text])"
+        },
+        {
+          "name": "verified",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        }
+      ],
+      "foreign_keys": []
+    },
+    {
+      "name": "food_scans",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "product_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "scanned_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "barcode",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "package_photo_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "ai_score",
+          "type": "integer",
+          "nullable": true,
+          "check": "ai_score >= 0 AND ai_score <= 100"
+        },
+        {
+          "name": "protein_quality_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "ingredient_quality_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "allergen_risk_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "additive_warning_score",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "suitability_summary",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "scanned_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "product_id",
+          "references_table": "food_products",
+          "references_column": "id"
+        },
+        {
+          "column": "scanned_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "feeding_plans",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "product_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "goal",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'maintain'::food_goal",
+          "enum_type": "food_goal"
+        },
+        {
+          "name": "activity",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'moderate'::activity_level",
+          "enum_type": "activity_level"
+        },
+        {
+          "name": "daily_calories",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "daily_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "morning_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "evening_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "snack_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "water_goal_ml",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "product_id",
+          "references_table": "food_products",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "food_inventory",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "product_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "label",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "quantity_grams_remaining",
+          "type": "integer",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "estimated_daily_usage_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "estimated_runout_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "auto_reorder_enabled",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "reorder_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "product_id",
+          "references_table": "food_products",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "walk_sessions",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "nullable": false
+        },
+        {
+          "name": "ended_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "duration_seconds",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "distance_meters",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "route_geojson",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "walk_events",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "walk_session_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "event_type",
+          "type": "USER-DEFINED",
+          "nullable": false
+        },
+        {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "lat",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "lng",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "walk_session_id",
+          "references_table": "walk_sessions",
+          "references_column": "id"
+        },
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "litter_box_logs",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "event_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "event_type",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "timeline_entries",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "entry_type",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'memory'::timeline_entry_type",
+          "enum_type": "timeline_entry_type"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "event_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "photo_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "ai_caption",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "lost_pet_alerts",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'active'::lost_alert_status",
+          "enum_type": "lost_alert_status"
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "nullable": false
+        },
+        {
+          "name": "last_seen_address",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "last_seen_lat",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "last_seen_lng",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "radius_km",
+          "type": "numeric",
+          "nullable": true,
+          "default": "5"
+        },
+        {
+          "name": "contact_phone",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "contact_note",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "reward_text",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "found_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "photo_storage_bucket",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "photo_storage_path",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "last_seen_location",
+          "type": "USER-DEFINED",
+          "nullable": true
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "lost_pet_sightings",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "alert_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "reported_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "sighted_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "lat",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "lng",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "photo_url",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "location",
+          "type": "USER-DEFINED",
+          "nullable": true
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "alert_id",
+          "references_table": "lost_pet_alerts",
+          "references_column": "id"
+        },
+        {
+          "column": "reported_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "expenses",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "category",
+          "type": "USER-DEFINED",
+          "nullable": false
+        },
+        {
+          "name": "amount",
+          "type": "numeric",
+          "nullable": false,
+          "check": "amount >= 0::numeric"
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "nullable": false,
+          "default": "'USD'::text"
+        },
+        {
+          "name": "expense_date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "receipt_document_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "receipt_document_id",
+          "references_table": "pet_documents",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "insurance_policies",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "provider_name",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "policy_number",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "coverage_start",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "coverage_end",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "premium_amount",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "nullable": false,
+          "default": "'USD'::text"
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "created_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "user_notification_settings",
+      "primary_key": [
+        "user_id"
+      ],
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "vaccine_reminders",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "medication_reminders",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "hydration_reminders",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "litter_reminders",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "food_stock_alerts",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "lost_pet_alerts",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "community_alerts",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "vet_updates",
+          "type": "boolean",
+          "nullable": false,
+          "default": "true"
+        },
+        {
+          "name": "quiet_hours_start",
+          "type": "time without time zone",
+          "nullable": true
+        },
+        {
+          "name": "quiet_hours_end",
+          "type": "time without time zone",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "ai_pet_reports",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "report_period_start",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "report_period_end",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "health_score",
+          "type": "integer",
+          "nullable": true,
+          "check": "health_score >= 0 AND health_score <= 100"
+        },
+        {
+          "name": "summary_text",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "concerns",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "recommendations",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "generated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "spatial_ref_sys",
+      "primary_key": [
+        "srid"
+      ],
+      "columns": [
+        {
+          "name": "srid",
+          "type": "integer",
+          "nullable": false,
+          "check": "srid > 0 AND srid <= 998999"
+        },
+        {
+          "name": "auth_name",
+          "type": "character varying",
+          "nullable": true
+        },
+        {
+          "name": "auth_srid",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "srtext",
+          "type": "character varying",
+          "nullable": true
+        },
+        {
+          "name": "proj4text",
+          "type": "character varying",
+          "nullable": true
+        }
+      ],
+      "foreign_keys": []
+    },
+    {
+      "name": "subscriptions",
+      "primary_key": [
+        "user_id"
+      ],
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'trial'::subscription_status",
+          "enum_type": "subscription_status"
+        },
+        {
+          "name": "product_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "platform",
+          "type": "text",
+          "nullable": true,
+          "check": "platform = ANY (ARRAY['app_store'::text, 'play_store'::text])"
+        },
+        {
+          "name": "adapty_profile_id",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "trial_ends_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "auto_renew",
+          "type": "boolean",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "user_devices",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "fcm_token",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "platform",
+          "type": "text",
+          "nullable": true,
+          "check": "platform = ANY (ARRAY['ios'::text, 'android'::text])"
+        },
+        {
+          "name": "app_version",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "scheduled_notifications",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "source_table",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "source_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "notify_at",
+          "type": "timestamp with time zone",
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": true
+        },
+        {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "error",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        },
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "pet_invites",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "invited_by",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "invite_code",
+          "type": "text",
+          "nullable": false,
+          "default": "encode(gen_random_bytes(6), 'hex'::text)",
+          "unique": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "nullable": false,
+          "default": "'caregiver'::text"
+        },
+        {
+          "name": "can_edit",
+          "type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "(now() + '7 days'::interval)"
+        },
+        {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "nullable": true
+        },
+        {
+          "name": "used_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "invited_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        },
+        {
+          "column": "used_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "care_events",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "event_type",
+          "type": "USER-DEFINED",
+          "nullable": false
+        },
+        {
+          "name": "performed_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "due_on",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "recurrence_interval_days",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "cost",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "nullable": true,
+          "default": "'USD'::text"
+        },
+        {
+          "name": "vendor_name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "feeding_logs",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "pet_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "fed_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "meal_type",
+          "type": "USER-DEFINED",
+          "nullable": false,
+          "default": "'other'::meal_type",
+          "enum_type": "meal_type"
+        },
+        {
+          "name": "amount_grams",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "product_id",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "logged_by",
+          "type": "uuid",
+          "nullable": true
+        },
+        {
+          "name": "client_updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "sync_version",
+          "type": "bigint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "pet_id",
+          "references_table": "pets",
+          "references_column": "id"
+        },
+        {
+          "column": "product_id",
+          "references_table": "food_products",
+          "references_column": "id"
+        },
+        {
+          "column": "logged_by",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    },
+    {
+      "name": "ai_usage",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false
+        },
+        {
+          "name": "feature",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "model",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "input_tokens",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "output_tokens",
+          "type": "integer",
+          "nullable": true
+        },
+        {
+          "name": "cost_usd",
+          "type": "numeric",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": false,
+          "default": "now()"
+        }
+      ],
+      "foreign_keys": [
+        {
+          "column": "user_id",
+          "references_table": "profiles",
+          "references_column": "id"
+        }
+      ]
+    }
+  ]
+}

@@ -341,9 +341,6 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context. Please ensure you are authenticated and have switched to a project.")
 	}
 
-	// Get project-specific container collection
-	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-
 	var container models.ContainerModel
 
 	log.Println("Parsing request body for CreateContainer")
@@ -352,37 +349,54 @@ func CreateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Failed to parse the request body. Ensure the provided JSON is valid.")
 	}
 
+	result, err := createContainerForProject(ctx, container, tenantID, projectID)
+	if err != nil {
+		return utils.SendErrorResponse(c, err, err.Error())
+	}
+	userIDStr, _ := c.Locals("userID").(string)
+	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
+		Status:  http.StatusCreated,
+		Message: "Container successfully created.",
+		Data:    &fiber.Map{"data": result},
+	})
+}
+
+// createContainerForProject shares validation, indexes and invalidation between
+// single creation and the development bulk importer.
+func createContainerForProject(ctx context.Context, container models.ContainerModel, tenantID, projectID string) (*mongo.InsertOneResult, error) {
 	log.Println("Validating parsed data for CreateContainer")
 	if validationErr := validate.Struct(&container); validationErr != nil {
 		log.Printf("Validation error: %v", validationErr)
-		return utils.SendErrorResponse(c, validationErr, "Validation error. Some required fields might be missing or have invalid values.")
+		return nil, containerCreationFailure(validationErr, "Validation error. Some required fields might be missing or have invalid values.")
 	}
 	if validationErr := models.ValidateContainerFrontendConfig(&container); validationErr != nil {
 		log.Printf("Frontend config validation error: %v", validationErr)
-		return utils.SendErrorResponse(c, validationErr, "Validation error. Frontend configuration contains invalid values.")
+		return nil, containerCreationFailure(validationErr, "Validation error. Frontend configuration contains invalid values.")
 	}
 	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&container); validationErr != nil {
 		log.Printf("Auth container Google login validation error: %v", validationErr)
-		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
+		return nil, containerCreationFailure(validationErr, validationErr.Error())
 	}
 
 	// Check if the schema name is in the restricted schema names list
 	for _, restrictedName := range models.RestrictedSchemaNames {
 		if container.SchemaName == restrictedName {
 			log.Println("Schema name is restricted and cannot be used")
-			return utils.SendErrorResponse(c, nil, "The specified schema name is restricted and cannot be used.")
+			return nil, containerCreationFailure(nil, "The specified schema name is restricted and cannot be used.")
 		}
 	}
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 	log.Println("Checking if container already exists in the database")
 	count, err := containerCollection.CountDocuments(ctx, bson.M{"schemaName": container.SchemaName})
 	if err != nil {
 		log.Printf("Database query error: %v", err)
-		return utils.SendErrorResponse(c, err, "Unable to query the container model from the database.")
+		return nil, containerCreationFailure(err, "Unable to query the container model from the database.")
 	}
 
 	if count != 0 {
 		log.Println("Container already exists in the database")
-		return &fiber.Error{
+		return nil, &fiber.Error{
 			Code:    http.StatusNotFound,
 			Message: "The specified schema already exists in containers",
 		}
@@ -395,24 +409,24 @@ func CreateContainer(c *fiber.Ctx) error {
 		authCount, err := containerCollection.CountDocuments(ctx, bson.M{"isAuthContainer": true})
 		if err != nil {
 			log.Printf("Database error when checking for existing auth container: %v", err)
-			return utils.SendErrorResponse(c, err, "Database error while checking for existing auth container.")
+			return nil, containerCreationFailure(err, "Database error while checking for existing auth container.")
 		}
 		if authCount > 0 {
 			log.Println("Another auth container already exists")
-			return utils.SendErrorResponse(c, nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
+			return nil, containerCreationFailure(nil, "Only one container can have isAuthContainer set to true. An auth container already exists.")
 		}
 
 		// Ensure role schema exists when creating an auth container
 		if err := ensureRoleSchemaExists(ctx, containerCollection); err != nil {
 			log.Printf("Failed to ensure role schema exists: %v", err)
-			return utils.SendErrorResponse(c, err, "Failed to create role schema.")
+			return nil, containerCreationFailure(err, "Failed to create role schema.")
 		}
 	}
 
 	referencedIDs, err := validateObjectReferences(ctx, containerCollection, container, primitive.NilObjectID)
 	if err != nil {
 		log.Printf("Invalid object reference in CreateContainer: %v", err)
-		return utils.SendErrorResponse(c, err, err.Error())
+		return nil, containerCreationFailure(err, err.Error())
 	}
 
 	newContainer := models.ContainerModel{
@@ -432,36 +446,35 @@ func CreateContainer(c *fiber.Ctx) error {
 
 	if err := utils.EnsureIndexes(ctx, &newContainer, tenantID, projectID); err != nil {
 		log.Printf("Failed to create indexes for schema %s: %v", newContainer.SchemaName, err)
-		return utils.SendErrorResponse(c, err, "Failed to apply database indexes for the container.")
+		return nil, containerCreationFailure(err, "Failed to apply database indexes for the container.")
 	}
 
 	log.Println("Inserting new container into the database")
 	result, err := containerCollection.InsertOne(ctx, newContainer)
 	if err != nil {
 		log.Printf("Failed to insert container: %v", err)
-		return utils.SendErrorResponse(c, err, "Failed to insert the container into the database. Please try again later.")
+		return nil, containerCreationFailure(err, "Failed to insert the container into the database. Please try again later.")
 	}
 
 	referencedContainerIDs, err := syncReferencedInvalidations(ctx, containerCollection, models.ContainerModel{}, newContainer, referencedIDs)
 	if err != nil {
 		log.Printf("Failed to update referenced container invalidation settings: %v", err)
-		return utils.SendErrorResponse(c, err, "Container created but failed to update referenced container invalidation settings.")
+		return result, containerCreationFailure(err, "Container created but failed to update referenced container invalidation settings.")
 	}
 
 	// Invalidate Redis cache for all containers (project-specific)
 	_ = configs.RedisDelKeys(ctx, containerCacheKeys(tenantID, projectID, referencedContainerIDs)...)
 	log.Println("Invalidated containers cache after creation")
 
-	// Emit WebSocket event for container change
-	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+	return result, nil
+}
 
-	log.Println("Container successfully created")
-	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
-		Status:  http.StatusCreated,
-		Message: "Container successfully created.",
-		Data:    &fiber.Map{"data": result},
-	})
+func containerCreationFailure(err error, message string) error {
+	normalized := utils.NormalizeErrorResponse(err, message)
+	if normalized.Quiet {
+		return err
+	}
+	return fiber.NewError(normalized.Status, normalized.Message)
 }
 
 // GetAllContainers retrieves all containers from the database

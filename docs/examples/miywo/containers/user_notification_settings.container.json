@@ -1,0 +1,181 @@
+{
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "schemaName": "user_notification_settings",
+  "fields": [
+    {
+      "name": "user_id",
+      "type": "string",
+      "order": 1,
+      "tag": "required"
+    },
+    {
+      "name": "vaccine_reminders",
+      "type": "bool",
+      "order": 2,
+      "tag": "required"
+    },
+    {
+      "name": "medication_reminders",
+      "type": "bool",
+      "order": 3,
+      "tag": "required"
+    },
+    {
+      "name": "hydration_reminders",
+      "type": "bool",
+      "order": 4,
+      "tag": "required"
+    },
+    {
+      "name": "litter_reminders",
+      "type": "bool",
+      "order": 5,
+      "tag": "required"
+    },
+    {
+      "name": "food_stock_alerts",
+      "type": "bool",
+      "order": 6,
+      "tag": "required"
+    },
+    {
+      "name": "lost_pet_alerts",
+      "type": "bool",
+      "order": 7,
+      "tag": "required"
+    },
+    {
+      "name": "community_alerts",
+      "type": "bool",
+      "order": 8,
+      "tag": "required"
+    },
+    {
+      "name": "vet_updates",
+      "type": "bool",
+      "order": 9,
+      "tag": "required"
+    },
+    {
+      "name": "quiet_hours_start",
+      "type": "string",
+      "order": 10
+    },
+    {
+      "name": "quiet_hours_end",
+      "type": "string",
+      "order": 11
+    },
+    {
+      "name": "created_at",
+      "type": "string",
+      "order": 12,
+      "tag": "required"
+    },
+    {
+      "name": "updated_at",
+      "type": "string",
+      "order": 13,
+      "tag": "required"
+    }
+  ],
+  "indexes": []
+}

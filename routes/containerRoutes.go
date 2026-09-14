@@ -8,8 +8,16 @@ import (
 )
 
 // ContainerRoutes sets up all container management routes
-// These routes require tenant authentication and project scope
+// Management routes require tenant authentication; the development bulk importer is public.
 func ContainerRoutes(baseUrl string, app *fiber.App) {
+	// Development-only public importer: remove this registration after use.
+	// Register before the authenticated group so no token is required.
+	app.Post(baseUrl+"/create-multiple",
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.CreateMultipleContainers,
+	)
+
 	// All container routes require tenant authentication and project scope
 	app.Get(baseUrl, middlewares.TenantAuthenticate, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllContainers)
 	containerGroup := app.Group(baseUrl)

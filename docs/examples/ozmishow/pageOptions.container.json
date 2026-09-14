@@ -1,0 +1,162 @@
+{
+  "schemaName": "pageOptions",
+  "fields": [
+    {
+      "name": "pageNameEN",
+      "type": "string",
+      "tag": "required",
+      "unique": true,
+      "isSearchable": true,
+      "order": 1
+    },
+    {
+      "name": "pageNameTR",
+      "type": "string",
+      "tag": "required",
+      "isSearchable": true,
+      "order": 2
+    },
+    {
+      "name": "isNavbar",
+      "type": "bool",
+      "order": 3
+    },
+    {
+      "name": "isSubpage",
+      "type": "bool",
+      "order": 4
+    },
+    {
+      "name": "isSectionPage",
+      "type": "bool",
+      "order": 5
+    },
+    {
+      "name": "hasSubpage",
+      "type": "bool",
+      "order": 6
+    },
+    {
+      "name": "motherPageEN",
+      "type": "string",
+      "order": 7
+    },
+    {
+      "name": "motherPageTR",
+      "type": "string",
+      "order": 8
+    },
+    {
+      "name": "sectionPageType",
+      "type": "string",
+      "order": 9
+    },
+    {
+      "name": "sections",
+      "type": "stringArray",
+      "order": 10
+    },
+    {
+      "name": "pageStyle",
+      "type": "object",
+      "order": 11
+    },
+    {
+      "name": "metadata",
+      "type": "object",
+      "order": 12
+    }
+  ],
+  "routes": {
+    "getAllDynamicModelItems": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getAllDynamicModelItemsWithPagination": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "handleFilterDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "handleSearchDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "getItemsForSelection": {
+      "isActive": true,
+      "isAuthenticated": false,
+      "isAuthorized": false,
+      "authorizeRole": [],
+      "method": "GET"
+    },
+    "createDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "POST"
+    },
+    "updateDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "PATCH"
+    },
+    "deleteDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "DELETE"
+    },
+    "updateMultipleDynamicModelItem": {
+      "isActive": true,
+      "isAuthenticated": true,
+      "isAuthorized": true,
+      "authorizeRole": [
+        "admin",
+        "superAdmin"
+      ],
+      "method": "PATCH"
+    }
+  },
+  "isAuthContainer": false,
+  "isRegisterActive": false,
+  "isGoogleLoginActive": false,
+  "populatedRoutes": [],
+  "pipelines": [],
+  "dynamicFunctions": [],
+  "dynamicApis": [],
+  "indexes": []
+}
