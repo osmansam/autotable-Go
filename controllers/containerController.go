@@ -737,8 +737,8 @@ func UpdateContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, err.Error())
 	}
 
-	if err := utils.RebuildIndexes(ctx, &updatedContainer, tenantID, projectID); err != nil {
-		log.Printf("Failed to rebuild indexes for schema %s: %v", updatedContainer.SchemaName, err)
+	if err := utils.SyncContainerIndexes(ctx, &existingContainer, &updatedContainer, tenantID, projectID); err != nil {
+		log.Printf("Failed to synchronize indexes for schema %s: %v", updatedContainer.SchemaName, err)
 		return utils.SendErrorResponse(c, err, "Failed to apply database indexes for the container.")
 	}
 
