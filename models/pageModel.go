@@ -431,6 +431,7 @@ type FormItemCalculationConfig struct {
 	TargetField         string                           `bson:"targetField" json:"targetField"`
 	MinimumQuantity     *float64                         `bson:"minimumQuantity,omitempty" json:"minimumQuantity,omitempty"`
 	DiscountPercentage  *float64                         `bson:"discountPercentage,omitempty" json:"discountPercentage,omitempty"`
+	DiscountMessage     string                           `bson:"discountMessage,omitempty" json:"discountMessage,omitempty"`
 	DiscountTiers       []FormQuantityDiscountTierConfig `bson:"discountTiers,omitempty" json:"discountTiers,omitempty"`
 	Precision           *int                             `bson:"precision,omitempty" json:"precision,omitempty"`
 }
