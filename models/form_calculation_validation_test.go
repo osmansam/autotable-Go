@@ -216,3 +216,30 @@ func TestValidateFormCalculationConfigAllowsQualifiedAdditionalOptionInput(t *te
 		t.Fatalf("ValidateFormComponentConfig() error = %v, want nil", err)
 	}
 }
+
+func TestDiscountMessagePersistence(t *testing.T) {
+	raw := []byte(`{"operation":"quantityDiscount","discountMessage":"%{{discountPercentage}} indirim için {{missingQuantity}} ürün daha ekleyin"}`)
+	var calculation FormItemCalculationConfig
+	if err := json.Unmarshal(raw, &calculation); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := bson.Marshal(calculation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored FormItemCalculationConfig
+	if err := bson.Unmarshal(stored, &restored); err != nil {
+		t.Fatal(err)
+	}
+	output, err := json.Marshal(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["discountMessage"] != "%{{discountPercentage}} indirim için {{missingQuantity}} ürün daha ekleyin" {
+		t.Fatalf("message lost during persistence: %s", output)
+	}
+}
