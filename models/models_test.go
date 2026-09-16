@@ -1601,3 +1601,55 @@ func TestFrontendLinkExamplesAreValid(t *testing.T) {
 func ptrContainer(container ContainerModel) *ContainerModel {
 	return &container
 }
+
+func TestPageFilterLanguagePersistence(t *testing.T) {
+	var filter PageFilterDefinition
+	if err := json.Unmarshal([]byte(`{"id":"month","type":"monthYear","language":"tr"}`), &filter); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := bson.Marshal(filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored PageFilterDefinition
+	if err := bson.Unmarshal(stored, &restored); err != nil {
+		t.Fatal(err)
+	}
+	output, err := json.Marshal(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["language"] != "tr" {
+		t.Fatalf("language lost: %s", output)
+	}
+}
+
+func TestTableLabelsPersistence(t *testing.T) {
+	var table TableComponentConfig
+	if err := json.Unmarshal([]byte(`{"actionsColumnLabel":"İşlemler","searchPlaceholder":"Ara"}`), &table); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := bson.Marshal(table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored TableComponentConfig
+	if err := bson.Unmarshal(stored, &restored); err != nil {
+		t.Fatal(err)
+	}
+	output, err := json.Marshal(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["actionsColumnLabel"] != "İşlemler" || result["searchPlaceholder"] != "Ara" {
+		t.Fatalf("labels lost: %s", output)
+	}
+}

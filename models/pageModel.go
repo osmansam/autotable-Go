@@ -68,6 +68,7 @@ const (
 )
 
 type PageFilterDefinition struct {
+	Language           string                       `bson:"language,omitempty" json:"language,omitempty"`
 	ID                 string                       `bson:"id" json:"id"`
 	Key                string                       `bson:"key" json:"key"`
 	Label              string                       `bson:"label" json:"label"`
@@ -312,6 +313,8 @@ type TableDragConfig struct {
 
 // TableComponentConfig keeps table-specific configuration on page table components.
 type TableComponentConfig struct {
+	ActionsColumnLabel       string                           `bson:"actionsColumnLabel,omitempty" json:"actionsColumnLabel,omitempty"`
+	SearchPlaceholder        string                           `bson:"searchPlaceholder,omitempty" json:"searchPlaceholder,omitempty"`
 	DataMode                 string                           `bson:"dataMode,omitempty" json:"dataMode,omitempty"`
 	EnableSearch             *bool                            `bson:"enableSearch,omitempty" json:"enableSearch,omitempty"`
 	Columns                  []TableColumnConfig              `bson:"columns,omitempty" json:"columns,omitempty"`
