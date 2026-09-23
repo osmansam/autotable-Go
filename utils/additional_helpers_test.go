@@ -74,6 +74,7 @@ func TestReplacePlaceholdersWithProjectContext(t *testing.T) {
 func TestBuildFilterFromQuery(t *testing.T) {
 	container := &models.ContainerModel{Fields: []models.Field{
 		{Name: "age", Type: "int"},
+		{Name: "radius_km", Type: "float"},
 		{Name: "email", Type: "string"},
 		{Name: "password", Type: "string", IsHashed: true},
 	}}
@@ -86,6 +87,7 @@ func TestBuildFilterFromQuery(t *testing.T) {
 		{name: "single value", path: "/?age=42&email=a%40example.com&password=hidden", want: bson.M{"age": 42, "email": "a@example.com"}},
 		{name: "multiple simple values", path: "/?age=1&age=2", want: bson.M{"age": bson.M{"$in": []interface{}{1, 2}}}},
 		{name: "range", path: "/?age=gte-10&age=lt-20", want: bson.M{"age": bson.M{"$gte": 10, "$lt": 20}}},
+		{name: "float range", path: "/?radius_km=gte-3.5&radius_km=lte-10", want: bson.M{"radius_km": bson.M{"$gte": 3.5, "$lte": float64(10)}}},
 		{name: "wraparound range becomes or", path: "/?age=gte-20&age=lte-10", want: bson.M{"$or": []bson.M{{"age": bson.M{"$lte": 10}}, {"age": bson.M{"$gte": 20}}}}},
 		{name: "invalid int", path: "/?age=bad", wantErr: true},
 	}

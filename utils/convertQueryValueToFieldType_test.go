@@ -214,3 +214,31 @@ func TestConvertQueryValueToFieldType_IntegerList(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertQueryValueToFieldType_FloatingPoint(t *testing.T) {
+	tests := []struct {
+		name       string
+		fieldType  string
+		queryValue string
+		want       interface{}
+		wantErr    bool
+	}{
+		{name: "float exact value", fieldType: "float", queryValue: "3.5", want: 3.5},
+		{name: "double comparison", fieldType: "double", queryValue: "gte-3.25", want: bson.M{"$gte": 3.25}},
+		{name: "float equality operator", fieldType: "float", queryValue: "eq-3", want: bson.M{"$eq": float64(3)}},
+		{name: "double list", fieldType: "double", queryValue: "1.5,2,3.25", want: bson.M{"$in": []float64{1.5, 2, 3.25}}},
+		{name: "invalid float", fieldType: "float", queryValue: "gte-three", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConvertQueryValueToFieldType("radius_km", tt.fieldType, tt.queryValue)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ConvertQueryValueToFieldType() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("ConvertQueryValueToFieldType() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}

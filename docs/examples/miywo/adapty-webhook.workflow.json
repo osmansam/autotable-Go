@@ -1,0 +1,337 @@
+{
+  "id": "adapty-webhook-v1",
+  "name": "adapty",
+  "version": 1,
+  "trigger": "manual",
+  "mode": "transactional",
+  "isActive": true,
+  "isAuthenticated": false,
+  "isAuthorized": false,
+  "authorizeRole": [],
+  "description": "Receives normalized Adapty subscription events. The external integration validates Authorization and converts timestamps to RFC3339 before execution.",
+  "stopOnError": true,
+  "timeoutSec": 8,
+  "steps": [
+    {
+      "id": "validate-required-fields",
+      "name": "validate_required_fields",
+      "type": "if",
+      "order": 1,
+      "isActive": true,
+      "conditions": [
+        {
+          "operator": "or",
+          "conditions": [
+            { "field": "record.event_type", "operator": "is_empty" },
+            { "field": "record.event_datetime", "operator": "is_empty" }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "name": "invalid_payload",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": { "status": 400, "message": "event_type and event_datetime are required" }
+        }
+      ]
+    },
+    {
+      "id": "ignore-sandbox",
+      "name": "ignore_sandbox",
+      "type": "if",
+      "order": 2,
+      "isActive": true,
+      "conditions": [
+        { "field": "record.event_properties.environment", "operator": "=", "value": "Sandbox" }
+      ],
+      "steps": [
+        {
+          "name": "audit_sandbox_event",
+          "type": "audit_log",
+          "order": 1,
+          "isActive": true,
+          "config": { "action": "adapty_webhook_sandbox_ignored" }
+        },
+        {
+          "name": "return_sandbox_ok",
+          "type": "return",
+          "order": 2,
+          "isActive": true,
+          "config": { "value": { "ok": true, "ignored": "sandbox" } }
+        }
+      ]
+    },
+    {
+      "id": "find-subscription",
+      "name": "find_subscription",
+      "type": "find_records",
+      "order": 3,
+      "isActive": true,
+      "targetSchema": "subscriptions",
+      "config": {
+        "filter": {
+          "$or": [
+            { "user_id": "{{record.customer_user_id}}" },
+            { "adapty_profile_id": "{{record.profile_id}}" }
+          ]
+        },
+        "limit": 1,
+        "applyRowAccess": false
+      }
+    },
+    {
+      "id": "ignore-old-event",
+      "name": "ignore_old_event",
+      "type": "if",
+      "order": 4,
+      "isActive": true,
+      "conditions": [
+        {
+          "operator": "and",
+          "conditions": [
+            { "field": "steps.find_subscription.count", "operator": ">", "value": 0 },
+            { "field": "steps.find_subscription.items.0.updated_at", "operator": ">=", "value": "{{record.event_datetime}}" }
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "name": "return_old_event_ok",
+          "type": "return",
+          "order": 1,
+          "isActive": true,
+          "config": { "value": { "ok": true, "ignored": "stale_or_duplicate" } }
+        }
+      ]
+    },
+    {
+      "id": "normalize-event-values",
+      "name": "normalize_event_values",
+      "type": "set_variable",
+      "order": 5,
+      "isActive": true,
+      "config": {
+        "values": {
+          "expires_at": "{{default(record.event_properties.expires_at,record.event_properties.subscription_expires_at)}}",
+          "product_id": "{{default(record.event_properties.vendor_product_id,steps.find_subscription.items.0.product_id)}}",
+          "platform": "{{default(record.event_properties.store,steps.find_subscription.items.0.platform)}}",
+          "user_id": "{{default(record.customer_user_id,steps.find_subscription.items.0.user_id)}}",
+          "adapty_profile_id": "{{default(record.profile_id,steps.find_subscription.items.0.adapty_profile_id)}}"
+        }
+      }
+    },
+    {
+      "id": "map-event",
+      "name": "map_event",
+      "type": "if",
+      "order": 6,
+      "isActive": true,
+      "branches": [
+        {
+          "name": "trial_started",
+          "conditions": [{ "field": "record.event_type", "operator": "=", "value": "trial_started" }],
+          "steps": [{
+            "name": "map_trial_started", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": true, "status": "trial", "auto_renew": true, "trial_ends_at": "{{vars.expires_at}}" } }
+          }]
+        },
+        {
+          "name": "active",
+          "conditions": [{ "field": "record.event_type", "operator": "in", "value": ["trial_converted", "subscription_started", "subscription_renewed"] }],
+          "steps": [{
+            "name": "map_active", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": true, "status": "active", "auto_renew": true } }
+          }]
+        },
+        {
+          "name": "renewal_cancelled",
+          "conditions": [{ "field": "record.event_type", "operator": "in", "value": ["subscription_renewal_cancelled", "trial_renewal_cancelled"] }],
+          "steps": [{
+            "name": "map_renewal_cancelled", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": false, "auto_renew": false } }
+          }]
+        },
+        {
+          "name": "renewal_reactivated",
+          "conditions": [{ "field": "record.event_type", "operator": "in", "value": ["subscription_renewal_reactivated", "trial_renewal_reactivated"] }],
+          "steps": [{
+            "name": "map_renewal_reactivated", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": false, "auto_renew": true } }
+          }]
+        },
+        {
+          "name": "grace_period",
+          "conditions": [{ "field": "record.event_type", "operator": "in", "value": ["entered_grace_period", "billing_issue_detected"] }],
+          "steps": [{
+            "name": "map_grace_period", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": true, "status": "grace_period", "auto_renew": true } }
+          }]
+        },
+        {
+          "name": "expired",
+          "conditions": [{ "field": "record.event_type", "operator": "in", "value": ["subscription_expired", "trial_expired", "subscription_paused"] }],
+          "steps": [{
+            "name": "map_expired", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": true, "status": "expired", "auto_renew": false } }
+          }]
+        },
+        {
+          "name": "refunded",
+          "conditions": [{ "field": "record.event_type", "operator": "=", "value": "subscription_refunded" }],
+          "steps": [{
+            "name": "map_refunded", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": true, "changes_status": true, "status": "cancelled", "auto_renew": false } }
+          }]
+        },
+        {
+          "name": "unknown",
+          "steps": [{
+            "name": "map_unknown", "type": "set_variable", "order": 1, "isActive": true,
+            "config": { "values": { "recognized": false } }
+          }]
+        }
+      ]
+    },
+    {
+      "id": "ignore-unknown",
+      "name": "ignore_unknown",
+      "type": "if",
+      "order": 7,
+      "isActive": true,
+      "conditions": [{ "field": "vars.recognized", "operator": "!=", "value": true }],
+      "steps": [
+        {
+          "name": "audit_unknown_event",
+          "type": "audit_log",
+          "order": 1,
+          "isActive": true,
+          "config": { "action": "adapty_webhook_unknown_event_ignored" }
+        },
+        {
+          "name": "return_unknown_ok",
+          "type": "return",
+          "order": 2,
+          "isActive": true,
+          "config": { "value": { "ok": true, "ignored": "unknown_event" } }
+        }
+      ]
+    },
+    {
+      "id": "ignore-unmatched-anonymous",
+      "name": "ignore_unmatched_anonymous",
+      "type": "if",
+      "order": 8,
+      "isActive": true,
+      "conditions": [{
+        "operator": "and",
+        "conditions": [
+          { "field": "steps.find_subscription.count", "operator": "=", "value": 0 },
+          { "field": "record.customer_user_id", "operator": "is_empty" }
+        ]
+      }],
+      "steps": [
+        {
+          "name": "audit_unmatched_anonymous",
+          "type": "audit_log",
+          "order": 1,
+          "isActive": true,
+          "config": { "action": "adapty_webhook_unmatched_anonymous_ignored" }
+        },
+        {
+          "name": "return_anonymous_ok",
+          "type": "return",
+          "order": 2,
+          "isActive": true,
+          "config": { "value": { "ok": true, "ignored": "unmatched_anonymous" } }
+        }
+      ]
+    },
+    {
+      "id": "ignore-state-only-without-row",
+      "name": "ignore_state_only_without_row",
+      "type": "if",
+      "order": 9,
+      "isActive": true,
+      "conditions": [{
+        "operator": "and",
+        "conditions": [
+          { "field": "steps.find_subscription.count", "operator": "=", "value": 0 },
+          { "field": "vars.changes_status", "operator": "=", "value": false }
+        ]
+      }],
+      "steps": [{
+        "name": "return_state_only_ok",
+        "type": "return",
+        "order": 1,
+        "isActive": true,
+        "config": { "value": { "ok": true, "ignored": "no_existing_subscription" } }
+      }]
+    },
+    {
+      "id": "update-existing",
+      "name": "update_existing",
+      "type": "if",
+      "order": 10,
+      "isActive": true,
+      "conditions": [{ "field": "steps.find_subscription.count", "operator": ">", "value": 0 }],
+      "steps": [{
+        "name": "update_subscription",
+        "type": "update_record",
+        "order": 1,
+        "isActive": true,
+        "targetSchema": "subscriptions",
+        "config": {
+          "filter": { "_id": "{{steps.find_subscription.items.0._id}}" },
+          "update": { "$set": {
+            "user_id": "{{vars.user_id}}",
+            "adapty_profile_id": "{{vars.adapty_profile_id}}",
+            "status": "{{default(vars.status,steps.find_subscription.items.0.status)}}",
+            "product_id": "{{vars.product_id}}",
+            "platform": "{{vars.platform}}",
+            "expires_at": "{{default(vars.expires_at,steps.find_subscription.items.0.expires_at)}}",
+            "trial_ends_at": "{{default(vars.trial_ends_at,steps.find_subscription.items.0.trial_ends_at)}}",
+            "auto_renew": "{{vars.auto_renew}}",
+            "updated_at": "{{record.event_datetime}}"
+          }}
+        }
+      }]
+    },
+    {
+      "id": "create-new",
+      "name": "create_new",
+      "type": "if",
+      "order": 11,
+      "isActive": true,
+      "conditions": [{ "field": "steps.find_subscription.count", "operator": "=", "value": 0 }],
+      "steps": [{
+        "name": "create_subscription",
+        "type": "create_record",
+        "order": 1,
+        "isActive": true,
+        "targetSchema": "subscriptions",
+        "config": { "document": {
+          "user_id": "{{vars.user_id}}",
+          "adapty_profile_id": "{{vars.adapty_profile_id}}",
+          "status": "{{vars.status}}",
+          "product_id": "{{vars.product_id}}",
+          "platform": "{{vars.platform}}",
+          "expires_at": "{{vars.expires_at}}",
+          "trial_ends_at": "{{vars.trial_ends_at}}",
+          "auto_renew": "{{vars.auto_renew}}",
+          "created_at": "{{record.event_datetime}}",
+          "updated_at": "{{record.event_datetime}}"
+        }}
+      }]
+    },
+    {
+      "id": "return-success",
+      "name": "return_success",
+      "type": "return",
+      "order": 12,
+      "isActive": true,
+      "config": { "value": { "ok": true } }
+    }
+  ]
+}
