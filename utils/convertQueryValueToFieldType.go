@@ -76,6 +76,22 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 		}
 	}
 
+	// Handle floating-point filters with comparison operators.
+	if fieldType == "float" || fieldType == "double" {
+		filter := bson.M{}
+		for prefix, mongoOp := range operators {
+			if strings.HasPrefix(queryValue, prefix) {
+				floatStr := strings.TrimPrefix(queryValue, prefix)
+				floatValue, err := strconv.ParseFloat(floatStr, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid floating-point filter for field %s: %w", fieldName, err)
+				}
+				filter[mongoOp] = floatValue
+				return filter, nil
+			}
+		}
+	}
+
 	// Handle multiple values (comma-separated lists) - Only for non-date types
 	if strings.Contains(queryValue, ",") {
 		values := strings.Split(queryValue, ",")
@@ -90,6 +106,16 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 				intValues = append(intValues, intValue)
 			}
 			return bson.M{"$in": intValues}, nil
+		case "float", "double":
+			floatValues := make([]float64, 0, len(values))
+			for _, v := range values {
+				floatValue, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid floating-point value in list for field %s: %w", fieldName, err)
+				}
+				floatValues = append(floatValues, floatValue)
+			}
+			return bson.M{"$in": floatValues}, nil
 		case "string", "enum":
 			var strValues []string
 			for _, v := range values {
@@ -142,6 +168,12 @@ func ConvertQueryValueToFieldType(fieldName, fieldType, queryValue string) (inte
 			return nil, fmt.Errorf("invalid integer value for field %s: %w", fieldName, err)
 		}
 		return intValue, nil
+	case "float", "double":
+		floatValue, err := strconv.ParseFloat(queryValue, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid floating-point value for field %s: %w", fieldName, err)
+		}
+		return floatValue, nil
 	case "bool", "boolean":
 		boolValue, err := strconv.ParseBool(queryValue)
 		if err != nil {
