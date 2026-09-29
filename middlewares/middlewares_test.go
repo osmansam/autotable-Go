@@ -263,6 +263,90 @@ func TestRateLimitWithRedis(t *testing.T) {
 	}
 }
 
+func TestConfiguredRateLimits(t *testing.T) {
+	server := miniredis.RunT(t)
+	oldClient := configs.RedisClient
+	configs.RedisClient = redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		_ = configs.RedisClient.Close()
+		configs.RedisClient = oldClient
+	})
+
+	tests := []struct {
+		name          string
+		handler       fiber.Handler
+		authenticated bool
+		wantLimit     string
+	}{
+		{name: "general", handler: GeneralRateLimit(), authenticated: true, wantLimit: "4000"},
+		{name: "public", handler: PublicRateLimit(), wantLimit: "1200"},
+		{name: "search", handler: SearchRateLimit(), wantLimit: "2400"},
+		{name: "write", handler: WriteRateLimit(), wantLimit: "1200"},
+		{name: "bulk", handler: BulkRateLimit(), wantLimit: "200"},
+		{name: "upload", handler: UploadRateLimit(), wantLimit: "400"},
+		{name: "execute", handler: ExecuteRateLimit(), wantLimit: "200"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Get("/", func(c *fiber.Ctx) error {
+				if tt.authenticated {
+					c.Locals("userID", "user-1")
+				}
+				return c.Next()
+			}, tt.handler, func(c *fiber.Ctx) error {
+				return c.SendStatus(http.StatusNoContent)
+			})
+
+			resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+			if err != nil || resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("response = %#v, error = %v", resp, err)
+			}
+			if got := resp.Header.Get("X-RateLimit-Limit"); got != tt.wantLimit {
+				t.Fatalf("X-RateLimit-Limit = %q, want %q", got, tt.wantLimit)
+			}
+		})
+	}
+
+	minutePolicies := []struct {
+		name            string
+		handler         fiber.Handler
+		allowed         int
+		wantHourly      string
+		wantRateLimitID string
+	}{
+		{name: "auth", handler: AuthRateLimit(), allowed: 200, wantHourly: "800", wantRateLimitID: "auth_minute"},
+		{name: "export", handler: ExportRateLimit(), allowed: 80, wantHourly: "400", wantRateLimitID: "export_minute"},
+	}
+	for _, tt := range minutePolicies {
+		t.Run(tt.name, func(t *testing.T) {
+			app := fiber.New()
+			app.Get("/", tt.handler, func(c *fiber.Ctx) error {
+				return c.SendStatus(http.StatusNoContent)
+			})
+
+			for request := 1; request <= tt.allowed; request++ {
+				resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+				if err != nil || resp.StatusCode != http.StatusNoContent {
+					t.Fatalf("request %d response = %#v, error = %v", request, resp, err)
+				}
+				if got := resp.Header.Get("X-RateLimit-Limit"); got != tt.wantHourly {
+					t.Fatalf("X-RateLimit-Limit = %q, want %q", got, tt.wantHourly)
+				}
+			}
+
+			resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+			if err != nil || resp.StatusCode != http.StatusTooManyRequests {
+				t.Fatalf("over-limit response = %#v, error = %v", resp, err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			if !strings.Contains(string(body), `"rateLimitId":"`+tt.wantRateLimitID+`"`) {
+				t.Fatalf("response body = %s", body)
+			}
+		})
+	}
+}
+
 func TestTenantAuthenticateRejectsMissingOrInvalidToken(t *testing.T) {
 	app := fiber.New()
 	app.Get("/", TenantAuthenticate, func(c *fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
