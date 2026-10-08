@@ -1,6 +1,9 @@
 package services
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 
@@ -8,6 +11,73 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+func TestDynamicArrayMutationsEnforceMappedRouteAccess(t *testing.T) {
+	parsed, err := parser.ParseFile(token.NewFileSet(), "dynamic_array_service.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse dynamic_array_service.go: %v", err)
+	}
+
+	requiredSelectors := map[string]bool{
+		"UpdateDynamicModelItem": false,
+		"DeleteDynamicModelItem": false,
+	}
+	requiredCalls := map[string]bool{
+		"buildMutationRecordAccessContext": false,
+		"mutationRecordAccessSelector":     false,
+		"authorizeFinalUpdateRecord":       false,
+	}
+	found := false
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "mutateArrayRows" || function.Body == nil {
+			continue
+		}
+		found = true
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch typed := node.(type) {
+			case *ast.SelectorExpr:
+				if _, tracked := requiredSelectors[typed.Sel.Name]; tracked {
+					requiredSelectors[typed.Sel.Name] = true
+				}
+			case *ast.CallExpr:
+				switch target := typed.Fun.(type) {
+				case *ast.Ident:
+					if _, tracked := requiredCalls[target.Name]; tracked {
+						requiredCalls[target.Name] = true
+					}
+				case *ast.SelectorExpr:
+					if _, tracked := requiredCalls[target.Sel.Name]; tracked {
+						requiredCalls[target.Sel.Name] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	if !found {
+		t.Fatal("mutateArrayRows was not found")
+	}
+	for selector, present := range requiredSelectors {
+		if !present {
+			t.Errorf("mutateArrayRows must map %s access", selector)
+		}
+	}
+	for call, present := range requiredCalls {
+		if !present {
+			t.Errorf("mutateArrayRows must call %s", call)
+		}
+	}
+}
+
+func TestDynamicArrayMutationInputUsesTrustedIdentityUserID(t *testing.T) {
+	input := DynamicArrayMutationInput{
+		AccessIdentityInput: AccessIdentityInput{UserID: "caller-id"},
+	}
+	if input.UserID != "caller-id" {
+		t.Fatalf("DynamicArrayMutationInput.UserID = %q, want embedded trusted identity", input.UserID)
+	}
+}
 
 func checklistArrayContainer() *models.ContainerModel {
 	return &models.ContainerModel{SchemaName: "checklist", Fields: []models.Field{

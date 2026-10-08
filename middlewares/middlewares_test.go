@@ -484,17 +484,19 @@ func TestConditionalAuthenticationRequiresTokenForAuthorizedResources(t *testing
 		isAuthenticated bool
 		isAuthorized    bool
 		isActive        bool
+		hasAccess       bool
 		want            bool
 	}{
 		{name: "public active resource", isActive: true},
 		{name: "authenticated resource", isAuthenticated: true, isActive: true, want: true},
 		{name: "authorized resource", isAuthorized: true, isActive: true, want: true},
+		{name: "record access policy", hasAccess: true, isActive: true, want: true},
 		{name: "inactive resource", want: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := conditionalAuthenticationRequiresToken(tt.isAuthenticated, tt.isAuthorized, tt.isActive); got != tt.want {
+			if got := conditionalAuthenticationRequiresToken(tt.isAuthenticated, tt.isAuthorized, tt.isActive, tt.hasAccess); got != tt.want {
 				t.Fatalf("conditionalAuthenticationRequiresToken() = %v, want %v", got, tt.want)
 			}
 		})

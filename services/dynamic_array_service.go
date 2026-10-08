@@ -19,6 +19,7 @@ import (
 )
 
 type DynamicArrayMutationInput struct {
+	AccessIdentityInput
 	TenantID    string
 	ProjectID   string
 	Schema      string
@@ -27,7 +28,6 @@ type DynamicArrayMutationInput struct {
 	RowIdentity interface{}
 	Request     requests.ArrayRowMutationRequest
 	Reorder     requests.ArrayReorderRequest
-	UserID      string
 	User        *models.AuditUser
 	Container   *models.ContainerModel
 }
@@ -298,12 +298,40 @@ func (s *DynamicService) mutateArrayRows(ctx context.Context, input DynamicArray
 	if err != nil {
 		return nil, err
 	}
+	route := container.Routes.UpdateDynamicModelItem
+	accessOperation := models.DynamicOutboxOperationUpdate
+	if operation == "delete" {
+		route = container.Routes.DeleteDynamicModelItem
+		accessOperation = models.DynamicOutboxOperationDelete
+	}
+	accessCtx, err := s.buildMutationRecordAccessContext(
+		ctx,
+		route,
+		input.TenantID,
+		input.ProjectID,
+		input.Schema,
+		accessOperation,
+		input.AccessIdentityInput,
+	)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+	}
+	selector, err := mutationRecordAccessSelector(
+		container,
+		route,
+		input.AccessIdentityInput,
+		accessCtx,
+		bson.M{"_id": parentID},
+	)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access selector")
+	}
 	arrayField, err := embeddedArrayField(container, input.ArrayField)
 	if err != nil {
 		return nil, arrayMutationServiceError(err)
 	}
 
-	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, parentID)
+	existingItem, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, input.Schema, selector)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, &ServiceError{Status: http.StatusNotFound, Message: "Parent item was not found", Err: err}
@@ -336,25 +364,36 @@ func (s *DynamicService) mutateArrayRows(ctx context.Context, input DynamicArray
 	var updateResult *mongo.UpdateResult
 	err = s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
 		workflowPayload := workflowExecutionPayload{
-			TenantID:    input.TenantID,
-			ProjectID:   input.ProjectID,
-			SchemaName:  input.Schema,
-			Record:      nextParent,
-			OldRecord:   beforeDoc,
-			StepOutputs: map[string]interface{}{"arrayMutation": mutationContext},
-			UserID:      input.UserID,
-			AuditUser:   input.User,
-			Container:   container,
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			SchemaName:   input.Schema,
+			Record:       nextParent,
+			OldRecord:    beforeDoc,
+			StepOutputs:  map[string]interface{}{"arrayMutation": mutationContext},
+			IdentityKind: input.IdentityKind,
+			UserID:       input.UserID,
+			UserRole:     input.UserRole,
+			UserRoles:    append([]string(nil), input.UserRoles...),
+			AuditUser:    input.User,
+			CurrentUser:  cloneAccessMap(accessCtx.User),
+			Container:    container,
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeUpdate); err != nil {
 			return err
 		}
+		if err := authorizeFinalUpdateRecord(container, route.Access, accessCtx, nextParent); err != nil {
+			return err
+		}
+		atomicSelector := combineRecordAccessFilters(
+			selector,
+			bson.M{arrayField.Name: existingItem[arrayField.Name]},
+		)
 		updateResult, err = s.repository.UpdateByFilter(
 			txCtx,
 			input.TenantID,
 			input.ProjectID,
 			input.Schema,
-			bson.M{"_id": parentID, arrayField.Name: existingItem[arrayField.Name]},
+			atomicSelector,
 			bson.M{"$set": bson.M{arrayField.Name: nextRows}},
 		)
 		if err != nil {

@@ -10,7 +10,59 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/services"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+func TestDynamicAccessIdentityUsesAuthenticatedContext(t *testing.T) {
+	userID := primitive.NewObjectID()
+	var got services.AccessIdentityInput
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		c.Locals("userID", userID.Hex())
+		c.Locals("userRole", "admin")
+		c.Locals("roles", []string{"admin", "editor"})
+		c.Locals("userDisplayName", "Ada")
+		got = dynamicAccessIdentity(c)
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("response = %#v, error = %v", resp, err)
+	}
+	if got.IdentityKind != services.AccessIdentityCaller || got.UserID != userID.Hex() || got.UserRole != "admin" {
+		t.Fatalf("dynamicAccessIdentity() = %#v", got)
+	}
+	if !reflect.DeepEqual(got.UserRoles, []string{"admin", "editor"}) {
+		t.Fatalf("UserRoles = %#v", got.UserRoles)
+	}
+	if got.AuditUser == nil || got.AuditUser.ID != userID || got.AuditUser.DisplayName != "Ada" {
+		t.Fatalf("AuditUser = %#v", got.AuditUser)
+	}
+}
+
+func TestRecordBackedInputsShareAccessIdentity(t *testing.T) {
+	identity := services.AccessIdentityInput{IdentityKind: services.AccessIdentityCaller, UserID: "user-1"}
+	inputs := []interface{}{
+		services.CreateDynamicItemInput{AccessIdentityInput: identity},
+		services.CreateMultipleDynamicItemsInput{AccessIdentityInput: identity},
+		services.UpdateDynamicItemInput{AccessIdentityInput: identity},
+		services.UpdateMultipleDynamicItemsInput{AccessIdentityInput: identity},
+		services.DeleteDynamicItemInput{AccessIdentityInput: identity},
+		services.DeleteMultipleDynamicItemsInput{AccessIdentityInput: identity},
+		services.GetAllDynamicItemsInput{AccessIdentityInput: identity},
+		services.GetItemsForSelectionInput{AccessIdentityInput: identity},
+		services.GetDynamicItemInput{AccessIdentityInput: identity},
+		services.SearchDynamicItemsInput{AccessIdentityInput: identity},
+		services.FilterDynamicItemsInput{AccessIdentityInput: identity},
+		services.GetPaginatedDynamicItemsInput{AccessIdentityInput: identity},
+		services.ExportDynamicItemsInput{AccessIdentityInput: identity},
+	}
+	if len(inputs) != 13 {
+		t.Fatalf("record-backed input count = %d, want 13", len(inputs))
+	}
+}
 
 func TestWorkflowRequestContextAllowsLongRunningWorkflow(t *testing.T) {
 	ctx, cancel := workflowRequestContext(context.Background())

@@ -38,13 +38,13 @@ func handleDynamicArrayMutation(c *fiber.Ctx, operation dynamicArrayHandlerOpera
 	}
 
 	input := services.DynamicArrayMutationInput{
-		TenantID:   tenantID,
-		ProjectID:  projectID,
-		Schema:     c.Params("schema"),
-		ParentID:   c.Params("id"),
-		ArrayField: c.Params("field"),
-		UserID:     userID,
-		User:       utils.GetUserFromContext(c),
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              c.Params("schema"),
+		ParentID:            c.Params("id"),
+		ArrayField:          c.Params("field"),
+		User:                utils.GetUserFromContext(c),
 	}
 	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
 		input.Container, _ = storedContainer.(*models.ContainerModel)

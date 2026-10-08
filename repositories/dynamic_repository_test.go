@@ -227,6 +227,41 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 	})
 }
 
+func TestDeleteByFilterPreservesRecordAccessSelector(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	defer mt.Close()
+
+	mt.Run("delete with access selector", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		id := primitive.NewObjectID()
+		ownerID := primitive.NewObjectID()
+		mt.AddMockResponses(mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}))
+
+		result, err := repository.DeleteByFilter(context.Background(), "tenant", "project", "orders", bson.M{
+			"_id": id, "ownerId": ownerID,
+		})
+		if err != nil {
+			t.Fatalf("DeleteByFilter() error = %v", err)
+		}
+		if result.DeletedCount != 1 {
+			t.Fatalf("DeleteByFilter().DeletedCount = %d, want 1", result.DeletedCount)
+		}
+
+		started := mt.GetStartedEvent()
+		deletes, ok := started.Command.Lookup("deletes").ArrayOK()
+		if !ok {
+			t.Fatalf("delete command missing deletes array: %v", started.Command)
+		}
+		query := deletes.Index(0).Value().Document().Lookup("q").Document()
+		if got := query.Lookup("_id"); got.Type != bson.TypeObjectID || got.ObjectID() != id {
+			t.Fatalf("delete selector _id = %v, want %s", got, id.Hex())
+		}
+		if got := query.Lookup("ownerId"); got.Type != bson.TypeObjectID || got.ObjectID() != ownerID {
+			t.Fatalf("delete selector ownerId = %v, want %s", got, ownerID.Hex())
+		}
+	})
+}
+
 func TestDynamicRepositoryOutbox(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
 	defer mt.Close()
@@ -410,6 +445,31 @@ func TestDynamicRepositoryDelegates(t *testing.T) {
 	}); err != nil || !transactionCalled || !callbackCalled {
 		t.Fatalf("WithTransaction() error = %v, transactionCalled = %v, callbackCalled = %v", err, transactionCalled, callbackCalled)
 	}
+}
+
+func TestDynamicRepositoryGetAuthContainerFindsProjectAuthSchema(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	defer mt.Close()
+
+	mt.Run("auth container", func(mt *mtest.T) {
+		repository := mockRepository(mt.Coll)
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch,
+			bson.D{{Key: "schemaName", Value: "users"}, {Key: "isAuthContainer", Value: true}},
+		))
+
+		container, err := repository.GetAuthContainer(context.Background(), "tenant", "project")
+		if err != nil {
+			t.Fatalf("GetAuthContainer() error = %v", err)
+		}
+		if container.SchemaName != "users" || !container.IsAuthContainer {
+			t.Fatalf("GetAuthContainer() = %#v, want users auth container", container)
+		}
+		started := mt.GetStartedEvent()
+		filter, ok := started.Command.Lookup("filter").DocumentOK()
+		if !ok || filter.Lookup("isAuthContainer").Type != bson.TypeBoolean || !filter.Lookup("isAuthContainer").Boolean() {
+			t.Fatalf("GetAuthContainer filter = %v, want isAuthContainer true", filter)
+		}
+	})
 }
 
 func mockRepository(collection *mongo.Collection) *DynamicRepository {

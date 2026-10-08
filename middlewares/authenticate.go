@@ -148,6 +148,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 		var isAuthenticated bool
 		var isAuthorized bool
 		var isActive bool
+		var hasAccess bool
 		var authorizeRole []string
 		if isPipeline {
 			pipelineName := c.Query("pipelineName")
@@ -244,6 +245,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			isAuthenticated = route.IsAuthenticated
 			isAuthorized = route.IsAuthorized
 			isActive = route.IsActive
+			hasAccess = route.Access != nil
 			authorizeRole = route.AuthorizeRole
 		}
 
@@ -258,7 +260,7 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			}
 		}
 
-		if conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive) {
+		if conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive, hasAccess) {
 			// Store expected tenant and project IDs in context for validation
 			c.Locals("expectedTenantID", tenantID)
 			c.Locals("expectedProjectID", projectID)
@@ -304,8 +306,8 @@ func conditionalSchemaName(c *fiber.Ctx) string {
 	return c.Params("schema")
 }
 
-func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive bool) bool {
-	return isAuthenticated || isAuthorized || !isActive
+func conditionalAuthenticationRequiresToken(isAuthenticated, isAuthorized, isActive, hasAccess bool) bool {
+	return isAuthenticated || isAuthorized || hasAccess || !isActive
 }
 
 func usesPipelineAuthentication(routeName, sourceType string) bool {

@@ -91,6 +91,165 @@ func TestAuthContainerBooleanFalseValuesArePersisted(t *testing.T) {
 	}
 }
 
+func TestRouteSpecAccessRoundTrip(t *testing.T) {
+	route := RouteSpec{Access: &RecordAccessPolicy{
+		Assign: map[string]interface{}{"ownerId": "{{auth.user.id}}"},
+		Any: []RecordAccessRule{{
+			Field: "ownerId", Operator: "eq", Value: "{{auth.user.id}}",
+		}, {
+			Context: "{{auth.user.role}}", Operator: "eq", Value: "admin",
+		}},
+	}}
+
+	jsonData, err := json.Marshal(route)
+	if err != nil {
+		t.Fatalf("json.Marshal(RouteSpec) error = %v", err)
+	}
+	jsonText := string(jsonData)
+	for _, key := range []string{`"access"`, `"assign"`, `"any"`, `"field"`, `"context"`, `"operator"`, `"value"`} {
+		if !strings.Contains(jsonText, key) {
+			t.Fatalf("JSON %s does not contain %s", jsonText, key)
+		}
+	}
+	var jsonGot RouteSpec
+	if err := json.Unmarshal(jsonData, &jsonGot); err != nil {
+		t.Fatalf("json.Unmarshal(RouteSpec) error = %v", err)
+	}
+	if jsonGot.Access == nil || jsonGot.Access.Any[0].Field != "ownerId" {
+		t.Fatalf("JSON round trip access = %#v", jsonGot.Access)
+	}
+
+	bsonData, err := bson.Marshal(route)
+	if err != nil {
+		t.Fatalf("bson.Marshal(RouteSpec) error = %v", err)
+	}
+	var raw bson.M
+	if err := bson.Unmarshal(bsonData, &raw); err != nil {
+		t.Fatalf("bson.Unmarshal(RouteSpec) error = %v", err)
+	}
+	if _, ok := raw["access"]; !ok {
+		t.Fatalf("BSON route = %#v, want access", raw)
+	}
+}
+
+func TestValidateRecordAccessPolicies(t *testing.T) {
+	ownerRule := RecordAccessRule{Field: "ownerId", Operator: "eq", Value: "{{auth.user.id}}"}
+	adminRule := RecordAccessRule{Context: "{{auth.user.role}}", Operator: "eq", Value: "admin"}
+	base := func() *ContainerModel {
+		return &ContainerModel{Fields: []Field{
+			{Name: "ownerId", Type: "objectId"},
+			{Name: "status", Type: "string"},
+			{Name: "calculated", Type: "string", Equation: "status"},
+			{Name: "secret", Type: "string", IsHashed: true},
+		}}
+	}
+
+	tests := []struct {
+		name    string
+		arrange func(*ContainerModel)
+		wantErr string
+	}{
+		{name: "accepts assignment-only create", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"ownerId": "{{auth.user.id}}"}}
+		}},
+		{name: "accepts rule-only create", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Any: []RecordAccessRule{ownerRule}}
+		}},
+		{name: "accepts combined bulk create", arrange: func(c *ContainerModel) {
+			c.Routes.CreateMultipleDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"ownerId": "{{auth.user.id}}"}, Any: []RecordAccessRule{ownerRule, adminRule}}
+		}},
+		{name: "accepts read update and delete rules", arrange: func(c *ContainerModel) {
+			policy := func() *RecordAccessPolicy { return &RecordAccessPolicy{Any: []RecordAccessRule{ownerRule}} }
+			c.Routes.GetAllDynamicModelItems.Access = policy()
+			c.Routes.UpdateDynamicModelItem.Access = policy()
+			c.Routes.DeleteDynamicModelItem.Access = policy()
+		}},
+		{name: "rejects empty access", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{}
+		}, wantErr: "must contain assign or any"},
+		{name: "rejects assignment on update", arrange: func(c *ContainerModel) {
+			c.Routes.UpdateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"ownerId": "{{auth.user.id}}"}}
+		}, wantErr: "assign is supported only"},
+		{name: "rejects reserved assignment", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"_id": "{{auth.user.id}}"}}
+		}, wantErr: "reserved record identifier"},
+		{name: "rejects id assignment", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"id": "{{auth.user.id}}"}}
+		}, wantErr: "reserved record identifier"},
+		{name: "rejects unknown assignment field", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"missing": "value"}}
+		}, wantErr: "does not exist"},
+		{name: "rejects equation assignment field", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"calculated": "value"}}
+		}, wantErr: "equation"},
+		{name: "rejects hashed assignment field", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"secret": "value"}}
+		}, wantErr: "hashed"},
+		{name: "rejects incompatible assignment literal", arrange: func(c *ContainerModel) {
+			c.Routes.CreateDynamicModelItem.Access = &RecordAccessPolicy{Assign: map[string]interface{}{"ownerId": 42}}
+		}, wantErr: "incompatible"},
+		{name: "rejects rule without source", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Operator: "eq", Value: "open"}}}
+		}, wantErr: "exactly one"},
+		{name: "rejects rule with both sources", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Field: "status", Context: "{{auth.user.role}}", Operator: "eq", Value: "open"}}}
+		}, wantErr: "exactly one"},
+		{name: "rejects unknown rule field", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Field: "missing", Operator: "eq", Value: "open"}}}
+		}, wantErr: "does not exist"},
+		{name: "rejects unsupported operator", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Field: "status", Operator: "gt", Value: "open"}}}
+		}, wantErr: "unsupported operator"},
+		{name: "rejects invalid auth path", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Context: "{{auth.request.body.owner}}", Operator: "eq", Value: "x"}}}
+		}, wantErr: "unsupported auth context"},
+		{name: "rejects scalar in operand", arrange: func(c *ContainerModel) {
+			c.Routes.GetAllDynamicModelItems.Access = &RecordAccessPolicy{Any: []RecordAccessRule{{Field: "status", Operator: "in", Value: "open"}}}
+		}, wantErr: "array-compatible"},
+		{name: "rejects pipeline access", arrange: func(c *ContainerModel) {
+			c.Routes.GetPipeline.Access = &RecordAccessPolicy{Any: []RecordAccessRule{ownerRule}}
+		}, wantErr: "does not support access"},
+		{name: "rejects test pipeline access", arrange: func(c *ContainerModel) {
+			c.Routes.TestPipeline.Access = &RecordAccessPolicy{Any: []RecordAccessRule{ownerRule}}
+		}, wantErr: "does not support access"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			container := base()
+			tt.arrange(container)
+			err := ValidateRecordAccessPolicies(container)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("ValidateRecordAccessPolicies() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("ValidateRecordAccessPolicies() error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRecordAccessPolicyDoesNotMutateAuthenticationFlag(t *testing.T) {
+	container := &ContainerModel{
+		Fields: []Field{{Name: "ownerId", Type: "objectId"}},
+		Routes: Routes{GetAllDynamicModelItems: RouteSpec{
+			IsAuthenticated: false,
+			Access: &RecordAccessPolicy{Any: []RecordAccessRule{{
+				Field: "ownerId", Operator: "eq", Value: "{{auth.user.id}}",
+			}}},
+		}},
+	}
+	if err := ValidateRecordAccessPolicies(container); err != nil {
+		t.Fatalf("ValidateRecordAccessPolicies() error = %v", err)
+	}
+	if container.Routes.GetAllDynamicModelItems.IsAuthenticated {
+		t.Fatal("validation mutated isAuthenticated; authentication implication belongs to middleware")
+	}
+}
+
 func TestValidateAuthContainerGoogleLoginConfig(t *testing.T) {
 	tests := []struct {
 		name      string

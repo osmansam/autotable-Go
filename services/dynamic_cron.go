@@ -188,17 +188,22 @@ func (s *DynamicService) RunCronWorkflow(ctx context.Context, tenantID, projectI
 	if container == nil {
 		return fmt.Errorf("container is required")
 	}
-	payload := workflowExecutionPayload{
+	payload := newCronWorkflowPayload(tenantID, projectID, schemaName, container, workflow, triggeredAt)
+	return s.runWorkflowDefinition(ctx, &payload, workflow)
+}
+
+func newCronWorkflowPayload(tenantID, projectID, schemaName string, container *models.ContainerModel, workflow models.DynamicWorkflow, triggeredAt time.Time) workflowExecutionPayload {
+	return workflowExecutionPayload{
 		TenantID:        tenantID,
 		ProjectID:       projectID,
 		SchemaName:      schemaName,
 		WorkflowTrigger: models.WorkflowTriggerCron,
 		WorkflowVersion: workflowVersion(workflow),
+		IdentityKind:    AccessIdentitySystem,
 		Container:       container,
 		Record: map[string]interface{}{
 			"_id":         triggeredAt.UTC().Format(time.RFC3339),
 			"triggeredAt": triggeredAt.UTC().Format(time.RFC3339),
 		},
 	}
-	return s.runWorkflowDefinition(ctx, &payload, workflow)
 }
