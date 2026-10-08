@@ -48,6 +48,19 @@ func (r *DynamicRepository) GetContainerModel(ctx context.Context, tenantID, pro
 	return r.getContainerModel(ctx, tenantID, projectID, schemaName)
 }
 
+func (r *DynamicRepository) GetAuthContainer(ctx context.Context, tenantID, projectID string) (*models.ContainerModel, error) {
+	collectionName := "containers"
+	if tenantID != "" && projectID != "" {
+		collectionName = utils.GetProjectCollectionName(tenantID, projectID, "containers")
+	}
+	var container models.ContainerModel
+	err := r.globalCollection(collectionName).FindOne(ctx, bson.M{"isAuthContainer": true}).Decode(&container)
+	if err != nil {
+		return nil, err
+	}
+	return &container, nil
+}
+
 func (r *DynamicRepository) GetAllContainerModels(ctx context.Context) ([]models.ContainerModel, error) {
 	return r.getContainerModels(ctx)
 }
@@ -447,6 +460,20 @@ func (r *DynamicRepository) ExecutePipeline(ctx context.Context, tenantID, proje
 func (r *DynamicRepository) DeleteByID(ctx context.Context, tenantID, projectID, schemaName string, id interface{}) (*mongo.DeleteResult, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("delete_one", schemaName)...)
 	result, err := r.GetCollection(tenantID, projectID, schemaName).DeleteOne(ctx, bson.M{"_id": id})
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
+}
+
+func (r *DynamicRepository) DeleteByFilter(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (*mongo.DeleteResult, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("delete_one", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).DeleteOne(ctx, filter)
+	observability.EndSpan(span, traceStatus(err), err)
+	return result, err
+}
+
+func (r *DynamicRepository) DeleteMany(ctx context.Context, tenantID, projectID, schemaName string, filter bson.M) (*mongo.DeleteResult, error) {
+	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("delete_many", schemaName)...)
+	result, err := r.GetCollection(tenantID, projectID, schemaName).DeleteMany(ctx, filter)
 	observability.EndSpan(span, traceStatus(err), err)
 	return result, err
 }

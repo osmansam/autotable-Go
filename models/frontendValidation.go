@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -948,6 +949,211 @@ func ValidateAuthContainerGoogleLoginConfig(container *ContainerModel) error {
 	return fmt.Errorf("auth container must have an email field when Google login is active")
 }
 
+// ValidateRecordAccessPolicies validates route-scoped record access before a
+// container is persisted. Runtime authorization is enforced by the service.
+func ValidateRecordAccessPolicies(container *ContainerModel) error {
+	if container == nil {
+		return nil
+	}
+
+	fields := make(map[string]Field, len(container.Fields))
+	for _, field := range container.Fields {
+		fields[field.Name] = field
+	}
+
+	routes := []struct {
+		name        string
+		spec        RouteSpec
+		allowAssign bool
+		supported   bool
+	}{
+		{name: "createDynamicModelItem", spec: container.Routes.CreateDynamicModelItem, allowAssign: true, supported: true},
+		{name: "createMultipleDynamicModelItem", spec: container.Routes.CreateMultipleDynamicModelItem, allowAssign: true, supported: true},
+		{name: "getAllDynamicModelItems", spec: container.Routes.GetAllDynamicModelItems, supported: true},
+		{name: "getAllDynamicModelItemsWithPagination", spec: container.Routes.GetAllDynamicModelItemsWithPagination, supported: true},
+		{name: "handleSearchDynamicModelItem", spec: container.Routes.HandleSearchDynamicModelItem, supported: true},
+		{name: "handleFilterDynamicModelItem", spec: container.Routes.HandleFilterDynamicModelItem, supported: true},
+		{name: "deleteDynamicModelItem", spec: container.Routes.DeleteDynamicModelItem, supported: true},
+		{name: "updateDynamicModelItem", spec: container.Routes.UpdateDynamicModelItem, supported: true},
+		{name: "updateMultipleDynamicModelItem", spec: container.Routes.UpdateMultipleDynamicModelItem, supported: true},
+		{name: "getDynamicModelItem", spec: container.Routes.GetDynamicModelItem, supported: true},
+		{name: "deleteMultipleDynamicModelItem", spec: container.Routes.DeleteMultipleDynamicModelItem, supported: true},
+		{name: "exportDynamicModelItems", spec: container.Routes.ExportDynamicModelItems, supported: true},
+		{name: "getItemsForSelection", spec: container.Routes.GetItemsForSelection, supported: true},
+		{name: "getPipeline", spec: container.Routes.GetPipeline},
+		{name: "testPipeline", spec: container.Routes.TestPipeline},
+	}
+
+	for _, route := range routes {
+		policy := route.spec.Access
+		if policy == nil {
+			continue
+		}
+		if !route.supported {
+			return fmt.Errorf("route %s does not support access policies", route.name)
+		}
+		if len(policy.Assign) == 0 && len(policy.Any) == 0 {
+			return fmt.Errorf("route %s access must contain assign or any", route.name)
+		}
+		if len(policy.Assign) > 0 && !route.allowAssign {
+			return fmt.Errorf("route %s access assign is supported only for create routes", route.name)
+		}
+
+		for fieldName, value := range policy.Assign {
+			fieldName = strings.TrimSpace(fieldName)
+			if isReservedRecordAccessField(fieldName) {
+				return fmt.Errorf("route %s access assign field %q is a reserved record identifier", route.name, fieldName)
+			}
+			field, exists := fields[fieldName]
+			if !exists {
+				return fmt.Errorf("route %s access assign field %q does not exist", route.name, fieldName)
+			}
+			if strings.TrimSpace(field.Equation) != "" {
+				return fmt.Errorf("route %s access assign field %q cannot define an equation", route.name, fieldName)
+			}
+			if field.IsHashed {
+				return fmt.Errorf("route %s access assign field %q cannot be hashed", route.name, fieldName)
+			}
+			if err := validateRecordAccessAssignmentValue(field, value); err != nil {
+				return fmt.Errorf("route %s access assign field %q: %w", route.name, fieldName, err)
+			}
+		}
+
+		for index, rule := range policy.Any {
+			fieldName := strings.TrimSpace(rule.Field)
+			contextName := strings.TrimSpace(rule.Context)
+			if (fieldName == "") == (contextName == "") {
+				return fmt.Errorf("route %s access any rule %d must specify exactly one of field or context", route.name, index)
+			}
+			if fieldName != "" {
+				if isReservedRecordAccessField(fieldName) {
+					return fmt.Errorf("route %s access any rule %d field %q is a reserved record identifier", route.name, index, fieldName)
+				}
+				if _, exists := fields[fieldName]; !exists {
+					return fmt.Errorf("route %s access any rule %d field %q does not exist", route.name, index, fieldName)
+				}
+			} else if err := validateRecordAccessContext(contextName); err != nil {
+				return fmt.Errorf("route %s access any rule %d: %w", route.name, index, err)
+			}
+
+			operator := strings.ToLower(strings.TrimSpace(rule.Operator))
+			switch operator {
+			case "eq", "ne":
+			case "in", "nin":
+				if !recordAccessArrayCompatible(rule.Value) {
+					return fmt.Errorf("route %s access any rule %d operator %s requires an array-compatible value", route.name, index, operator)
+				}
+			default:
+				return fmt.Errorf("route %s access any rule %d has unsupported operator %q", route.name, index, rule.Operator)
+			}
+			if err := validateRecordAccessOperand(rule.Value); err != nil {
+				return fmt.Errorf("route %s access any rule %d: %w", route.name, index, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func isReservedRecordAccessField(fieldName string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(fieldName))
+	return normalized == "id" || normalized == "_id"
+}
+
+func validateRecordAccessOperand(value interface{}) error {
+	text, ok := value.(string)
+	if !ok || !strings.Contains(text, "{{") {
+		return nil
+	}
+	return validateRecordAccessContext(text)
+}
+
+func validateRecordAccessAssignmentValue(field Field, value interface{}) error {
+	if err := validateRecordAccessOperand(value); err != nil {
+		return err
+	}
+	if text, ok := value.(string); ok {
+		if _, isContext := recordAccessContextPath(text); isContext {
+			return nil
+		}
+	}
+
+	compatible := false
+	switch strings.ToLower(strings.TrimSpace(field.Type)) {
+	case "string", "objectid", "date", "datetime":
+		_, compatible = value.(string)
+	case "bool", "boolean":
+		_, compatible = value.(bool)
+	case "int", "integer", "number", "float", "double":
+		kind := reflect.Invalid
+		if value != nil {
+			kind = reflect.TypeOf(value).Kind()
+		}
+		switch kind {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+			reflect.Float32, reflect.Float64:
+			compatible = true
+		}
+	case "array":
+		valueType := reflect.TypeOf(value)
+		compatible = valueType != nil && (valueType.Kind() == reflect.Array || valueType.Kind() == reflect.Slice)
+	case "object":
+		valueType := reflect.TypeOf(value)
+		compatible = valueType != nil && valueType.Kind() == reflect.Map
+	default:
+		compatible = true
+	}
+	if !compatible {
+		return fmt.Errorf("literal value is incompatible with field type %q", field.Type)
+	}
+	return nil
+}
+
+func recordAccessArrayCompatible(value interface{}) bool {
+	if text, ok := value.(string); ok {
+		if path, ok := recordAccessContextPath(text); ok {
+			return path == "auth.user.roles" || strings.HasPrefix(path, "auth.user.")
+		}
+		return false
+	}
+	valueType := reflect.TypeOf(value)
+	return valueType != nil && (valueType.Kind() == reflect.Array || valueType.Kind() == reflect.Slice)
+}
+
+func validateRecordAccessContext(value string) error {
+	path, ok := recordAccessContextPath(value)
+	if !ok || !allowedRecordAccessContextPath(path) {
+		return fmt.Errorf("unsupported auth context %q", value)
+	}
+	return nil
+}
+
+func recordAccessContextPath(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "{{auth.") || !strings.HasSuffix(value, "}}") || strings.Count(value, "{{") != 1 || strings.Count(value, "}}") != 1 {
+		return "", false
+	}
+	path := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{{"), "}}"))
+	return path, path != ""
+}
+
+func allowedRecordAccessContextPath(path string) bool {
+	switch path {
+	case "auth.tenant.id", "auth.project.id", "auth.schema", "auth.operation", "auth.identity.kind", "auth.user.id", "auth.user._id", "auth.user.role", "auth.user.roles":
+		return true
+	}
+	if !strings.HasPrefix(path, "auth.user.") {
+		return false
+	}
+	for _, part := range strings.Split(strings.TrimPrefix(path, "auth.user."), ".") {
+		if strings.TrimSpace(part) == "" {
+			return false
+		}
+	}
+	return true
+}
+
 // Example integration function showing how to use validation during container creation
 func ValidateAndCreateContainer(container *ContainerModel) error {
 	// Validate frontend link configurations
@@ -955,6 +1161,9 @@ func ValidateAndCreateContainer(container *ContainerModel) error {
 		return fmt.Errorf("frontend validation failed: %w", err)
 	}
 	if err := ValidateAuthContainerGoogleLoginConfig(container); err != nil {
+		return err
+	}
+	if err := ValidateRecordAccessPolicies(container); err != nil {
 		return err
 	}
 
@@ -974,6 +1183,9 @@ func ValidateAndUpdateContainer(container *ContainerModel) error {
 		return fmt.Errorf("frontend validation failed: %w", err)
 	}
 	if err := ValidateAuthContainerGoogleLoginConfig(container); err != nil {
+		return err
+	}
+	if err := ValidateRecordAccessPolicies(container); err != nil {
 		return err
 	}
 

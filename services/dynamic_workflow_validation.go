@@ -143,6 +143,9 @@ func validateWorkflowStepsWithContext(workflow models.DynamicWorkflow, steps []m
 			}
 		}
 		if step.Type == models.WorkflowStepTypeUpdateRecord {
+			if _, err := workflowUpdateExcludedFields(step.Config); err != nil {
+				return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
+			}
 			if update, ok := workflowObjectConfig(step.Config, "update"); ok && workflowHasUpdateOperator(update) {
 				if err := validateWorkflowUpdateOperatorNames(update); err != nil {
 					return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)

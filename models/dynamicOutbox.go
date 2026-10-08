@@ -22,7 +22,10 @@ const (
 type DynamicOutboxPayload struct {
 	AuditLog          *AuditLog              `bson:"auditLog,omitempty" json:"auditLog,omitempty"`
 	InvalidateSchemas []string               `bson:"invalidateSchemas,omitempty" json:"invalidateSchemas,omitempty"`
+	IdentityKind      string                 `bson:"identityKind,omitempty" json:"identityKind,omitempty"`
 	UserID            string                 `bson:"userId,omitempty" json:"userId,omitempty"`
+	UserRole          string                 `bson:"userRole,omitempty" json:"userRole,omitempty"`
+	UserRoles         []string               `bson:"userRoles,omitempty" json:"userRoles,omitempty"`
 	WorkflowName      string                 `bson:"workflowName,omitempty" json:"workflowName,omitempty"`
 	WorkflowTrigger   string                 `bson:"workflowTrigger,omitempty" json:"workflowTrigger,omitempty"`
 	WorkflowVersion   int                    `bson:"workflowVersion,omitempty" json:"workflowVersion,omitempty"`
@@ -38,6 +41,7 @@ type DynamicOutboxPayload struct {
 	StepOutputs       map[string]interface{} `bson:"stepOutputs,omitempty" json:"stepOutputs,omitempty"`
 	Variables         map[string]interface{} `bson:"variables,omitempty" json:"variables,omitempty"`
 	Loop              map[string]interface{} `bson:"loop,omitempty" json:"loop,omitempty"`
+	CurrentUser       map[string]interface{} `bson:"currentUser,omitempty" json:"currentUser,omitempty"`
 	Config            map[string]interface{} `bson:"config,omitempty" json:"config,omitempty"`
 	Steps             []DynamicWorkflowStep  `bson:"steps,omitempty" json:"steps,omitempty"`
 	ElseSteps         []DynamicWorkflowStep  `bson:"elseSteps,omitempty" json:"elseSteps,omitempty"`

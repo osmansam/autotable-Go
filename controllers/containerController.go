@@ -378,6 +378,10 @@ func createContainerForProject(ctx context.Context, container models.ContainerMo
 		log.Printf("Auth container Google login validation error: %v", validationErr)
 		return nil, containerCreationFailure(validationErr, validationErr.Error())
 	}
+	if validationErr := models.ValidateRecordAccessPolicies(&container); validationErr != nil {
+		log.Printf("Route access policy validation error: %v", validationErr)
+		return nil, containerCreationFailure(validationErr, validationErr.Error())
+	}
 
 	// Check if the schema name is in the restricted schema names list
 	for _, restrictedName := range models.RestrictedSchemaNames {
@@ -687,6 +691,10 @@ func UpdateContainer(c *fiber.Ctx) error {
 	applyContainerAuthFlagDefaults(existingContainer, &updatedContainer, payloadKeys)
 	if validationErr := models.ValidateAuthContainerGoogleLoginConfig(&updatedContainer); validationErr != nil {
 		log.Printf("Auth container Google login validation error: %v", validationErr)
+		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
+	}
+	if validationErr := models.ValidateRecordAccessPolicies(&updatedContainer); validationErr != nil {
+		log.Printf("Route access policy validation error: %v", validationErr)
 		return utils.SendErrorResponse(c, validationErr, validationErr.Error())
 	}
 

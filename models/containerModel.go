@@ -152,11 +152,24 @@ type PopulationSettings struct {
 	DisplayLabel        string   `bson:"displayLabel"`
 }
 type RouteSpec struct {
-	IsAuthenticated bool     `bson:"isAuthenticated" `
-	IsAuthorized    bool     `bson:"isAuthorized" `
-	AuthorizeRole   []string `bson:"authorizeRole" `
-	IsActive        bool     `bson:"isActivated" `
-	Method          string   `bson:"method" `
+	IsAuthenticated bool                `bson:"isAuthenticated"`
+	IsAuthorized    bool                `bson:"isAuthorized"`
+	AuthorizeRole   []string            `bson:"authorizeRole"`
+	IsActive        bool                `bson:"isActivated"`
+	Method          string              `bson:"method"`
+	Access          *RecordAccessPolicy `bson:"access,omitempty" json:"access,omitempty"`
+}
+
+type RecordAccessPolicy struct {
+	Assign map[string]interface{} `bson:"assign,omitempty" json:"assign,omitempty"`
+	Any    []RecordAccessRule     `bson:"any,omitempty" json:"any,omitempty"`
+}
+
+type RecordAccessRule struct {
+	Field    string      `bson:"field,omitempty" json:"field,omitempty"`
+	Context  string      `bson:"context,omitempty" json:"context,omitempty"`
+	Operator string      `bson:"operator" json:"operator"`
+	Value    interface{} `bson:"value" json:"value"`
 }
 
 type Routes struct {

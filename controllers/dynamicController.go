@@ -61,6 +61,27 @@ func getProjectContext(c *fiber.Ctx) (tenantID, projectID string, err error) {
 	return tenantID, projectID, nil
 }
 
+func dynamicAccessIdentity(c *fiber.Ctx) services.AccessIdentityInput {
+	userID, _ := c.Locals("userID").(string)
+	userRole, _ := c.Locals("userRole").(string)
+	roles, _ := c.Locals("roles").([]string)
+	roles = append([]string(nil), roles...)
+	if len(roles) == 0 && userRole != "" {
+		roles = []string{userRole}
+	}
+	auditUser := utils.GetUserFromContext(c)
+	if auditUser != nil {
+		auditUser.Roles = append([]string(nil), roles...)
+	}
+	return services.AccessIdentityInput{
+		IdentityKind: services.AccessIdentityCaller,
+		UserID:       userID,
+		UserRole:     userRole,
+		UserRoles:    roles,
+		AuditUser:    auditUser,
+	}
+}
+
 func beginDynamicIdempotency(ctx context.Context, c *fiber.Ctx, tenantID, projectID, userID string) (string, bool, error) {
 	key := utils.BuildIdempotencyRedisKey(tenantID, projectID, userID, c)
 	if key == "" {
@@ -219,13 +240,12 @@ func CreateDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	itemMap, err := dynamicService.CreateDynamicItem(ctx, services.CreateDynamicItemInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
-		FiberCtx:  c,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		Container:           container,
+		FiberCtx:            c,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to save item.")
@@ -258,13 +278,12 @@ func CreateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	result, err := dynamicService.CreateMultipleDynamicItems(ctx, services.CreateMultipleDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
-		FiberCtx:  c,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		Container:           container,
+		FiberCtx:            c,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to insert multiple items.")
@@ -289,14 +308,13 @@ func GetAllDynamicModelItems(c *fiber.Ctx) error {
 		container, _ = storedContainer.(*models.ContainerModel)
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
 	items, err := dynamicService.GetAllDynamicItems(ctx, services.GetAllDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    c.Query("schemaName"),
-		UserRole:  userRole,
-		Container: container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              c.Query("schemaName"),
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch items")
@@ -341,18 +359,18 @@ func GetItemsForSelection(c *fiber.Ctx) error {
 		}
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
 	items, err := dynamicService.GetItemsForSelection(ctx, services.GetItemsForSelectionInput{
-		TenantID:   tenantID,
-		ProjectID:  projectID,
-		Schema:     schemaName,
-		FieldName:  fieldName,
-		ValueField: valueField,
-		DataFields: dataFields,
-		Limit:      limit,
-		Filter:     filter,
-		UserRole:   userRole,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		FieldName:           fieldName,
+		ValueField:          valueField,
+		DataFields:          dataFields,
+		Limit:               limit,
+		Filter:              filter,
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch items")
@@ -388,13 +406,12 @@ func DeleteDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	responseItem, err := dynamicService.DeleteDynamicItem(ctx, services.DeleteDynamicItemInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		ID:        c.Params("id"),
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		ID:                  c.Params("id"),
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to delete the item from the specified collection.")
@@ -428,13 +445,12 @@ func DeleteMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	responseData, err := dynamicService.DeleteMultipleDynamicItems(ctx, services.DeleteMultipleDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
-		FiberCtx:  c,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		Container:           container,
+		FiberCtx:            c,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to parse request body")
@@ -470,14 +486,13 @@ func UpdateDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	responseItem, err := dynamicService.UpdateDynamicItem(ctx, services.UpdateDynamicItemInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		ID:        c.Params("id"),
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
-		FiberCtx:  c,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		ID:                  c.Params("id"),
+		Container:           container,
+		FiberCtx:            c,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to update item")
@@ -510,13 +525,12 @@ func UpdateMultipleDynamicModelItem(c *fiber.Ctx) error {
 
 	dynamicService := services.NewDynamicService()
 	responseData, err := dynamicService.UpdateMultipleDynamicItems(ctx, services.UpdateMultipleDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    schemaName,
-		UserID:    userIDStr,
-		User:      utils.GetUserFromContext(c),
-		Container: container,
-		FiberCtx:  c,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		Container:           container,
+		FiberCtx:            c,
 	})
 	if err != nil {
 		return sendDynamicServiceError(ctx, c, idempotencyKey, err, "Failed to parse request body")
@@ -540,15 +554,14 @@ func GetDynamicModelItem(c *fiber.Ctx) error {
 		container, _ = storedContainer.(*models.ContainerModel)
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
 	dynamicService := services.NewDynamicService()
 	result, err := dynamicService.GetDynamicItem(ctx, services.GetDynamicItemInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    c.Query("schemaName"),
-		ID:        c.Params("id"),
-		UserRole:  userRole,
-		Container: container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              c.Query("schemaName"),
+		ID:                  c.Params("id"),
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Item not found")
@@ -589,18 +602,15 @@ func HandleSearchDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "invalid pagination params")
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
-	userID, _ := c.Locals("userID").(string)
 	result, err := dynamicService.SearchDynamicItems(ctx, services.SearchDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    c.Query("schemaName"),
-		SearchKey: params.SearchKey,
-		UserID:    userID,
-		UserRole:  userRole,
-		Sort:      params.Sort,
-		Pager:     params.Pager,
-		Container: container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              c.Query("schemaName"),
+		SearchKey:           params.SearchKey,
+		Sort:                params.Sort,
+		Pager:               params.Pager,
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "query failed")
@@ -645,19 +655,16 @@ func HandleFilterDynamicModelItem(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
-	userID, _ := c.Locals("userID").(string)
 	result, err := dynamicService.FilterDynamicItems(ctx, services.FilterDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Schema:    container.SchemaName,
-		Filter:    params.Filter,
-		SearchKey: params.SearchKey,
-		UserID:    userID,
-		UserRole:  userRole,
-		Sort:      params.Sort,
-		Pager:     params.Pager,
-		Container: container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              container.SchemaName,
+		Filter:              params.Filter,
+		SearchKey:           params.SearchKey,
+		Sort:                params.Sort,
+		Pager:               params.Pager,
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch filtered items")
@@ -734,20 +741,17 @@ func GetAllDynamicModelItemsWithPagination(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
-	userID, _ := c.Locals("userID").(string)
 	result, err := dynamicService.GetAllDynamicItemsWithPagination(ctx, services.GetPaginatedDynamicItemsInput{
-		TenantID:    tenantID,
-		ProjectID:   projectID,
-		Schema:      container.SchemaName,
-		QueryString: params.QueryString,
-		Filter:      params.Filter,
-		SearchKey:   params.SearchKey,
-		UserID:      userID,
-		UserRole:    userRole,
-		Sort:        params.Sort,
-		Pager:       params.Pager,
-		Container:   container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              container.SchemaName,
+		QueryString:         params.QueryString,
+		Filter:              params.Filter,
+		SearchKey:           params.SearchKey,
+		Sort:                params.Sort,
+		Pager:               params.Pager,
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch items")
@@ -785,30 +789,26 @@ func GetTableSource(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Invalid pagination parameters")
 	}
 
-	userRole, _ := c.Locals("userRole").(string)
-	userID, _ := c.Locals("userID").(string)
 	result, err := dynamicService.GetTableSource(ctx, services.GetTableSourceInput{
-		TenantID:     tenantID,
-		ProjectID:    projectID,
-		SourceType:   c.Query("sourceType", string(models.BindingKindSchema)),
-		Schema:       container.SchemaName,
-		PipelineName: c.Query("pipelineName"),
-		WorkflowName: c.Query("workflowName"),
-		QueryString:  params.QueryString,
-		Filter:       params.Filter,
-		SearchKey:    params.SearchKey,
-		UserID:       userID,
-		UserRole:     userRole,
-		Sort:         params.Sort,
-		Pager:        params.Pager,
-		Fields:       tableSourceFields(c),
-		Params:       tableSourceParams(c),
-		Container:    container,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SourceType:          c.Query("sourceType", string(models.BindingKindSchema)),
+		Schema:              container.SchemaName,
+		PipelineName:        c.Query("pipelineName"),
+		WorkflowName:        c.Query("workflowName"),
+		QueryString:         params.QueryString,
+		Filter:              params.Filter,
+		SearchKey:           params.SearchKey,
+		Sort:                params.Sort,
+		Pager:               params.Pager,
+		Fields:              tableSourceFields(c),
+		Params:              tableSourceParams(c),
+		Container:           container,
 		PrepareStage: func(pipelineJSON string) string {
 			pipelineJSON = utils.ReplacePlaceholdersWithQueryParams(pipelineJSON, c)
 			return utils.ReplacePlaceholdersWithProjectContext(pipelineJSON, tenantID, projectID)
 		},
-		AuditUser: utils.GetUserFromContext(c),
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to fetch table source")
@@ -1032,21 +1032,19 @@ func ExecuteWorkflow(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, err, "Invalid form configuration reference")
 	}
 
-	userID, _ := c.Locals("userID").(string)
 	dynamicService := services.NewDynamicService()
 	result, err := dynamicService.ExecuteWorkflow(ctx, services.ExecuteWorkflowInput{
-		TenantID:      tenantID,
-		ProjectID:     projectID,
-		Schema:        schemaName,
-		WorkflowName:  workflowName,
-		Record:        record,
-		Query:         queryParams,
-		OldRecord:     oldRecord,
-		StepOutputs:   stepOutputs,
-		UserID:        userID,
-		AuditUser:     utils.GetUserFromContext(c),
-		Container:     container,
-		FormConfigRef: formConfigRef,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Schema:              schemaName,
+		WorkflowName:        workflowName,
+		Record:              record,
+		Query:               queryParams,
+		OldRecord:           oldRecord,
+		StepOutputs:         stepOutputs,
+		Container:           container,
+		FormConfigRef:       formConfigRef,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to execute workflow")
@@ -1166,11 +1164,17 @@ func ExportDynamicModelItems(c *fiber.Ctx) error {
 	if err != nil {
 		return utils.SendErrorResponse(c, err, "Failed to parse request body")
 	}
+	var container *models.ContainerModel
+	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+		container, _ = storedContainer.(*models.ContainerModel)
+	}
 
 	result, err := dynamicService.ExportDynamicItems(ctx, services.ExportDynamicItemsInput{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Request:   req,
+		AccessIdentityInput: dynamicAccessIdentity(c),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		Request:             req,
+		Container:           container,
 	})
 	if err != nil {
 		return sendDynamicError(c, err, "Failed to export items")

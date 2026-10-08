@@ -1,0 +1,206 @@
+{
+  "name": "update_pet_personalized",
+  "trigger": "manual",
+  "mode": "transactional",
+  "isActive": true,
+  "isAuthenticated": true,
+  "isAuthorized": false,
+  "authorizeRole": [],
+  "conditions": [],
+  "steps": [
+    {
+      "name": "guard_pet_id",
+      "type": "if",
+      "order": 1,
+      "isActive": true,
+      "conditions": [
+        {
+          "field": "record.petId",
+          "operator": "is_empty"
+        }
+      ],
+      "steps": [
+        {
+          "name": "pet_id_required",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": {
+            "message": "petId is required",
+            "status": 400
+          }
+        }
+      ]
+    },
+    {
+      "name": "guard_updates",
+      "type": "if",
+      "order": 2,
+      "isActive": true,
+      "conditions": [
+        {
+          "field": "record.updates",
+          "operator": "is_empty"
+        }
+      ],
+      "steps": [
+        {
+          "name": "updates_required",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": {
+            "message": "updates must contain at least one field",
+            "status": 400
+          }
+        }
+      ]
+    },
+    {
+      "name": "pet",
+      "type": "find_records",
+      "order": 3,
+      "isActive": true,
+      "targetSchema": "pets",
+      "config": {
+        "filter": {
+          "_id": "{{record.petId}}"
+        },
+        "limit": 1
+      }
+    },
+    {
+      "name": "guard_pet",
+      "type": "if",
+      "order": 4,
+      "isActive": true,
+      "conditions": [
+        {
+          "field": "steps.pet.count",
+          "operator": "=",
+          "value": 0
+        }
+      ],
+      "steps": [
+        {
+          "name": "pet_not_found_before_authorization",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": {
+            "message": "Pet not found",
+            "status": 404
+          }
+        }
+      ]
+    },
+    {
+      "name": "current_profile",
+      "type": "find_records",
+      "order": 5,
+      "isActive": true,
+      "targetSchema": "profiles",
+      "config": {
+        "filter": {
+          "_id": "{{steps.pet.items.0.owner_user_id}}",
+          "auth_id": "{{user._id}}"
+        },
+        "limit": 1
+      }
+    },
+    {
+      "name": "guard_profile",
+      "type": "if",
+      "order": 6,
+      "isActive": true,
+      "conditions": [
+        {
+          "field": "steps.current_profile.count",
+          "operator": "=",
+          "value": 0
+        }
+      ],
+      "steps": [
+        {
+          "name": "profile_not_found",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": {
+            "message": "Pet not found",
+            "status": 404
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_pet",
+      "type": "update_record",
+      "order": 7,
+      "isActive": true,
+      "targetSchema": "pets",
+      "config": {
+        "filter": {
+          "_id": "{{record.petId}}",
+          "owner_user_id": "{{steps.pet.items.0.owner_user_id}}"
+        },
+        "update": "{{record.updates}}",
+        "excludeFields": [
+          "owner_user_id",
+          "_id"
+        ]
+      }
+    },
+    {
+      "name": "guard_updated_pet",
+      "type": "if",
+      "order": 8,
+      "isActive": true,
+      "conditions": [
+        {
+          "field": "steps.update_pet.matchedCount",
+          "operator": "=",
+          "value": 0
+        }
+      ],
+      "steps": [
+        {
+          "name": "pet_not_found",
+          "type": "fail",
+          "order": 1,
+          "isActive": true,
+          "config": {
+            "message": "Pet not found",
+            "status": 404
+          }
+        }
+      ]
+    },
+    {
+      "name": "updated_pet",
+      "type": "get_record",
+      "order": 9,
+      "isActive": true,
+      "targetSchema": "pets",
+      "config": {
+        "filter": {
+          "_id": "{{record.petId}}",
+          "owner_user_id": "{{steps.pet.items.0.owner_user_id}}"
+        }
+      }
+    },
+    {
+      "name": "done",
+      "type": "return",
+      "order": 10,
+      "isActive": true,
+      "config": {
+        "value": "{{steps.updated_pet.data}}"
+      }
+    }
+  ],
+  "stopOnError": true,
+  "timeoutSec": 30,
+  "outputFields": [],
+  "runInTransaction": true
+}

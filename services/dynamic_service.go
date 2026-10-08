@@ -75,76 +75,84 @@ func workflowExecutionServiceError(err error, fallbackMessage string) *ServiceEr
 	}
 }
 
+const (
+	AccessIdentityCaller = "caller"
+	AccessIdentitySystem = "system"
+)
+
+type AccessIdentityInput struct {
+	IdentityKind string
+	UserID       string
+	UserRole     string
+	UserRoles    []string
+	AuditUser    *models.AuditUser
+}
+
 type CreateDynamicItemInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 	FiberCtx  *fiber.Ctx
 }
 
 type CreateMultipleDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 	FiberCtx  *fiber.Ctx
 }
 
 type UpdateDynamicItemInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
 	ID        string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 	FiberCtx  *fiber.Ctx
 }
 
 type UpdateMultipleDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 	FiberCtx  *fiber.Ctx
 }
 
 type DeleteDynamicItemInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
 	ID        string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 }
 
 type DeleteMultipleDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
-	UserID    string
-	User      *models.AuditUser
 	Container *models.ContainerModel
 	FiberCtx  *fiber.Ctx
 }
 
 type GetAllDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
-	UserRole  string
 	Container *models.ContainerModel
 }
 
 type GetItemsForSelectionInput struct {
+	AccessIdentityInput
 	TenantID   string
 	ProjectID  string
 	Schema     string
@@ -153,15 +161,15 @@ type GetItemsForSelectionInput struct {
 	DataFields []string
 	Limit      int64
 	Filter     map[string]interface{}
-	UserRole   string
+	Container  *models.ContainerModel
 }
 
 type GetDynamicItemInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
 	ID        string
-	UserRole  string
 	Container *models.ContainerModel
 }
 
@@ -171,45 +179,43 @@ type GetDynamicItemResult struct {
 }
 
 type SearchDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
 	SearchKey string
-	UserID    string
-	UserRole  string
 	Sort      bson.D
 	Pager     utils.Pager
 	Container *models.ContainerModel
 }
 
 type FilterDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Schema    string
 	Filter    bson.M
 	SearchKey string
-	UserID    string
-	UserRole  string
 	Sort      bson.D
 	Pager     utils.Pager
 	Container *models.ContainerModel
 }
 
 type GetPaginatedDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID    string
 	ProjectID   string
 	Schema      string
 	QueryString string
 	Filter      bson.M
 	SearchKey   string
-	UserID      string
-	UserRole    string
 	Sort        bson.D
 	Pager       utils.Pager
 	Container   *models.ContainerModel
 }
 
 type GetTableSourceInput struct {
+	AccessIdentityInput
 	TenantID     string
 	ProjectID    string
 	SourceType   string
@@ -219,15 +225,12 @@ type GetTableSourceInput struct {
 	QueryString  string
 	Filter       bson.M
 	SearchKey    string
-	UserID       string
-	UserRole     string
 	Sort         bson.D
 	Pager        utils.Pager
 	Fields       []string
 	Params       map[string]interface{}
 	Container    *models.ContainerModel
 	PrepareStage func(string) string
-	AuditUser    *models.AuditUser
 }
 
 type GetPipelineInput struct {
@@ -277,6 +280,7 @@ type ExecuteDynamicAPIInput struct {
 }
 
 type ExecuteWorkflowInput struct {
+	AccessIdentityInput
 	TenantID      string
 	ProjectID     string
 	Schema        string
@@ -285,8 +289,6 @@ type ExecuteWorkflowInput struct {
 	Query         map[string]interface{}
 	OldRecord     map[string]interface{}
 	StepOutputs   map[string]interface{}
-	UserID        string
-	AuditUser     *models.AuditUser
 	Container     *models.ContainerModel
 	Pager         *utils.Pager
 	FormConfigRef *FormConfigReference
@@ -298,9 +300,11 @@ type FormConfigReference struct {
 }
 
 type ExportDynamicItemsInput struct {
+	AccessIdentityInput
 	TenantID  string
 	ProjectID string
 	Request   requests.ExportRequest
+	Container *models.ContainerModel
 }
 
 type ExportDynamicItemsResult struct {
@@ -314,18 +318,21 @@ type DynamicService struct {
 	cache          *cache.DynamicCache
 	events         *events.DynamicEvents
 	runTransaction func(context.Context, func(mongo.SessionContext) error) error
+	loadAccessUser func(context.Context, string, string, string) (map[string]interface{}, error)
 }
 
 func NewDynamicService() *DynamicService {
 	uploadService := files.NewUploadService()
 	repository := repositories.NewDynamicRepository()
-	return &DynamicService{
+	service := &DynamicService{
 		repository:     repository,
 		parser:         requests.NewDynamicRequestParser(uploadService),
 		cache:          cache.NewDynamicCache(),
 		events:         events.NewDynamicEvents(),
 		runTransaction: repository.WithTransaction,
 	}
+	service.loadAccessUser = service.loadCurrentAccessUser
+	return service
 }
 
 func (s *DynamicService) ParseSearchParams(c *fiber.Ctx) (requests.SearchParams, error) {
@@ -377,21 +384,42 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 			Err:     err,
 		}
 	}
-
+	var accessCtx recordAccessContext
+	if policy := container.Routes.CreateDynamicModelItem.Access; policy != nil {
+		accessCtx, err = s.buildRecordAccessContext(ctx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationCreate, input.AccessIdentityInput)
+		if err != nil {
+			return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+		}
+		itemMap, err = applyCreateRecordAccessAssignments(container, policy, accessCtx, itemMap)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var result *mongo.InsertOneResult
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
 		workflowPayload := workflowExecutionPayload{
-			TenantID:    input.TenantID,
-			ProjectID:   input.ProjectID,
-			SchemaName:  input.Schema,
-			Record:      itemMap,
-			StepOutputs: map[string]interface{}{},
-			UserID:      input.UserID,
-			AuditUser:   input.User,
-			Container:   container,
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			SchemaName:   input.Schema,
+			Record:       itemMap,
+			StepOutputs:  map[string]interface{}{},
+			IdentityKind: input.IdentityKind,
+			UserID:       input.UserID,
+			UserRole:     input.UserRole,
+			UserRoles:    append([]string(nil), input.UserRoles...),
+			AuditUser:    input.AuditUser,
+			CurrentUser:  cloneAccessMap(accessCtx.User),
+			Container:    container,
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeCreate); err != nil {
 			return err
+		}
+		if policy := container.Routes.CreateDynamicModelItem.Access; policy != nil {
+			itemMap, err = applyCreateRecordAccessAssignments(container, policy, accessCtx, itemMap)
+			if err != nil {
+				return err
+			}
+			workflowPayload.Record = itemMap
 		}
 		if err := validators.PrepareCreateItem(input.TenantID, input.ProjectID, container, itemMap); err != nil {
 			log.Printf("Validation/preparation failed for schema: %s, error: %v", input.Schema, err)
@@ -414,6 +442,9 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 				Err:     err,
 			}
 		}
+		if err := authorizePreparedCreateRecords(container, container.Routes.CreateDynamicModelItem.Access, accessCtx, itemMap); err != nil {
+			return err
+		}
 
 		var insertErr error
 		result, insertErr = s.repository.Insert(txCtx, input.TenantID, input.ProjectID, input.Schema, itemMap)
@@ -434,7 +465,7 @@ func (s *DynamicService) CreateDynamicItem(ctx context.Context, input CreateDyna
 		}
 
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationCreate, input.UserID, container,
-			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationCreate, input.User, nil, itemMap))
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationCreate, input.AuditUser, nil, itemMap))
 	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
@@ -465,29 +496,54 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		log.Printf("Failed to parse bulk create request for schema: %s, error: %v", input.Schema, err)
 		return nil, parseBulkCreateError(err)
 	}
-
+	var accessCtx recordAccessContext
+	if policy := container.Routes.CreateMultipleDynamicModelItem.Access; policy != nil {
+		accessCtx, err = s.buildRecordAccessContext(ctx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkCreate, input.AccessIdentityInput)
+		if err != nil {
+			return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+		}
+		for index := range items {
+			items[index], err = applyCreateRecordAccessAssignments(container, policy, accessCtx, items[index])
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	var result *mongo.InsertManyResult
 	var bulkCreatedDocs []interface{}
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
-		for _, item := range items {
+		for index, item := range items {
 			workflowPayload := workflowExecutionPayload{
-				TenantID:    input.TenantID,
-				ProjectID:   input.ProjectID,
-				SchemaName:  input.Schema,
-				Record:      item,
-				StepOutputs: map[string]interface{}{},
-				UserID:      input.UserID,
-				AuditUser:   input.User,
-				Container:   container,
+				TenantID:     input.TenantID,
+				ProjectID:    input.ProjectID,
+				SchemaName:   input.Schema,
+				Record:       item,
+				StepOutputs:  map[string]interface{}{},
+				IdentityKind: input.IdentityKind,
+				UserID:       input.UserID,
+				UserRole:     input.UserRole,
+				UserRoles:    append([]string(nil), input.UserRoles...),
+				AuditUser:    input.AuditUser,
+				CurrentUser:  cloneAccessMap(accessCtx.User),
+				Container:    container,
 			}
 			if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeCreate); err != nil {
 				return err
+			}
+			if policy := container.Routes.CreateMultipleDynamicModelItem.Access; policy != nil {
+				items[index], err = applyCreateRecordAccessAssignments(container, policy, accessCtx, item)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		if err := validators.PrepareCreateItems(input.TenantID, input.ProjectID, container, items); err != nil {
 			return err
 		}
 		if err := s.applyAutoIncrementFieldsForItems(txCtx, input.Schema, container, items); err != nil {
+			return err
+		}
+		if err := authorizePreparedCreateRecords(container, container.Routes.CreateMultipleDynamicModelItem.Access, accessCtx, items...); err != nil {
 			return err
 		}
 
@@ -506,14 +562,18 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 		}
 		for _, item := range items {
 			workflowPayload := workflowExecutionPayload{
-				TenantID:    input.TenantID,
-				ProjectID:   input.ProjectID,
-				SchemaName:  input.Schema,
-				Record:      item,
-				StepOutputs: map[string]interface{}{},
-				UserID:      input.UserID,
-				AuditUser:   input.User,
-				Container:   container,
+				TenantID:     input.TenantID,
+				ProjectID:    input.ProjectID,
+				SchemaName:   input.Schema,
+				Record:       item,
+				StepOutputs:  map[string]interface{}{},
+				IdentityKind: input.IdentityKind,
+				UserID:       input.UserID,
+				UserRole:     input.UserRole,
+				UserRoles:    append([]string(nil), input.UserRoles...),
+				AuditUser:    input.AuditUser,
+				CurrentUser:  cloneAccessMap(accessCtx.User),
+				Container:    container,
 			}
 			if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterCreate); err != nil {
 				return err
@@ -527,7 +587,7 @@ func (s *DynamicService) CreateMultipleDynamicItems(ctx context.Context, input C
 			return nil
 		}
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkCreate, input.UserID, container,
-			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkCreate, input.User, nil, bulkCreatedDocs))
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkCreate, input.AuditUser, nil, bulkCreatedDocs))
 	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
@@ -579,6 +639,15 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 			Err:     err,
 		}
 	}
+	route := container.Routes.UpdateDynamicModelItem
+	accessCtx, err := s.buildMutationRecordAccessContext(ctx, route, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationUpdate, input.AccessIdentityInput)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+	}
+	selector, err := mutationRecordAccessSelector(container, route, input.AccessIdentityInput, accessCtx, bson.M{"_id": updateID})
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access selector")
+	}
 
 	updatedItemMap, err := s.parser.ParseUpdateItem(input.FiberCtx, container)
 	if err != nil {
@@ -589,20 +658,15 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 			Err:     err,
 		}
 	}
-
 	if err := validators.PrepareUpdateFields(container, updatedItemMap); err != nil {
 		log.Printf("Validation failed for schema: %s, error: %v", input.Schema, err)
 		return nil, validationServiceError(container, err)
 	}
 
-	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID)
+	existingItem, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, input.Schema, selector)
 	if err != nil {
 		log.Printf("Failed to fetch item for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch item",
-			Err:     err,
-		}
+		return nil, recordAccessReadError(err, "No item found with specified ID")
 	}
 
 	beforeDoc := make(map[string]interface{})
@@ -623,31 +687,36 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 		}
 		return nil, validationServiceError(container, err)
 	}
-
 	var updateResult *mongo.UpdateResult
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
 		workflowPayload := workflowExecutionPayload{
-			TenantID:    input.TenantID,
-			ProjectID:   input.ProjectID,
-			SchemaName:  input.Schema,
-			Record:      existingItem,
-			OldRecord:   beforeDoc,
-			StepOutputs: map[string]interface{}{},
-			UserID:      input.UserID,
-			AuditUser:   input.User,
-			Container:   container,
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			SchemaName:   input.Schema,
+			Record:       existingItem,
+			OldRecord:    beforeDoc,
+			StepOutputs:  map[string]interface{}{},
+			IdentityKind: input.IdentityKind,
+			UserID:       input.UserID,
+			UserRole:     input.UserRole,
+			UserRoles:    append([]string(nil), input.UserRoles...),
+			AuditUser:    input.AuditUser,
+			CurrentUser:  cloneAccessMap(accessCtx.User),
+			Container:    container,
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeUpdate); err != nil {
 			return err
 		}
-
+		if err := authorizeFinalUpdateRecord(container, route.Access, accessCtx, existingItem); err != nil {
+			return err
+		}
 		var updateErr error
-		updateResult, updateErr = s.repository.UpdateByID(txCtx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
+		updateResult, updateErr = s.repository.UpdateByFilter(txCtx, input.TenantID, input.ProjectID, input.Schema, selector, bson.M{"$set": existingItem})
 		if updateErr != nil {
 			return updateErr
 		}
-		if updateResult.MatchedCount == 0 {
-			return nil
+		if err := updateResultNotFound(updateResult); err != nil {
+			return err
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerAfterUpdate); err != nil {
 			return err
@@ -656,7 +725,7 @@ func (s *DynamicService) UpdateDynamicItem(ctx context.Context, input UpdateDyna
 			return err
 		}
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationUpdate, input.UserID, container,
-			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationUpdate, input.User, beforeDoc, existingItem))
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationUpdate, input.AuditUser, beforeDoc, existingItem))
 	}); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, duplicateKeyServiceError(container, err)
@@ -693,13 +762,17 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 			Err:     err,
 		}
 	}
+	updateRoute := container.Routes.UpdateMultipleDynamicModelItem
+	accessCtx, err := s.buildMutationRecordAccessContext(ctx, updateRoute, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkUpdate, input.AccessIdentityInput)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+	}
 
 	items, err := s.parser.ParseUpdateItems(input.FiberCtx, container, configs.GetMaxBulkUpdateLimit())
 	if err != nil {
 		log.Printf("Failed to parse bulk update request for schema: %s, error: %v", input.Schema, err)
 		return nil, parseBulkUpdateError(err)
 	}
-
 	var successfulUpdates []interface{}
 	var failedUpdates []map[string]interface{}
 
@@ -710,7 +783,7 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 		localBulkAfterDocs := make([]interface{}, 0, len(items))
 
 		for _, item := range items {
-			result, beforeDoc, afterDoc, workflowErr := s.updateOneFromBulk(txCtx, input, container, item)
+			result, beforeDoc, afterDoc, workflowErr := s.updateOneFromBulk(txCtx, input, container, updateRoute, accessCtx, item)
 			if workflowErr != nil {
 				return workflowErr
 			}
@@ -728,7 +801,7 @@ func (s *DynamicService) UpdateMultipleDynamicItems(ctx context.Context, input U
 			return nil
 		}
 		if err := s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkUpdate, input.UserID, container,
-			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkUpdate, input.User, localBulkBeforeDocs, localBulkAfterDocs)); err != nil {
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkUpdate, input.AuditUser, localBulkBeforeDocs, localBulkAfterDocs)); err != nil {
 			return err
 		}
 
@@ -769,6 +842,25 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
+	container, err := s.resolveDeleteContainer(ctx, input)
+	if err != nil {
+		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
+		return nil, &ServiceError{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to fetch container model",
+			Err:     err,
+		}
+	}
+	route := container.Routes.DeleteDynamicModelItem
+	accessCtx, err := s.buildMutationRecordAccessContext(ctx, route, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationDelete, input.AccessIdentityInput)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+	}
+	selector, err := mutationRecordAccessSelector(container, route, input.AccessIdentityInput, accessCtx, bson.M{"_id": deleteID})
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access selector")
+	}
+
 	allContainers, err := s.repository.GetAllContainerModels(ctx)
 	if err != nil {
 		log.Printf("Failed to retrieve container models for schema: %s, error: %v", input.Schema, err)
@@ -779,30 +871,18 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 		}
 	}
 
-	if err := s.ensureDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers); err != nil {
-		return nil, err
-	}
-
-	container, err := s.resolveDeleteContainer(ctx, input)
-	if err != nil {
-		log.Printf("Failed to fetch container model for schema: %s, error: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch container model",
-			Err:     err,
-		}
-	}
-
 	var deletedDoc bson.M
 	if err := s.repository.WithTransaction(ctx, func(txCtx mongo.SessionContext) error {
-		if err := s.forceDeleteReferences(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, true); err != nil {
+		var findErr error
+		deletedDoc, findErr = s.repository.FindOne(txCtx, input.TenantID, input.ProjectID, input.Schema, selector)
+		if findErr != nil {
+			return recordAccessReadError(findErr, "No item found with specified ID")
+		}
+		if err := s.ensureDeleteReferences(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers); err != nil {
 			return err
 		}
-
-		var findErr error
-		deletedDoc, findErr = s.repository.FindByID(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID)
-		if findErr != nil {
-			log.Printf("Failed to fetch item before delete for schema: %s, error: %v", input.Schema, findErr)
+		if err := s.forceDeleteReferences(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, true); err != nil {
+			return err
 		}
 
 		var workflowRecord map[string]interface{}
@@ -813,22 +893,30 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 			}
 		}
 		workflowPayload := workflowExecutionPayload{
-			TenantID:    input.TenantID,
-			ProjectID:   input.ProjectID,
-			SchemaName:  input.Schema,
-			Record:      workflowRecord,
-			OldRecord:   workflowRecord,
-			Query:       workflowRecord,
-			StepOutputs: map[string]interface{}{},
-			UserID:      input.UserID,
-			AuditUser:   input.User,
-			Container:   container,
+			TenantID:     input.TenantID,
+			ProjectID:    input.ProjectID,
+			SchemaName:   input.Schema,
+			Record:       workflowRecord,
+			OldRecord:    workflowRecord,
+			Query:        workflowRecord,
+			StepOutputs:  map[string]interface{}{},
+			IdentityKind: input.IdentityKind,
+			UserID:       input.UserID,
+			UserRole:     input.UserRole,
+			UserRoles:    append([]string(nil), input.UserRoles...),
+			AuditUser:    input.AuditUser,
+			CurrentUser:  cloneAccessMap(accessCtx.User),
+			Container:    container,
 		}
 		if err := s.runTransactionalWorkflows(txCtx, workflowPayload, models.WorkflowTriggerBeforeDelete); err != nil {
 			return err
 		}
 
-		if _, err := s.repository.DeleteByID(txCtx, input.TenantID, input.ProjectID, input.Schema, deleteID); err != nil {
+		deleteResult, err := s.repository.DeleteByFilter(txCtx, input.TenantID, input.ProjectID, input.Schema, selector)
+		if err != nil {
+			return err
+		}
+		if err := deleteResultNotFound(deleteResult); err != nil {
 			return err
 		}
 
@@ -841,7 +929,7 @@ func (s *DynamicService) DeleteDynamicItem(ctx context.Context, input DeleteDyna
 
 		var auditLog *models.AuditLog
 		if deletedDoc != nil {
-			auditLog = buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationDelete, input.User, deletedDoc, nil)
+			auditLog = buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationDelete, input.AuditUser, deletedDoc, nil)
 		}
 		return s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationDelete, input.UserID, container, auditLog)
 	}); err != nil {
@@ -886,6 +974,11 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 			Err:     err,
 		}
 	}
+	deleteRoute := container.Routes.DeleteMultipleDynamicModelItem
+	accessCtx, err := s.buildMutationRecordAccessContext(ctx, deleteRoute, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkDelete, input.AccessIdentityInput)
+	if err != nil {
+		return nil, workflowExecutionServiceError(err, "Failed to build record access context")
+	}
 
 	var successfulDeletes []interface{}
 	var failedDeletes []map[string]interface{}
@@ -896,7 +989,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 		localBulkDeletedDocs := make([]interface{}, 0, len(items))
 
 		for _, item := range items {
-			result, deletedDoc, workflowErr := s.deleteOneFromBulk(txCtx, input, container, allContainers, item)
+			result, deletedDoc, workflowErr := s.deleteOneFromBulk(txCtx, input, container, deleteRoute, accessCtx, allContainers, item)
 			if workflowErr != nil {
 				return workflowErr
 			}
@@ -915,7 +1008,7 @@ func (s *DynamicService) DeleteMultipleDynamicItems(ctx context.Context, input D
 			return nil
 		}
 		if err := s.insertDynamicPostWrite(txCtx, input.TenantID, input.ProjectID, input.Schema, models.DynamicOutboxOperationBulkDelete, input.UserID, container,
-			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkDelete, input.User, localBulkDeletedDocs, nil)); err != nil {
+			buildDynamicAuditLog(input.TenantID, input.ProjectID, container.SchemaName, models.DynamicOutboxOperationBulkDelete, input.AuditUser, localBulkDeletedDocs, nil)); err != nil {
 			return err
 		}
 
@@ -952,7 +1045,9 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 	}
 
 	schema := container.SchemaName
+	route := readAccessRoute(container, readAccessGetAll)
 	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", input.TenantID, input.ProjectID, schema, container)
+	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, schema, shouldCache, "GetAllDynamicModelItems", "all")
 	if shouldCache {
 		if items, ok := s.cache.GetItems(ctx, redisKey); ok {
@@ -984,7 +1079,12 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 	}
 
 	maxUnboundedRead := configs.GetMaxUnboundedReadLimit()
-	items, err := s.repository.FindAll(ctx, input.TenantID, input.ProjectID, schema, int64(maxUnboundedRead+1))
+	filter, err := s.composeReadRecordAccessFilter(ctx, container, route, input.TenantID, input.ProjectID, schema, string(readAccessGetAll), input.AccessIdentityInput, bson.M{})
+	if err != nil {
+		return nil, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to build record access filter", Err: err}
+	}
+	pager := utils.Pager{Enabled: false}
+	items, err := s.repository.Query(ctx, input.TenantID, input.ProjectID, schema, filter, options.Find().SetLimit(int64(maxUnboundedRead+1)), &pager)
 	if err != nil {
 		log.Printf("DB query failed for schema %q: %v", schema, err)
 		return nil, &ServiceError{
@@ -1080,13 +1180,17 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 		}
 	}
 
-	container, err := s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
-	if err != nil {
-		log.Printf("Failed to get container model for schema %s: %v", input.Schema, err)
-		return nil, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to load schema configuration",
-			Err:     err,
+	container := input.Container
+	if container == nil {
+		var err error
+		container, err = s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
+		if err != nil {
+			log.Printf("Failed to get container model for schema %s: %v", input.Schema, err)
+			return nil, &ServiceError{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to load schema configuration",
+				Err:     err,
+			}
 		}
 	}
 
@@ -1096,7 +1200,11 @@ func (s *DynamicService) GetItemsForSelection(ctx context.Context, input GetItem
 	}
 
 	extraFields := append([]string{input.ValueField}, input.DataFields...)
-	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, input.Filter, input.Limit, extraFields...)
+	filter, err := s.composeReadRecordAccessFilter(ctx, container, readAccessRoute(container, readAccessSelection), input.TenantID, input.ProjectID, input.Schema, string(readAccessSelection), input.AccessIdentityInput, bson.M(input.Filter))
+	if err != nil {
+		return nil, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to build record access filter", Err: err}
+	}
+	items, err := s.repository.FindForSelection(ctx, input.TenantID, input.ProjectID, input.Schema, input.FieldName, filter, input.Limit, extraFields...)
 	if err != nil {
 		log.Printf("Failed to query collection %s: %v", input.Schema, err)
 		return nil, &ServiceError{
@@ -1136,7 +1244,9 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 		}
 	}
 
+	route := readAccessRoute(container, readAccessGetOne)
 	_, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", input.TenantID, input.ProjectID, container.SchemaName, container, input.ID)
+	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetDynamicModelItem", input.ID)
 	if shouldCache {
 		if item, ok := s.cache.GetItem(ctx, redisKey); ok {
@@ -1168,13 +1278,13 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 		}
 	}
 
+	filter, err = s.composeReadRecordAccessFilter(ctx, container, route, input.TenantID, input.ProjectID, container.SchemaName, string(readAccessGetOne), input.AccessIdentityInput, filter)
+	if err != nil {
+		return GetDynamicItemResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to build record access filter", Err: err}
+	}
 	rawDoc, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, container.SchemaName, filter)
 	if err != nil {
-		return GetDynamicItemResult{}, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Item not found",
-			Err:     err,
-		}
+		return GetDynamicItemResult{}, recordAccessReadError(err, "Item not found")
 	}
 
 	item := make(map[string]interface{}, len(rawDoc))
@@ -1243,21 +1353,12 @@ func (s *DynamicService) SearchDynamicItems(ctx context.Context, input SearchDyn
 		filter = bson.M{"$or": orClauses}
 	}
 
-	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
-	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	filter, err = s.composeReadRecordAccessFilter(ctx, container, readAccessRoute(container, readAccessSearch), input.TenantID, input.ProjectID, input.Schema, string(readAccessSearch), input.AccessIdentityInput, filter)
 	if err != nil {
-		log.Printf("Error building row access filter: %v", err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
-			Message: "row access error",
+			Message: "Failed to build record access filter",
 			Err:     err,
-		}
-	}
-	if rowAccessFilter != nil {
-		if len(filter) > 0 {
-			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-		} else {
-			filter = rowAccessFilter
 		}
 	}
 
@@ -1338,21 +1439,12 @@ func (s *DynamicService) FilterDynamicItems(ctx context.Context, input FilterDyn
 		}
 	}
 
-	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
-	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	filter, err = s.composeReadRecordAccessFilter(ctx, container, readAccessRoute(container, readAccessFilter), input.TenantID, input.ProjectID, container.SchemaName, string(readAccessFilter), input.AccessIdentityInput, filter)
 	if err != nil {
-		log.Printf("Error building row access filter: %v", err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
-			Message: "row access error",
+			Message: "Failed to build record access filter",
 			Err:     err,
-		}
-	}
-	if rowAccessFilter != nil {
-		if len(filter) > 0 {
-			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-		} else {
-			filter = rowAccessFilter
 		}
 	}
 
@@ -1410,6 +1502,7 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 		}
 	}
 
+	route := readAccessRoute(container, readAccessPaginated)
 	hasRowAccess := container.RowAccess != nil && len(container.RowAccess.Conditions) > 0
 	cacheQuery := input.QueryString
 	if hasRowAccess {
@@ -1417,6 +1510,7 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 	}
 
 	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", input.TenantID, input.ProjectID, container.SchemaName, container, cacheQuery)
+	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetAllDynamicModelItemsWithPagination", cacheQuery)
 	if shouldCache {
 		if response, ok := s.cache.GetResponse(ctx, redisKey); ok {
@@ -1481,21 +1575,12 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 		}
 	}
 
-	userMap := map[string]interface{}{"id": input.UserID, "_id": input.UserID, "role": input.UserRole}
-	rowAccessFilter, err := utils.GetRowAccessFilter(container, input.UserRole, userMap)
+	filter, err = s.composeReadRecordAccessFilter(ctx, container, route, input.TenantID, input.ProjectID, container.SchemaName, string(readAccessPaginated), input.AccessIdentityInput, filter)
 	if err != nil {
-		log.Printf("Error building row access filter: %v", err)
 		return nil, &ServiceError{
 			Status:  http.StatusInternalServerError,
-			Message: "row access error",
+			Message: "Failed to build record access filter",
 			Err:     err,
-		}
-	}
-	if rowAccessFilter != nil {
-		if len(filter) > 0 {
-			filter = bson.M{"$and": []bson.M{filter, rowAccessFilter}}
-		} else {
-			filter = rowAccessFilter
 		}
 	}
 
@@ -1639,17 +1724,16 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 	switch models.BindingKind(sourceType) {
 	case models.BindingKindSchema:
 		result, err := s.GetAllDynamicItemsWithPagination(ctx, GetPaginatedDynamicItemsInput{
-			TenantID:    input.TenantID,
-			ProjectID:   input.ProjectID,
-			Schema:      input.Schema,
-			QueryString: input.QueryString,
-			Filter:      input.Filter,
-			SearchKey:   input.SearchKey,
-			UserID:      input.UserID,
-			UserRole:    input.UserRole,
-			Sort:        input.Sort,
-			Pager:       input.Pager,
-			Container:   input.Container,
+			AccessIdentityInput: input.AccessIdentityInput,
+			TenantID:            input.TenantID,
+			ProjectID:           input.ProjectID,
+			Schema:              input.Schema,
+			QueryString:         input.QueryString,
+			Filter:              input.Filter,
+			SearchKey:           input.SearchKey,
+			Sort:                input.Sort,
+			Pager:               input.Pager,
+			Container:           input.Container,
 		})
 		if err != nil {
 			return nil, err
@@ -1692,17 +1776,16 @@ func (s *DynamicService) GetTableSource(ctx context.Context, input GetTableSourc
 			workflowRecord["search"] = input.SearchKey
 		}
 		result, err := s.ExecuteWorkflow(ctx, ExecuteWorkflowInput{
-			TenantID:     input.TenantID,
-			ProjectID:    input.ProjectID,
-			Schema:       input.Schema,
-			WorkflowName: input.WorkflowName,
-			Record:       workflowRecord,
-			Query:        workflowRecord,
-			StepOutputs:  map[string]interface{}{},
-			UserID:       input.UserID,
-			AuditUser:    input.AuditUser,
-			Container:    input.Container,
-			Pager:        &input.Pager,
+			AccessIdentityInput: input.AccessIdentityInput,
+			TenantID:            input.TenantID,
+			ProjectID:           input.ProjectID,
+			Schema:              input.Schema,
+			WorkflowName:        input.WorkflowName,
+			Record:              workflowRecord,
+			Query:               workflowRecord,
+			StepOutputs:         map[string]interface{}{},
+			Container:           input.Container,
+			Pager:               &input.Pager,
 		})
 		if err != nil {
 			return nil, err
@@ -2101,7 +2184,10 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		Query:        cloneWorkflowMap(input.Query),
 		OldRecord:    cloneWorkflowMap(input.OldRecord),
 		StepOutputs:  cloneWorkflowMap(input.StepOutputs),
+		IdentityKind: input.IdentityKind,
 		UserID:       input.UserID,
+		UserRole:     input.UserRole,
+		UserRoles:    append([]string(nil), input.UserRoles...),
 		AuditUser:    input.AuditUser,
 		Container:    container,
 		Pagination:   pagination,
@@ -2151,9 +2237,13 @@ func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDyn
 		}
 	}
 
-	container, err := s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, req.SchemaName)
-	if err != nil {
-		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
+	container := input.Container
+	if container == nil {
+		var err error
+		container, err = s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, req.SchemaName)
+		if err != nil {
+			return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
+		}
 	}
 
 	filter := buildExportFilter(container, req.Filters)
@@ -2169,6 +2259,10 @@ func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDyn
 				filter = bson.M{"$or": orClauses}
 			}
 		}
+	}
+	filter, err := s.composeReadRecordAccessFilter(ctx, container, readAccessRoute(container, readAccessExport), input.TenantID, input.ProjectID, req.SchemaName, string(readAccessExport), input.AccessIdentityInput, filter)
+	if err != nil {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to build record access filter", Err: err}
 	}
 
 	maxExportLimit := configs.GetMaxExportLimit()
@@ -2229,7 +2323,7 @@ type bulkDeleteItemResult struct {
 	Failed  map[string]interface{}
 }
 
-func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input DeleteMultipleDynamicItemsInput, container *models.ContainerModel, allContainers []models.ContainerModel, item map[string]interface{}) (bulkDeleteItemResult, interface{}, error) {
+func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input DeleteMultipleDynamicItemsInput, container *models.ContainerModel, route models.RouteSpec, accessCtx recordAccessContext, allContainers []models.ContainerModel, item map[string]interface{}) (bulkDeleteItemResult, interface{}, error) {
 	idStr, errMessage := extractBulkUpdateID(item)
 	if errMessage != "" {
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
@@ -2258,6 +2352,23 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
+	selector, err := mutationRecordAccessSelector(container, route, input.AccessIdentityInput, accessCtx, bson.M{"_id": deleteID})
+	if err != nil {
+		return bulkDeleteItemResult{}, nil, workflowExecutionServiceError(err, "Failed to build record access selector")
+	}
+
+	deletedDoc, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, input.Schema, selector)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return bulkDeleteItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "No item found with the specified ID",
+			}}, nil, nil
+		}
+		return bulkDeleteItemResult{}, nil, workflowExecutionServiceError(err, "Failed to fetch item before delete")
+	}
+
 	if err := s.ensureDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers); err != nil {
 		if serviceErr, ok := err.(*ServiceError); ok {
 			return bulkDeleteItemResult{Failed: map[string]interface{}{
@@ -2273,15 +2384,6 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 		}}, nil, nil
 	}
 
-	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, false); err != nil {
-		log.Printf("Failed to force delete referenced items for schema: %s, error: %v", input.Schema, err)
-	}
-
-	deletedDoc, findErr := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
-	if findErr != nil {
-		log.Printf("Failed to fetch item before delete (multiple) for schema: %s, error: %v", input.Schema, findErr)
-	}
-
 	var workflowRecord map[string]interface{}
 	if deletedDoc != nil {
 		workflowRecord = map[string]interface{}{}
@@ -2290,21 +2392,25 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 		}
 	}
 	workflowPayload := workflowExecutionPayload{
-		TenantID:    input.TenantID,
-		ProjectID:   input.ProjectID,
-		SchemaName:  input.Schema,
-		Record:      workflowRecord,
-		OldRecord:   workflowRecord,
-		StepOutputs: map[string]interface{}{},
-		UserID:      input.UserID,
-		AuditUser:   input.User,
-		Container:   container,
+		TenantID:     input.TenantID,
+		ProjectID:    input.ProjectID,
+		SchemaName:   input.Schema,
+		Record:       workflowRecord,
+		OldRecord:    workflowRecord,
+		StepOutputs:  map[string]interface{}{},
+		IdentityKind: input.IdentityKind,
+		UserID:       input.UserID,
+		UserRole:     input.UserRole,
+		UserRoles:    append([]string(nil), input.UserRoles...),
+		AuditUser:    input.AuditUser,
+		CurrentUser:  cloneAccessMap(accessCtx.User),
+		Container:    container,
 	}
 	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerBeforeDelete); err != nil {
 		return bulkDeleteItemResult{}, nil, err
 	}
 
-	deleteResult, err := s.repository.DeleteByID(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID)
+	deleteResult, err := s.repository.DeleteByFilter(ctx, input.TenantID, input.ProjectID, input.Schema, selector)
 	if err != nil {
 		return bulkDeleteItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
@@ -2318,6 +2424,9 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 			"item":  item,
 			"error": "No item found with the specified ID",
 		}}, nil, nil
+	}
+	if err := s.forceDeleteReferences(ctx, input.TenantID, input.ProjectID, input.Schema, deleteID, allContainers, false); err != nil {
+		log.Printf("Failed to force delete referenced items for schema: %s, error: %v", input.Schema, err)
 	}
 
 	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerAfterDelete); err != nil {
@@ -2333,7 +2442,7 @@ func (s *DynamicService) deleteOneFromBulk(ctx mongo.SessionContext, input Delet
 	}}, deletedDoc, nil
 }
 
-func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}, error) {
+func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input UpdateMultipleDynamicItemsInput, container *models.ContainerModel, route models.RouteSpec, accessCtx recordAccessContext, item map[string]interface{}) (bulkUpdateItemResult, interface{}, interface{}, error) {
 	idStr, errMessage := extractBulkUpdateID(item)
 	if errMessage != "" {
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
@@ -2362,6 +2471,11 @@ func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input Updat
 	}
 	defer utils.ReleaseLock(lockKey, lockID)
 
+	selector, err := mutationRecordAccessSelector(container, route, input.AccessIdentityInput, accessCtx, bson.M{"_id": updateID})
+	if err != nil {
+		return bulkUpdateItemResult{}, nil, nil, workflowExecutionServiceError(err, "Failed to build record access selector")
+	}
+
 	delete(item, "id")
 	delete(item, "_id")
 
@@ -2373,8 +2487,15 @@ func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input Updat
 		}}, nil, nil, nil
 	}
 
-	existingItem, err := s.repository.FindByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID)
+	existingItem, err := s.repository.FindOne(ctx, input.TenantID, input.ProjectID, input.Schema, selector)
 	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "No item found with the specified ID",
+			}}, nil, nil, nil
+		}
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
@@ -2402,23 +2523,36 @@ func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input Updat
 			"error": err.Error(),
 		}}, nil, nil, nil
 	}
-
 	workflowPayload := workflowExecutionPayload{
-		TenantID:    input.TenantID,
-		ProjectID:   input.ProjectID,
-		SchemaName:  input.Schema,
-		Record:      existingItem,
-		OldRecord:   beforeDoc,
-		StepOutputs: map[string]interface{}{},
-		UserID:      input.UserID,
-		AuditUser:   input.User,
-		Container:   container,
+		TenantID:     input.TenantID,
+		ProjectID:    input.ProjectID,
+		SchemaName:   input.Schema,
+		Record:       existingItem,
+		OldRecord:    beforeDoc,
+		StepOutputs:  map[string]interface{}{},
+		IdentityKind: input.IdentityKind,
+		UserID:       input.UserID,
+		UserRole:     input.UserRole,
+		UserRoles:    append([]string(nil), input.UserRoles...),
+		AuditUser:    input.AuditUser,
+		CurrentUser:  cloneAccessMap(accessCtx.User),
+		Container:    container,
 	}
 	if err := s.runTransactionalWorkflows(ctx, workflowPayload, models.WorkflowTriggerBeforeUpdate); err != nil {
 		return bulkUpdateItemResult{}, nil, nil, err
 	}
-
-	updateResult, err := s.repository.UpdateByID(ctx, input.TenantID, input.ProjectID, input.Schema, updateID, existingItem)
+	if err := authorizeFinalUpdateRecord(container, route.Access, accessCtx, existingItem); err != nil {
+		var serviceErr *ServiceError
+		if errors.As(err, &serviceErr) && serviceErr.Status == http.StatusNotFound {
+			return bulkUpdateItemResult{Failed: map[string]interface{}{
+				"id":    idStr,
+				"item":  item,
+				"error": "No item found with the specified ID",
+			}}, nil, nil, nil
+		}
+		return bulkUpdateItemResult{}, nil, nil, err
+	}
+	updateResult, err := s.repository.UpdateByFilter(ctx, input.TenantID, input.ProjectID, input.Schema, selector, bson.M{"$set": existingItem})
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			serviceErr := duplicateKeyServiceError(container, err)
@@ -2438,7 +2572,7 @@ func (s *DynamicService) updateOneFromBulk(ctx mongo.SessionContext, input Updat
 		return bulkUpdateItemResult{Failed: map[string]interface{}{
 			"id":    idStr,
 			"item":  item,
-			"error": "No matching item found to update",
+			"error": "No item found with the specified ID",
 		}}, nil, nil, nil
 	}
 
