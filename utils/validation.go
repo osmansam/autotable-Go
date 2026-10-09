@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/osmansam/autotableGo/models"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // ValidateContainerModel validates the container model fields
@@ -340,12 +341,15 @@ func validateFieldBase(item map[string]interface{}, field models.Field) error {
 		}
 		// Nested validation is handled in validateArrayField
 	case "objectId":
-		val, ok := fieldValue.(string)
-		if !ok {
+		switch val := fieldValue.(type) {
+		case primitive.ObjectID:
+			// Trusted server-side assignments are normalized before validation.
+		case string:
+			if len(val) != 24 || !isValidHex(val) {
+				return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
+			}
+		default:
 			return fmt.Errorf("Field %s should be of type %s", fieldName, fieldType)
-		}
-		if len(val) != 24 || !isValidHex(val) {
-			return fmt.Errorf("Field %s should be a valid ObjectId", fieldName)
 		}
 	case "objectIdArray":
 		arrayValue, ok := fieldValue.([]interface{})

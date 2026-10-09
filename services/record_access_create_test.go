@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/validators"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -55,6 +56,32 @@ func TestCreateRecordAccessAllowsAssignmentOnlyPolicy(t *testing.T) {
 	}
 	if err := authorizePreparedCreateRecords(accessTestContainer(), policy, callerAccessContext(userID.Hex()), record); err != nil {
 		t.Fatalf("assignment-only authorize error = %v", err)
+	}
+}
+
+func TestCreateRecordAccessObjectIDAssignmentPassesCreateValidation(t *testing.T) {
+	userID := primitive.NewObjectID()
+	container := &models.ContainerModel{
+		SchemaName: "menu",
+		Fields: []models.Field{{
+			Name:             "user",
+			Type:             "objectId",
+			ObjectSchemaName: "auth",
+		}},
+	}
+	policy := &models.RecordAccessPolicy{
+		Assign: map[string]interface{}{"user": "{{auth.user._id}}"},
+	}
+
+	record, err := applyCreateRecordAccessAssignments(container, policy, callerAccessContext(userID.Hex()), map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("applyCreateRecordAccessAssignments() error = %v", err)
+	}
+	if got, ok := record["user"].(primitive.ObjectID); !ok || got != userID {
+		t.Fatalf("assigned user = %#v, want ObjectID %s", record["user"], userID.Hex())
+	}
+	if err := validators.PrepareCreateItem("tenant", "project", container, record); err != nil {
+		t.Fatalf("PrepareCreateItem() error = %v", err)
 	}
 }
 
