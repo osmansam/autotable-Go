@@ -8,10 +8,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/osmansam/autotableGo/models"
 )
+
+var protectedTranslationTokenPattern = regexp.MustCompile(`{{[^{}]+}}|https?://[^\s),;]+|\b(?:[A-Za-z]+[A-Z][A-Za-z0-9]*|[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+|[A-Za-z][\w-]*(?:\.[A-Za-z][\w-]*)+)\b`)
 
 type TranslationOutput struct {
 	Key  string `json:"key"`
@@ -58,7 +63,7 @@ func TranslateWithOpenAI(ctx context.Context, sourceLocale, targetLocale string,
 	input, _ := json.Marshal(items)
 	payload := map[string]interface{}{
 		"model": model,
-		"input": fmt.Sprintf("Translate these UI labels from %s to %s. Preserve placeholders and return every key exactly once. Context is descriptive only. Items: %s", sourceLocale, targetLocale, input),
+		"input": fmt.Sprintf("Translate these UI labels from %s to %s. Preserve placeholders, template expressions, URLs, code identifiers, JSON field names, and technical literals exactly. Return every key exactly once. Context is descriptive only. Items: %s", sourceLocale, targetLocale, input),
 		"text": map[string]interface{}{"format": map[string]interface{}{
 			"type": "json_schema", "name": "project_translations", "strict": true,
 			"schema": map[string]interface{}{
@@ -90,7 +95,18 @@ func TranslateWithOpenAI(ctx context.Context, sourceLocale, targetLocale string,
 		return nil, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("OpenAI returned status %d: %s", response.StatusCode, string(responseBody))
+		return nil, fmt.Errorf("OpenAI returned status %d", response.StatusCode)
 	}
 	return decodeOpenAITranslations(responseBody)
+}
+
+func validateProtectedTranslation(source, translated string) error {
+	sourceTokens := protectedTranslationTokenPattern.FindAllString(source, -1)
+	translatedTokens := protectedTranslationTokenPattern.FindAllString(translated, -1)
+	sort.Strings(sourceTokens)
+	sort.Strings(translatedTokens)
+	if strings.Join(sourceTokens, "\x00") != strings.Join(translatedTokens, "\x00") {
+		return fmt.Errorf("AI translation changed protected content")
+	}
+	return nil
 }

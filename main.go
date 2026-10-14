@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -86,6 +87,8 @@ func main() {
 	app.Use(corsFromConfig(appConfig))
 	//run database
 	configs.InitDB()
+	hostname, _ := os.Hostname()
+	go services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
 
 	//websocket wiring
 	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {

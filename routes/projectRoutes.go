@@ -37,6 +37,10 @@ func ProjectRoutes(app *fiber.App) {
 		controllers.UpdateProjectLocales,
 	)
 	projectGroup.Get("/:id/translations", middlewares.SearchRateLimit(), controllers.ListProjectTranslations)
+	projectGroup.Post("/:id/translations/generate",
+		middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.GenerateProjectTranslations,
+	)
+	projectGroup.Get("/:id/translation-jobs/:jobId", middlewares.SearchRateLimit(), controllers.GetProjectTranslationJob)
 	projectGroup.Patch("/:id/translations/:locale/:key",
 		middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.UpdateProjectTranslation,
 	)

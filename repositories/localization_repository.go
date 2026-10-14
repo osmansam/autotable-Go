@@ -61,39 +61,98 @@ func (r *LocalizationRepository) EnsureIndexes(ctx context.Context) error {
 	return err
 }
 
-func (r *LocalizationRepository) UpsertGeneratedTranslation(ctx context.Context, entry models.TranslationEntry) error {
+func (r *LocalizationRepository) UpsertPlaceholder(ctx context.Context, entry models.TranslationEntry) error {
 	now := time.Now().UTC()
-	filter := bson.M{
+	filter := translationIdentityFilter(entry)
+	update := bson.M{
+		"$set": bson.M{
+			"resourceType": entry.ResourceType, "resourceId": entry.ResourceID, "propertyPath": entry.PropertyPath,
+			"sourceText": entry.SourceText, "sourceHash": entry.SourceHash, "isActive": true,
+			"lastDiscovered": entry.LastDiscovered, "updatedAt": now,
+		},
+		"$setOnInsert": bson.M{
+			"translatedText": "", "origin": models.TranslationOriginUntranslated,
+			"status": models.TranslationStatusMissing, "createdAt": now,
+		},
+		"$unset": bson.M{"orphanedAt": ""},
+	}
+	_, err := r.translations.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	return err
+}
+
+func (r *LocalizationRepository) ApplyReconciledEntries(ctx context.Context, entries []models.TranslationEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	writes := make([]mongo.WriteModel, 0, len(entries))
+	for _, entry := range entries {
+		createdAt := entry.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = now
+		}
+		update := bson.M{
+			"$set": bson.M{
+				"resourceType": entry.ResourceType, "resourceId": entry.ResourceID, "propertyPath": entry.PropertyPath,
+				"sourceText": entry.SourceText, "sourceHash": entry.SourceHash, "translatedText": entry.TranslatedText,
+				"origin": entry.Origin, "status": entry.Status, "isActive": entry.IsActive,
+				"orphanedAt": entry.OrphanedAt, "lastDiscovered": entry.LastDiscovered,
+				"updatedBy": entry.UpdatedBy, "updatedAt": now,
+			},
+			"$setOnInsert": bson.M{"createdAt": createdAt},
+		}
+		writes = append(writes, mongo.NewUpdateOneModel().
+			SetFilter(translationIdentityFilter(entry)).
+			SetUpdate(update).
+			SetUpsert(true))
+	}
+	_, err := r.translations.BulkWrite(ctx, writes, options.BulkWrite().SetOrdered(false))
+	return err
+}
+
+func (r *LocalizationRepository) UpsertGeneratedTranslation(ctx context.Context, entry models.TranslationEntry) (bool, error) {
+	now := time.Now().UTC()
+	filter := generatedTranslationFilter(entry)
+	update := bson.M{
+		"$set": bson.M{
+			"translatedText": entry.TranslatedText, "origin": models.TranslationOriginAI,
+			"status": models.TranslationStatusCurrent, "updatedBy": entry.UpdatedBy, "updatedAt": now,
+		},
+	}
+	result, err := r.translations.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, err
+	}
+	return result.MatchedCount > 0, nil
+}
+
+func (r *LocalizationRepository) MarkGeneratedTranslationFailed(ctx context.Context, entry models.TranslationEntry) error {
+	_, err := r.translations.UpdateOne(ctx, generatedTranslationFilter(entry), bson.M{"$set": bson.M{
+		"status": models.TranslationStatusFailed, "updatedAt": time.Now().UTC(),
+	}})
+	return err
+}
+
+func generatedTranslationFilter(entry models.TranslationEntry) bson.M {
+	filter := translationIdentityFilter(entry)
+	filter["origin"] = bson.M{"$ne": models.TranslationOriginManual}
+	filter["sourceHash"] = entry.SourceHash
+	filter["isActive"] = true
+	filter["status"] = bson.M{"$in": []models.TranslationStatus{
+		models.TranslationStatusMissing,
+		models.TranslationStatusOutdated,
+		models.TranslationStatusFailed,
+	}}
+	return filter
+}
+
+func translationIdentityFilter(entry models.TranslationEntry) bson.M {
+	return bson.M{
 		"tenantId":       entry.TenantID,
 		"projectId":      entry.ProjectID,
 		"locale":         entry.Locale,
 		"translationKey": entry.TranslationKey,
-		"origin":         bson.M{"$ne": models.TranslationOriginManual},
 	}
-	update := bson.M{
-		"$set": bson.M{
-			"resourceType": entry.ResourceType, "resourceId": entry.ResourceID, "propertyPath": entry.PropertyPath,
-			"sourceText": entry.SourceText, "sourceHash": entry.SourceHash, "translatedText": entry.TranslatedText,
-			"origin": models.TranslationOriginAI, "status": models.TranslationStatusCurrent, "isActive": true,
-			"lastDiscovered": entry.LastDiscovered, "updatedBy": entry.UpdatedBy, "updatedAt": now,
-		},
-		"$setOnInsert": bson.M{"createdAt": now},
-		"$unset":       bson.M{"orphanedAt": ""},
-	}
-	result, err := r.translations.UpdateOne(ctx, filter, update)
-	if err != nil || result.MatchedCount > 0 {
-		return err
-	}
-	entry.Origin = models.TranslationOriginAI
-	entry.Status = models.TranslationStatusCurrent
-	entry.IsActive = true
-	entry.CreatedAt = now
-	entry.UpdatedAt = now
-	_, err = r.translations.InsertOne(ctx, entry)
-	if mongo.IsDuplicateKeyError(err) {
-		return nil
-	}
-	return err
 }
 
 func (r *LocalizationRepository) CreateJob(ctx context.Context, job *models.TranslationJob) error {
@@ -104,18 +163,39 @@ func (r *LocalizationRepository) CreateJob(ctx context.Context, job *models.Tran
 	return err
 }
 
+func (r *LocalizationRepository) GetJob(ctx context.Context, tenantID, projectID, jobID primitive.ObjectID) (*models.TranslationJob, error) {
+	var job models.TranslationJob
+	err := r.jobs.FindOne(ctx, bson.M{"_id": jobID, "tenantId": tenantID, "projectId": projectID}).Decode(&job)
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 func (r *LocalizationRepository) SetJobRunning(ctx context.Context, id primitive.ObjectID, total int64) error {
-	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"status": models.TranslationJobRunning, "total": total, "updatedAt": time.Now().UTC()}})
+	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+		"status": models.TranslationJobRunning, "total": total, "completed": 0,
+		"skippedManual": 0, "failed": 0, "errorSummary": []string{}, "updatedAt": time.Now().UTC(),
+	}})
 	return err
 }
 
-func (r *LocalizationRepository) CompleteJob(ctx context.Context, id primitive.ObjectID, completed, failed int64, messages []string) error {
+func (r *LocalizationRepository) UpdateJobProgress(ctx context.Context, id primitive.ObjectID, completed, skippedManual, failed int64, messages []string) error {
+	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+		"completed": completed, "skippedManual": skippedManual, "failed": failed,
+		"errorSummary": messages, "updatedAt": time.Now().UTC(),
+	}})
+	return err
+}
+
+func (r *LocalizationRepository) CompleteJob(ctx context.Context, id primitive.ObjectID, completed, skippedManual, failed int64, messages []string) error {
 	status := models.TranslationJobCompleted
 	if failed > 0 {
 		status = models.TranslationJobFailed
 	}
 	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
-		"status": status, "completed": completed, "failed": failed, "errorSummary": messages, "updatedAt": time.Now().UTC(),
+		"status": status, "completed": completed, "skippedManual": skippedManual,
+		"failed": failed, "errorSummary": messages, "updatedAt": time.Now().UTC(),
 	}, "$unset": bson.M{"leaseOwner": "", "leaseExpiresAt": ""}})
 	return err
 }
@@ -184,6 +264,23 @@ func (r *LocalizationRepository) ListTranslations(ctx context.Context, tenantID,
 	return entries, nil
 }
 
+func (r *LocalizationRepository) ListProjectTranslations(ctx context.Context, tenantID, projectID primitive.ObjectID) ([]models.TranslationEntry, error) {
+	cursor, err := r.translations.Find(
+		ctx,
+		bson.M{"tenantId": tenantID, "projectId": projectID},
+		options.Find().SetSort(bson.D{{Key: "locale", Value: 1}, {Key: "translationKey", Value: 1}}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var entries []models.TranslationEntry
+	if err := cursor.All(ctx, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
 func (r *LocalizationRepository) GetTranslation(ctx context.Context, tenantID, projectID primitive.ObjectID, locale, key string) (*models.TranslationEntry, error) {
 	var entry models.TranslationEntry
 	err := r.translations.FindOne(ctx, bson.M{"tenantId": tenantID, "projectId": projectID, "locale": locale, "translationKey": key}).Decode(&entry)
@@ -195,12 +292,13 @@ func (r *LocalizationRepository) GetTranslation(ctx context.Context, tenantID, p
 
 func (r *LocalizationRepository) LeaseNextJob(ctx context.Context, owner string, now time.Time, leaseDuration time.Duration) (*models.TranslationJob, error) {
 	filter := bson.M{
-		"status":        models.TranslationJobPending,
 		"nextAttemptAt": bson.M{"$lte": now},
 		"$or": []bson.M{
-			{"leaseExpiresAt": bson.M{"$exists": false}},
-			{"leaseExpiresAt": nil},
-			{"leaseExpiresAt": bson.M{"$lte": now}},
+			{
+				"status": models.TranslationJobPending,
+				"$or":    []bson.M{{"leaseExpiresAt": bson.M{"$exists": false}}, {"leaseExpiresAt": nil}, {"leaseExpiresAt": bson.M{"$lte": now}}},
+			},
+			{"status": models.TranslationJobRunning, "leaseExpiresAt": bson.M{"$lte": now}},
 		},
 	}
 	update := bson.M{"$set": bson.M{
