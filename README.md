@@ -1,5 +1,20 @@
 # autotable-Go
 
+## Project localization and AI translation
+
+AutoTable is the single owner of project language settings, centralized
+translations, and AI translation jobs used by both Tenant Panel and Ozmishow.
+Configure the AI provider only in this service environment:
+
+```text
+OPENAI_API_KEY=replace-with-a-project-api-key
+OPENAI_TRANSLATION_MODEL=gpt-6-luna
+```
+
+`OPENAI_TRANSLATION_MODEL` is optional. Restart the Go service after changing
+either variable. Tenant Panel and Ozmishow send authenticated project requests
+to AutoTable; neither frontend should contain or forward an OpenAI key.
+
 ## Local Observability
 
 This project includes a simple local Prometheus + Grafana setup for the Go/Fiber API metrics exposed at `/metrics`, OpenTelemetry traces through the OpenTelemetry Collector and Grafana Tempo, and structured JSON logs shipped to Grafana Loki by Grafana Alloy.

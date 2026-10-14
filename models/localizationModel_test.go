@@ -75,3 +75,48 @@ func TestTranslationEntryBSONIncludesOwnershipAndLifecycle(t *testing.T) {
 		}
 	}
 }
+
+func TestTranslationLifecycleMissingValuesSerialize(t *testing.T) {
+	entry := TranslationEntry{
+		Origin: TranslationOriginUntranslated,
+		Status: TranslationStatusMissing,
+	}
+
+	raw, err := bson.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document bson.M
+	if err := bson.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if got := document["origin"]; got != string(TranslationOriginUntranslated) {
+		t.Fatalf("origin = %#v, want untranslated", got)
+	}
+	if got := document["status"]; got != string(TranslationStatusMissing) {
+		t.Fatalf("status = %#v, want missing", got)
+	}
+}
+
+func TestTranslationJobBSONPersistsSourceLocaleAndOptionalKeys(t *testing.T) {
+	job := TranslationJob{
+		SourceLocale:    "en",
+		TranslationKeys: []string{"ozmishow:sitePage:page/a:title"},
+	}
+
+	raw, err := bson.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document bson.M
+	if err := bson.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if got := document["sourceLocale"]; got != "en" {
+		t.Fatalf("sourceLocale = %#v, want en", got)
+	}
+	keys, ok := document["translationKeys"].(bson.A)
+	if !ok || len(keys) != 1 || keys[0] != "ozmishow:sitePage:page/a:title" {
+		t.Fatalf("translationKeys = %#v", document["translationKeys"])
+	}
+}

@@ -111,6 +111,9 @@ func ConditionalAuthenticationForPages(c *fiber.Ctx) error {
 }
 
 func ProjectAuthentication(c *fiber.Ctx) error {
+	if _, err := ResolveProjectCredential(c); err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Missing or invalid authentication credential"})
+	}
 	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to get project context: " + err.Error()})

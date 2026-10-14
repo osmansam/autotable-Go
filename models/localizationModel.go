@@ -9,13 +9,15 @@ import (
 type TranslationOrigin string
 
 const (
-	TranslationOriginAI     TranslationOrigin = "ai"
-	TranslationOriginManual TranslationOrigin = "manual"
+	TranslationOriginUntranslated TranslationOrigin = "untranslated"
+	TranslationOriginAI           TranslationOrigin = "ai"
+	TranslationOriginManual       TranslationOrigin = "manual"
 )
 
 type TranslationStatus string
 
 const (
+	TranslationStatusMissing  TranslationStatus = "missing"
 	TranslationStatusCurrent  TranslationStatus = "current"
 	TranslationStatusOutdated TranslationStatus = "outdated"
 	TranslationStatusFailed   TranslationStatus = "failed"
@@ -54,6 +56,15 @@ type SourceString struct {
 	Context        string `json:"context,omitempty"`
 }
 
+type TranslationReconciliationSummary struct {
+	Discovered int `json:"discovered"`
+	Created    int `json:"created"`
+	Updated    int `json:"updated"`
+	Outdated   int `json:"outdated"`
+	Inactive   int `json:"inactive"`
+	Failed     int `json:"failed"`
+}
+
 type ProjectLocalePreference struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	UserID    primitive.ObjectID `bson:"userId" json:"userId"`
@@ -75,22 +86,24 @@ const (
 )
 
 type TranslationJob struct {
-	ID             primitive.ObjectID   `bson:"_id,omitempty" json:"id,omitempty"`
-	TenantID       primitive.ObjectID   `bson:"tenantId" json:"tenantId"`
-	ProjectID      primitive.ObjectID   `bson:"projectId" json:"projectId"`
-	RequestedBy    primitive.ObjectID   `bson:"requestedBy" json:"requestedBy"`
-	Operation      string               `bson:"operation" json:"operation"`
-	TargetLocales  []string             `bson:"targetLocales" json:"targetLocales"`
-	Status         TranslationJobStatus `bson:"status" json:"status"`
-	Total          int64                `bson:"total" json:"total"`
-	Completed      int64                `bson:"completed" json:"completed"`
-	SkippedManual  int64                `bson:"skippedManual" json:"skippedManual"`
-	Failed         int64                `bson:"failed" json:"failed"`
-	RetryCount     int                  `bson:"retryCount" json:"retryCount"`
-	LeaseOwner     string               `bson:"leaseOwner,omitempty" json:"leaseOwner,omitempty"`
-	LeaseExpiresAt *time.Time           `bson:"leaseExpiresAt,omitempty" json:"leaseExpiresAt,omitempty"`
-	NextAttemptAt  time.Time            `bson:"nextAttemptAt" json:"nextAttemptAt"`
-	ErrorSummary   []string             `bson:"errorSummary,omitempty" json:"errorSummary,omitempty"`
-	CreatedAt      time.Time            `bson:"createdAt" json:"createdAt"`
-	UpdatedAt      time.Time            `bson:"updatedAt" json:"updatedAt"`
+	ID              primitive.ObjectID   `bson:"_id,omitempty" json:"id,omitempty"`
+	TenantID        primitive.ObjectID   `bson:"tenantId" json:"tenantId"`
+	ProjectID       primitive.ObjectID   `bson:"projectId" json:"projectId"`
+	RequestedBy     primitive.ObjectID   `bson:"requestedBy" json:"requestedBy"`
+	Operation       string               `bson:"operation" json:"operation"`
+	SourceLocale    string               `bson:"sourceLocale" json:"sourceLocale"`
+	TargetLocales   []string             `bson:"targetLocales" json:"targetLocales"`
+	TranslationKeys []string             `bson:"translationKeys,omitempty" json:"translationKeys,omitempty"`
+	Status          TranslationJobStatus `bson:"status" json:"status"`
+	Total           int64                `bson:"total" json:"total"`
+	Completed       int64                `bson:"completed" json:"completed"`
+	SkippedManual   int64                `bson:"skippedManual" json:"skippedManual"`
+	Failed          int64                `bson:"failed" json:"failed"`
+	RetryCount      int                  `bson:"retryCount" json:"retryCount"`
+	LeaseOwner      string               `bson:"leaseOwner,omitempty" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt  *time.Time           `bson:"leaseExpiresAt,omitempty" json:"leaseExpiresAt,omitempty"`
+	NextAttemptAt   time.Time            `bson:"nextAttemptAt" json:"nextAttemptAt"`
+	ErrorSummary    []string             `bson:"errorSummary,omitempty" json:"errorSummary,omitempty"`
+	CreatedAt       time.Time            `bson:"createdAt" json:"createdAt"`
+	UpdatedAt       time.Time            `bson:"updatedAt" json:"updatedAt"`
 }
