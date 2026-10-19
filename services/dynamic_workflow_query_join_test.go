@@ -157,12 +157,12 @@ func TestWorkflowQueryDynamicAPIReturnsConfiguredGETResult(t *testing.T) {
 		SchemaName: "product",
 		DynamicApis: []models.DynamicApiModel{{
 			Name:     "menu-items",
-			Url:      server.URL,
+			Url:      "http://8.8.8.8",
 			Method:   http.MethodGet,
 			IsActive: true,
 		}},
 	}
-	output, err := (&DynamicService{}).workflowQueryDynamicAPI(
+	output, err := (&DynamicService{workflowHTTPTransport: dynamicAPILocalTestTransport(server.URL)}).workflowQueryDynamicAPI(
 		context.Background(),
 		models.DynamicWorkflowStep{Config: map[string]interface{}{"apiName": "menu-items"}},
 		workflowExecutionPayload{
@@ -359,13 +359,13 @@ func TestReadOnlyQueryJoinWorkflowReturnsTableSourceRows(t *testing.T) {
 			SchemaName: "product",
 			DynamicApis: []models.DynamicApiModel{{
 				Name:     "menu-items",
-				Url:      server.URL,
+				Url:      "http://8.8.8.8",
 				Method:   http.MethodGet,
 				IsActive: true,
 			}},
 		},
 	}
-	if err := (&DynamicService{}).runWorkflowDefinition(context.Background(), &payload, workflow); err != nil {
+	if err := (&DynamicService{workflowHTTPTransport: dynamicAPILocalTestTransport(server.URL)}).runWorkflowDefinition(context.Background(), &payload, workflow); err != nil {
 		t.Fatalf("runWorkflowDefinition() error = %v", err)
 	}
 

@@ -17,7 +17,7 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost/health",
+          "http://localhost/${AUTOTABLE_READINESS_PATH:-ready}",
         ]
       interval: 30s
       timeout: 10s
@@ -39,6 +39,7 @@ services:
       retries: 3
 
   app:
+    image: ${AUTOTABLE_IMAGE:-autotable-app:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -64,7 +65,7 @@ services:
           "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost:4000/health",
+          "http://localhost:4000/${AUTOTABLE_READINESS_PATH:-ready}",
         ]
       interval: 30s
       timeout: 10s

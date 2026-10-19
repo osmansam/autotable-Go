@@ -6,7 +6,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
-	"github.com/osmansam/autotableGo/models"
 )
 
 func adminPageBaseURL(baseUrl string) string {
@@ -23,57 +22,34 @@ func adminPageBaseURL(baseUrl string) string {
 func PageRoutes(baseUrl string, app *fiber.App) {
 	// Runtime pages for the end-user app. Users see pages based on page-level
 	// authentication and authorization settings.
-	app.Get(baseUrl, middlewares.TenantAuthenticate, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllPagesPublic)
+	app.Get(baseUrl, middlewares.ConditionalAuthenticationForPages, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllPagesPublic)
 
 	// Admin page management routes for tenantPanel.
-	pageGroup := app.Group(adminPageBaseURL(baseUrl))
-	pageGroup.Use(middlewares.TenantAuthenticate)
-	pageGroup.Use(middlewares.GeneralRateLimit())
-	pageGroup.Use(middlewares.RequireProjectScope)
+	adminBase := "/" + strings.TrimPrefix(adminPageBaseURL(baseUrl), "/")
 
 	// Create page - requires project admin, developer, or editor role
-	pageGroup.Post("/",
-		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin,
-			models.ProjectRoleDeveloper,
-			models.ProjectRoleEditor,
-		}),
+	app.Post(adminBase+"/", strictManagementRouteHandlers("POST", adminBase+"/",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreatePage,
-	)
+	)...)
 
 	// Get all pages - tenant access (any project member can view)
-	pageGroup.Get("/", middlewares.TenantAuthorize([]string{
-		models.ProjectRoleAdmin,
-		models.ProjectRoleDeveloper,
-		models.ProjectRoleEditor,
-	}), middlewares.SearchRateLimit(), controllers.GetAllPages)
+	app.Get(adminBase+"/", strictManagementRouteHandlers("GET", adminBase+"/", middlewares.SearchRateLimit(), controllers.GetAllPages)...)
 
 	// Get single page - any project member can view
-	pageGroup.Get("/:id",
-		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin,
-			models.ProjectRoleDeveloper,
-			models.ProjectRoleEditor,
-		}), middlewares.SearchRateLimit(), controllers.GetPage)
+	app.Get(adminBase+"/:id", strictManagementRouteHandlers("GET", adminBase+"/:id", middlewares.SearchRateLimit(), controllers.GetPage)...)
 
 	// Update page - requires project admin, developer, or editor role
-	pageGroup.Patch("/:id",
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// 	models.ProjectRoleEditor,
-		// }),
+	app.Patch(adminBase+"/:id", strictManagementRouteHandlers("PATCH", adminBase+"/:id",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdatePage,
-	)
+	)...)
 
 	// Delete page - requires project admin role
-	pageGroup.Delete("/:id",
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+	app.Delete(adminBase+"/:id", strictManagementRouteHandlers("DELETE", adminBase+"/:id",
 		middlewares.WriteRateLimit(),
 		controllers.DeletePage,
-	)
+	)...)
 }

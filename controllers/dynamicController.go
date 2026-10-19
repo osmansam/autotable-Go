@@ -865,43 +865,45 @@ func tableSourceFields(c *fiber.Ctx) []string {
 }
 
 // executeDynamicCode executes dynamic code from a request.
-func ExecuteDynamicCode(c *fiber.Ctx) error {
-	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
-	defer cancel()
-
-	tenantID, projectID, err := getProjectContext(c)
-	if err != nil {
-		return utils.SendErrorResponse(c, err, err.Error())
-	}
-
-	schemaName := c.Query("schemaName")
-	functionName := c.Query("functionName")
-	var container *models.ContainerModel
-	if storedContainer := c.Locals("containerModel"); storedContainer != nil {
-		container, _ = storedContainer.(*models.ContainerModel)
-	}
-
-	dynamicService := services.NewDynamicService()
-	result, err := dynamicService.ExecuteDynamicCode(ctx, services.ExecuteDynamicCodeInput{
-		TenantID:     tenantID,
-		ProjectID:    projectID,
-		Schema:       schemaName,
-		FunctionName: functionName,
-		CurrentQuery: c.OriginalURL(),
-		Container:    container,
-		FiberCtx:     c,
-	})
-	if err != nil {
-		return sendDynamicError(c, err, "Failed to execute function")
-	}
-
-	return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
-		Status:  http.StatusOK,
-		Message: result.Message,
-		Data:    result.Data,
-		Source:  utils.PointerToString(result.Source),
-	})
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+//
+//	func ExecuteDynamicCode(c *fiber.Ctx) error {
+//		ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
+//		defer cancel()
+//
+//		tenantID, projectID, err := getProjectContext(c)
+//		if err != nil {
+//			return utils.SendErrorResponse(c, err, err.Error())
+//		}
+//
+//		schemaName := c.Query("schemaName")
+//		functionName := c.Query("functionName")
+//		var container *models.ContainerModel
+//		if storedContainer := c.Locals("containerModel"); storedContainer != nil {
+//			container, _ = storedContainer.(*models.ContainerModel)
+//		}
+//
+//		dynamicService := services.NewDynamicService()
+//		result, err := dynamicService.ExecuteDynamicCode(ctx, services.ExecuteDynamicCodeInput{
+//			TenantID:     tenantID,
+//			ProjectID:    projectID,
+//			Schema:       schemaName,
+//			FunctionName: functionName,
+//			CurrentQuery: c.OriginalURL(),
+//			Container:    container,
+//			FiberCtx:     c,
+//		})
+//		if err != nil {
+//			return sendDynamicError(c, err, "Failed to execute function")
+//		}
+//
+//		return c.Status(fiber.StatusOK).JSON(responses.GeneralResponse{
+//			Status:  http.StatusOK,
+//			Message: result.Message,
+//			Data:    result.Data,
+//			Source:  utils.PointerToString(result.Source),
+//		})
+//	}
 func TestPipeline(c *fiber.Ctx) error {
 	ctx, cancel := utils.RequestContextWithTimeout(c, 10*time.Second)
 	defer cancel()
@@ -1066,8 +1068,14 @@ func workflowRequestContext(parent context.Context) (context.Context, context.Ca
 }
 
 func parseWorkflowFormConfigReference(body []byte) (*services.FormConfigReference, error) {
-	if len(strings.TrimSpace(string(body))) == 0 {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
 		return nil, nil
+	}
+	// Bulk workflow bodies contain records directly, with no envelope metadata.
+	if trimmed[0] == '[' {
+		var items []json.RawMessage
+		return nil, json.Unmarshal(body, &items)
 	}
 	var envelope struct {
 		FormConfigRef *services.FormConfigReference `json:"formConfigRef"`

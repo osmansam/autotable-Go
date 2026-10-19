@@ -33,7 +33,7 @@ func TestReplacePlaceholdersWithQueryParams(t *testing.T) {
 	app := fiber.New()
 	app.Get("/", func(c *fiber.Ctx) error {
 		got := ReplacePlaceholdersWithQueryParams(`[{"$match":{"age":"{{age}}","name":"{{name}}","missing":"{{missing}}"}}]`, c)
-		want := `[{"$match":{"age":42,"name":"Ada","missing":"{{missing}}"}}]`
+		want := `[{"$match":{"age":42,"missing":"{{missing}}","name":"Ada"}}]`
 		if got != want {
 			t.Fatalf("ReplacePlaceholdersWithQueryParams() = %q, want %q", got, want)
 		}

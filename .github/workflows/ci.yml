@@ -1,0 +1,56 @@
+name: Verify AutoTable
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet and race tests
+        run: |
+          go vet ./...
+          go test -race ./... -count=1
+      - name: Deployment regression tests
+        run: |
+          bash -n scripts/deploy-production.sh scripts/test-workflow-mongo-integration.sh
+          python3 -m unittest discover -s tests -p 'test_deployment.py'
+      - name: Build production binary
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/autotable .
+
+  mongo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start isolated MongoDB replica set
+        run: |
+          docker run -d --name autotable-ci-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet ci --bind_ip_all
+          for attempt in $(seq 1 40); do
+            if docker exec autotable-ci-mongo mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'; then break; fi
+            sleep 1
+          done
+          docker exec autotable-ci-mongo mongosh --quiet --eval 'rs.initiate({_id:"ci",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 60); do
+            if docker exec autotable-ci-mongo mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Transaction, lease and session integration tests
+        env:
+          AUTOTABLE_WORKFLOW_MONGO_URI: mongodb://127.0.0.1:27017/?replicaSet=ci
+        run: go test -race -tags=integration ./services -run '^TestWorkflowMongo' -count=1 -v
+      - name: Stop isolated MongoDB
+        if: always()
+        run: docker rm -f autotable-ci-mongo

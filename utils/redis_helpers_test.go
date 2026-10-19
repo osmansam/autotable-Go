@@ -130,7 +130,10 @@ func setupMiniRedis(t *testing.T) {
 	server := miniredis.RunT(t)
 	oldClient := configs.RedisClient
 	configs.RedisClient = redis.NewClient(&redis.Options{Addr: server.Addr()})
+	// Cached slug mappings in these tests do not correspond to stored projects.
+	restoreChecker := OverrideProjectActiveChecker(func(context.Context, string, string) (bool, error) { return true, nil })
 	t.Cleanup(func() {
+		restoreChecker()
 		_ = configs.RedisClient.Close()
 		configs.RedisClient = oldClient
 	})

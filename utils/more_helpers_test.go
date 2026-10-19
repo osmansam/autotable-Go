@@ -300,6 +300,62 @@ func TestTenantContextFallback(t *testing.T) {
 	}
 }
 
+func TestTenantScopedContextRejectsCrossTenantProjectSlug(t *testing.T) {
+	setupMiniRedis(t)
+	tenantID := primitive.NewObjectID().Hex()
+	otherTenantID := primitive.NewObjectID().Hex()
+	projectID := primitive.NewObjectID().Hex()
+	if err := configs.RedisClient.Set(context.Background(), "slug_mapping:other:project", otherTenantID+"|"+projectID, time.Minute).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New()
+	app.Get("/:tenantSlug/:projectSlug", func(c *fiber.Ctx) error {
+		c.Locals("tenantID", tenantID)
+		c.Locals("projectID", "")
+		_, _, err := GetTenantAndProjectContext(c)
+		if !errors.Is(err, ErrProjectMismatch) {
+			t.Fatalf("GetTenantAndProjectContext() error = %v, want %v", err, ErrProjectMismatch)
+		}
+		if got := c.Locals("tenantID"); got != tenantID {
+			t.Fatalf("tenantID local = %v, want original %s", got, tenantID)
+		}
+		return c.SendStatus(http.StatusForbidden)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/other/project", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestTenantContextRejectsCrossTenantQueryOverride(t *testing.T) {
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		c.Locals("tenantID", "tenant-a")
+		c.Locals("projectID", "project-a")
+		_, _, err := GetTenantAndProjectContext(c)
+		if !errors.Is(err, ErrProjectMismatch) {
+			t.Fatalf("GetTenantAndProjectContext() error = %v, want %v", err, ErrProjectMismatch)
+		}
+		if c.Locals("tenantID") != "tenant-a" || c.Locals("projectID") != "project-a" {
+			t.Fatalf("authenticated locals changed to tenant=%v project=%v", c.Locals("tenantID"), c.Locals("projectID"))
+		}
+		return c.SendStatus(http.StatusForbidden)
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/?tenantID=tenant-b&projectID=project-b", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
 func TestPopulateIfNeededWithoutPopulationSettings(t *testing.T) {
 	items := []map[string]interface{}{{"id": "1"}}
 	got, err := PopulateIfNeeded(context.Background(), "tenant", "project", &models.ContainerModel{}, items)

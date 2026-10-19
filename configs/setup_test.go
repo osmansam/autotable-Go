@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -130,6 +129,31 @@ func TestConfigFileForEnv(t *testing.T) {
 	t.Setenv("NODE_ENV", "test")
 	if got := configFileForEnv(); got != "configs/test.json" {
 		t.Fatalf("configFileForEnv() = %q", got)
+	}
+}
+
+func TestValidateJWTSecrets(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectSecret string
+		tenantSecret  string
+		wantErr       bool
+	}{
+		{name: "both present", projectSecret: "project-secret", tenantSecret: "tenant-secret"},
+		{name: "project missing", tenantSecret: "tenant-secret", wantErr: true},
+		{name: "tenant missing", projectSecret: "project-secret", wantErr: true},
+		{name: "whitespace rejected", projectSecret: " ", tenantSecret: "tenant-secret", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", tt.projectSecret)
+			t.Setenv("TENANT_JWT_SECRET", tt.tenantSecret)
+			err := ValidateJWTSecrets()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateJWTSecrets() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -259,12 +283,12 @@ func TestRedisSetValueRedisDown(t *testing.T) {
 
 func overrideAppConfigForTest(t *testing.T, cfg *Config) {
 	t.Helper()
-	oldConfig, oldOnce := appConfig, appConfigOnce
+	// Complete initialization before overriding the pointer. A sync.Once must
+	// never be copied or reset after use, including from test cleanup.
+	oldConfig := GetAppConfig()
 	appConfig = cfg
-	appConfigOnce = sync.Once{}
-	appConfigOnce.Do(func() {})
 	t.Cleanup(func() {
-		appConfig, appConfigOnce = oldConfig, oldOnce
+		appConfig = oldConfig
 		resetRedisCircuit()
 	})
 }

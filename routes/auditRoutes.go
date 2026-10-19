@@ -2,41 +2,56 @@ package routes
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
-	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/utils"
 )
 
 var auditLogsConfigProvider = utils.GetAuditLogsConfig
 
+func adminAuditBaseURL(baseUrl string) string {
+	if strings.HasSuffix(baseUrl, "/audit-logs") {
+		return strings.TrimSuffix(baseUrl, "/audit-logs") + "/admin/audit-logs"
+	}
+	return "/admin" + baseUrl
+}
+
+// AuditRoutes registers two separate identity domains:
+//   - runtime application audit access on baseUrl, which accepts only
+//     application (A) credentials and the configured application-role policy;
+//   - management audit access on /admin/audit-logs, which accepts only strict
+//     management (M) credentials with live project membership permissions.
 func AuditRoutes(baseUrl string, app *fiber.App) {
 	auditGroup := app.Group(baseUrl)
 
 	auditGroup.Get("/config",
-		middlewares.TenantAuthenticate,
-		middlewares.RequireProjectScope,
+		middlewares.ProjectAuthentication,
 		controllers.GetAuditLogsConfig,
 	)
-	auditGroup.Patch("/config",
-		middlewares.TenantAuthenticate,
-		middlewares.RequireProjectScope,
-		requireAuditConfigManager,
-		middlewares.DefaultBodySizeLimit(),
-		middlewares.WriteRateLimit(),
-		controllers.UpdateAuditLogsConfig,
-	)
 
-	auditGroup.Use(middlewares.TenantAuthenticate)
-	auditGroup.Use(middlewares.RequireProjectScope)
+	auditGroup.Use(middlewares.ProjectAuthentication)
 	auditGroup.Use(auditLogsAuthorization)
 	auditGroup.Use(middlewares.GeneralRateLimit())
 
 	// GET /audit-logs - Retrieve audit logs with filtering, sorting, and pagination
 	auditGroup.Get("/", middlewares.SearchRateLimit(), controllers.GetAuditLogs)
+
+	adminBase := "/" + strings.TrimPrefix(adminAuditBaseURL(baseUrl), "/")
+	app.Get(adminBase+"/config", strictManagementRouteHandlers("GET", adminBase+"/config", controllers.GetAuditLogsConfig)...)
+	app.Patch(adminBase+"/config", strictManagementRouteHandlers("PATCH", adminBase+"/config",
+		middlewares.DefaultBodySizeLimit(),
+		middlewares.WriteRateLimit(),
+		controllers.UpdateAuditLogsConfig,
+	)...)
+	app.Get(adminBase+"/", strictManagementRouteHandlers("GET", adminBase+"/",
+		middlewares.GeneralRateLimit(),
+		middlewares.SearchRateLimit(),
+		controllers.GetAuditLogs,
+	)...)
 }
 
 func auditLogsAuthorization(c *fiber.Ctx) error {
@@ -61,21 +76,16 @@ func auditLogsAuthorization(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Forbidden"})
 }
 
-func requireAuditConfigManager(c *fiber.Ctx) error {
-	if hasAnyRole(c, []string{models.ProjectRoleAdmin, models.ProjectRoleDeveloper}) {
-		return c.Next()
-	}
-	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Insufficient permissions"})
-}
-
 func hasAnyRole(c *fiber.Ctx, allowedRoles []string) bool {
 	if len(allowedRoles) == 0 {
 		return false
 	}
-	userRoles, ok := c.Locals("roles").([]string)
-	if !ok || len(userRoles) == 0 {
+	// Application identity carries a single dynamic role in "userRole".
+	userRole, _ := c.Locals("userRole").(string)
+	if userRole == "" {
 		return false
 	}
+	userRoles := []string{userRole}
 	for _, userRole := range userRoles {
 		for _, allowedRole := range allowedRoles {
 			if userRole == allowedRole {

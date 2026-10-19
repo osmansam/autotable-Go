@@ -13,6 +13,7 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -273,7 +274,7 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 		return fmt.Errorf("failed to create role schema: %w", err)
 	}
 	roleCollection := utils.GetDynamicCollectionForProject(tenantID, projectID, "role")
-	if _, err := roleCollection.InsertOne(ctx, bson.M{"name": "admin"}); err != nil {
+	if _, err := roleCollection.InsertMany(ctx, []interface{}{bson.M{"name": "admin"}, bson.M{"name": "user"}}); err != nil {
 		log.Printf("Failed to create default admin role: %v", err)
 		return fmt.Errorf("failed to create default admin role: %w", err)
 	}
@@ -281,60 +282,7 @@ func createDefaultSchemas(ctx context.Context, tenantID, projectID string) error
 
 	// 2. Create the 'auth' schema with email and role fields
 	log.Println("Creating default 'auth' schema for project")
-	authContainer := models.ContainerModel{
-		SchemaName: "auth",
-		Fields: []models.Field{
-			{
-				Name:              "email",
-				Type:              "string",
-				Tag:               "required",
-				IsLoginCredential: true,
-				Unique:            true,
-				Order:             1,
-			},
-			{
-				Name:             "role",
-				Type:             "objectId",
-				Tag:              "required",
-				ObjectSchemaName: "role",
-				PopulationSettings: &models.PopulationSettings{
-					FieldName:           "role",
-					PopulatedFields:     []string{"name"},
-					DisplayFields:       []string{"name"},
-					InputSelectionField: "name",
-					DisplayLabel:        "Role",
-				},
-				Order: 2,
-			},
-		},
-		Routes: models.Routes{
-			CreateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "POST"},
-			GetAllDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
-			CreateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "POST"},
-			GetAllDynamicModelItemsWithPagination: models.RouteSpec{IsActive: true, Method: "GET"},
-			GetPipeline:                           models.RouteSpec{IsActive: true, Method: "GET"},
-			TestPipeline:                          models.RouteSpec{IsActive: true, Method: "POST"},
-			HandleSearchDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
-			HandleFilterDynamicModelItem:          models.RouteSpec{IsActive: true, Method: "GET"},
-			DeleteDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "DELETE"},
-			UpdateDynamicModelItem:                models.RouteSpec{IsActive: true, Method: "PATCH"},
-			UpdateMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "PATCH"},
-			GetDynamicModelItem:                   models.RouteSpec{IsActive: true, Method: "GET"},
-			DeleteMultipleDynamicModelItem:        models.RouteSpec{IsActive: true, Method: "DELETE"},
-			ExportDynamicModelItems:               models.RouteSpec{IsActive: true, Method: "GET"},
-			GetItemsForSelection:                  models.RouteSpec{IsActive: true, Method: "GET"},
-		},
-		Redis:               defaultContainerRedis("auth", nil),
-		IsAuthContainer:     true,
-		IsRegisterActive:    true,
-		IsGoogleLoginActive: false,
-		PopulatedRoutes:     []string{},
-		Pipelines:           []models.PipelineStage{},
-		DynamicFunctions:    []models.DynamicFunction{},
-		Workflows:           []models.DynamicWorkflow{},
-		DynamicApis:         []models.DynamicApiModel{},
-		Indexes:             []models.Index{},
-	}
+	authContainer := defaultProjectAuthContainer()
 
 	if err := utils.EnsureIndexes(ctx, &authContainer, tenantID, projectID); err != nil {
 		return fmt.Errorf("failed to create indexes for auth schema: %w", err)
@@ -1142,8 +1090,7 @@ func UpdateProject(c *fiber.Ctx) error {
 
 		updateDoc["slug"] = *input.Slug
 
-		// When slug changes, we should also update tenantSlug cache key in Redis
-		// The old cache entry will expire naturally after 1 hour
+		// The old and new slug mappings are invalidated after the update succeeds.
 	}
 
 	if input.IsActive != nil {
@@ -1174,6 +1121,10 @@ func UpdateProject(c *fiber.Ctx) error {
 			Message: "No changes made",
 			Data:    nil,
 		})
+	}
+
+	if input.Slug != nil || input.IsActive != nil {
+		invalidateProjectLifecycle(ctx, existingProject, input.Slug, input.IsActive != nil && !*input.IsActive)
 	}
 
 	// Fetch updated project
@@ -1269,6 +1220,8 @@ func DeleteProject(c *fiber.Ctx) error {
 		})
 	}
 
+	invalidateProjectLifecycle(ctx, project, nil, true)
+
 	// Note: We don't automatically delete all collections for safety
 	// You may want to add a background job or manual cleanup process
 
@@ -1279,4 +1232,29 @@ func DeleteProject(c *fiber.Ctx) error {
 			"warning": "Project collections were not automatically deleted. Contact admin for cleanup if needed.",
 		},
 	})
+}
+
+var (
+	invalidateSlugMappings = utils.InvalidateProjectSlugMappings
+	revokeProjectSessions  = func(ctx context.Context, tenantID, projectID string) error {
+		return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).RevokeProjectSessions(ctx, tenantID, projectID)
+	}
+)
+
+// invalidateProjectLifecycle drops stale slug mappings (previous and renamed slug)
+// and, when the project stops being usable, revokes its sessions. Failures are
+// logged; cache hits are additionally guarded by a live active-project check.
+func invalidateProjectLifecycle(ctx context.Context, project models.Project, newSlug *string, revokeSessions bool) {
+	slugs := []string{project.Slug}
+	if newSlug != nil {
+		slugs = append(slugs, *newSlug)
+	}
+	if err := invalidateSlugMappings(ctx, project.TenantSlug, slugs...); err != nil {
+		log.Printf("failed to invalidate slug mappings for project %s: %v", project.ID.Hex(), err)
+	}
+	if revokeSessions {
+		if err := revokeProjectSessions(ctx, project.TenantID.Hex(), project.ID.Hex()); err != nil {
+			log.Printf("failed to revoke sessions for project %s: %v", project.ID.Hex(), err)
+		}
+	}
 }

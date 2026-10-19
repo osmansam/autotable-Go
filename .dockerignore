@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+.deploy
+.gocache
+logs
+temp
+loadtest
+coverage*
+*.test
+tests/__pycache__

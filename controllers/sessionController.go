@@ -12,13 +12,14 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 )
 
-func requireAuthMutationOrigin(c *fiber.Ctx) error {
+func enforceAuthMutationOrigin(c *fiber.Ctx) bool {
 	origin := c.Get(fiber.HeaderOrigin)
 	allowed := []string{"https://tenant.autoapi.org", "https://panel.autoapi.org", "http://localhost:3001", "http://localhost:3005", "http://localhost:5173"}
 	if origin == "" || strings.EqualFold(origin, "null") || !middlewares.IsTrustedOrigin(origin, allowed) {
-		return c.Status(fiber.StatusForbidden).JSON(responses.GeneralResponse{Status: fiber.StatusForbidden, Message: "Untrusted request origin"})
+		_ = c.Status(fiber.StatusForbidden).JSON(responses.GeneralResponse{Status: fiber.StatusForbidden, Message: "Untrusted request origin"})
+		return false
 	}
-	return nil
+	return true
 }
 
 func ProjectSession(c *fiber.Ctx) error {
@@ -32,8 +33,8 @@ func ProjectSession(c *fiber.Ctx) error {
 }
 
 func ProjectRefresh(c *fiber.Ctx) error {
-	if err := requireAuthMutationOrigin(c); err != nil {
-		return err
+	if !enforceAuthMutationOrigin(c) {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -53,4 +54,35 @@ func TenantSession(c *fiber.Ctx) error {
 		return sendAnonymousSession(c)
 	}
 	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": claims.UserID, "email": claims.Email}, "tenantId": claims.TenantID, "roles": claims.Roles})
+}
+
+func ManagementProjectRefresh(c *fiber.Ctx) error {
+	if !enforceAuthMutationOrigin(c) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, tokens, err := rotateManagementProjectCookieSession(c, ctx)
+	if err != nil {
+		utils.ClearManagementProjectAuthCookies(c, c.Params("tenantSlug"), c.Params("projectSlug"))
+		return refreshErrorResponse(c, err)
+	}
+	utils.SetManagementProjectAuthCookies(c, c.Params("tenantSlug"), c.Params("projectSlug"), tenantCookieTokens(tokens))
+	setAuthNoStoreHeaders(c)
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Session refreshed successfully"})
+}
+
+func ManagementProjectLogout(c *fiber.Ctx) error {
+	if !enforceAuthMutationOrigin(c) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	token := c.Cookies(utils.ManagementProjectAuthCookieName(c.Params("tenantSlug"), c.Params("projectSlug"), "refresh"))
+	if claims, err := utils.ParseTenantRefreshToken(token); err == nil && claims.Scope == utils.TokenScopeProject {
+		_ = revokeManagementAuthSession(ctx, claims.FamilyID)
+	}
+	utils.ClearManagementProjectAuthCookies(c, c.Params("tenantSlug"), c.Params("projectSlug"))
+	setAuthNoStoreHeaders(c)
+	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{Status: http.StatusOK, Message: "Logged out successfully"})
 }

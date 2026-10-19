@@ -190,12 +190,12 @@ func TestLocalizationRepositoryApplyReconciledEntriesPersistsLifecycle(t *testin
 		if err != nil || len(updates) != 2 {
 			mt.Fatalf("updates = %v, err = %v", updates, err)
 		}
-		firstSet := updates[0].Document().Lookup("u").Document().Lookup("$set").Document()
-		if got := firstSet.Lookup("status").StringValue(); got != string(models.TranslationStatusOutdated) {
-			mt.Fatalf("status = %q", got)
+		firstSet := updates[0].Document().Lookup("u").Array().Index(0).Value().Document().Lookup("$set").Document()
+		if firstSet.Lookup("status").Type != bson.TypeEmbeddedDocument {
+			mt.Fatal("status must be derived from the current source hash")
 		}
-		if got := firstSet.Lookup("translatedText").StringValue(); got != "Bir" {
-			mt.Fatalf("translated text = %q", got)
+		if firstSet.Lookup("translatedText").Type != bson.TypeEmbeddedDocument {
+			mt.Fatal("reconciliation must preserve current translated text")
 		}
 	})
 }

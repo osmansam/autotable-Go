@@ -22,9 +22,11 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-type DynamicFunctionsUpdate struct {
-	DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+//
+//	type DynamicFunctionsUpdate struct {
+//		DynamicFunctions []models.DynamicFunction `json:"DynamicFunctions"`
+//	}
 type DynamicApisUpdate struct {
 	DynamicApis []models.DynamicApiModel `json:"dynamicApis"`
 }
@@ -939,75 +941,76 @@ func UpdateWorkflows(c *fiber.Ctx) error {
 }
 
 // Update the DynamicFunctions in the container
-func UpdateDynamicFunctions(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Extract tenant and project context from URL slugs with JWT validation
-	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-	if err != nil {
-		log.Printf("Failed to get project context: %v", err)
-		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
-	}
-	if tenantID == "" || projectID == "" {
-		log.Println("Missing tenant or project context")
-		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
-	}
-
-	// Get project-specific container collection
-	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-
-	containerIdStr := c.Params("id")
-	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
-	if err != nil {
-		log.Printf("Invalid container ID format: %v", err)
-		return utils.SendErrorResponse(c, err, "Invalid container ID format")
-	}
-
-	log.Println("Parsing request body for UpdateDynamicFunctions")
-	var update DynamicFunctionsUpdate
-	if err := c.BodyParser(&update); err != nil {
-		log.Printf("Failed to parse request body: %v", err)
-		return utils.SendErrorResponse(c, err, "Failed to parse request body")
-	}
-
-	log.Println("Updating DynamicFunctions in the container")
-	updateResult, err := containerCollection.UpdateOne(
-		ctx,
-		bson.M{"_id": containerId},
-		bson.M{"$set": bson.M{"dynamicFunctions": update.DynamicFunctions}},
-	)
-	if err != nil {
-		log.Printf("Failed to update DynamicFunctions: %v", err)
-		return utils.SendErrorResponse(c, err, "Failed to update DynamicFunctions")
-	}
-
-	if updateResult.MatchedCount == 0 {
-		log.Println("No container found with the specified ID")
-		return c.Status(http.StatusNotFound).JSON(fiber.Map{
-			"status":  http.StatusNotFound,
-			"message": "No container found with the specified ID",
-		})
-	}
-
-	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
-		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
-		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
-	)
-	log.Println("Invalidated containers cache after dynamic functions update")
-
-	// Emit WebSocket event for container change
-	userIDStr, _ := c.Locals("userID").(string)
-	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
-
-	log.Println("DynamicFunctions successfully updated")
-	return c.Status(http.StatusOK).JSON(fiber.Map{
-		"status":  http.StatusOK,
-		"message": "DynamicFunctions successfully updated",
-		"data":    updateResult,
-	})
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func UpdateDynamicFunctions(c *fiber.Ctx) error {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// 	defer cancel()
+//
+// 	// Extract tenant and project context from URL slugs with JWT validation
+// 	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
+// 	if err != nil {
+// 		log.Printf("Failed to get project context: %v", err)
+// 		return utils.SendErrorResponse(c, err, "Failed to get project context: "+err.Error())
+// 	}
+// 	if tenantID == "" || projectID == "" {
+// 		log.Println("Missing tenant or project context")
+// 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
+// 	}
+//
+// 	// Get project-specific container collection
+// 	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
+//
+// 	containerIdStr := c.Params("id")
+// 	containerId, err := primitive.ObjectIDFromHex(containerIdStr)
+// 	if err != nil {
+// 		log.Printf("Invalid container ID format: %v", err)
+// 		return utils.SendErrorResponse(c, err, "Invalid container ID format")
+// 	}
+//
+// 	log.Println("Parsing request body for UpdateDynamicFunctions")
+// 	var update DynamicFunctionsUpdate
+// 	if err := c.BodyParser(&update); err != nil {
+// 		log.Printf("Failed to parse request body: %v", err)
+// 		return utils.SendErrorResponse(c, err, "Failed to parse request body")
+// 	}
+//
+// 	log.Println("Updating DynamicFunctions in the container")
+// 	updateResult, err := containerCollection.UpdateOne(
+// 		ctx,
+// 		bson.M{"_id": containerId},
+// 		bson.M{"$set": bson.M{"dynamicFunctions": update.DynamicFunctions}},
+// 	)
+// 	if err != nil {
+// 		log.Printf("Failed to update DynamicFunctions: %v", err)
+// 		return utils.SendErrorResponse(c, err, "Failed to update DynamicFunctions")
+// 	}
+//
+// 	if updateResult.MatchedCount == 0 {
+// 		log.Println("No container found with the specified ID")
+// 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
+// 			"status":  http.StatusNotFound,
+// 			"message": "No container found with the specified ID",
+// 		})
+// 	}
+//
+// 	// Invalidate Redis cache for all containers and this specific container (project-specific)
+// 	_ = configs.RedisDelKeys(ctx,
+// 		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
+// 		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
+// 	)
+// 	log.Println("Invalidated containers cache after dynamic functions update")
+//
+// 	// Emit WebSocket event for container change
+// 	userIDStr, _ := c.Locals("userID").(string)
+// 	ws.EmitContainerChanged(userIDStr, tenantID, projectID)
+//
+// 	log.Println("DynamicFunctions successfully updated")
+// 	return c.Status(http.StatusOK).JSON(fiber.Map{
+// 		"status":  http.StatusOK,
+// 		"message": "DynamicFunctions successfully updated",
+// 		"data":    updateResult,
+// 	})
+// }
 
 // UpdateDynamicApis updates the DynamicApis in the container.
 func UpdateDynamicApis(c *fiber.Ctx) error {

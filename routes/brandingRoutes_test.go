@@ -2,15 +2,24 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 )
 
 func brandingStub(c *fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) }
+
+type allowingRouteAuthorizer struct{}
+
+func (allowingRouteAuthorizer) Authorize(context.Context, services.ManagementAuthorizationSubject, services.ManagementAuthorizationTarget, services.ManagementPermission) error {
+	return nil
+}
 
 func TestBrandingRuntimeRouteIsPublic(t *testing.T) {
 	app := fiber.New()
@@ -28,10 +37,14 @@ func TestBrandingRuntimeRouteIsPublic(t *testing.T) {
 }
 
 func TestBrandingUploadAcceptsImageWithinTwoMegabyteContract(t *testing.T) {
-	tokens, err := utils.GenerateTokens("user", "admin", "507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012", "acme", "inventory")
+	t.Setenv("TENANT_JWT_SECRET", "test-secret")
+	tokens, err := utils.GenerateTenantTokens("user", "manager@example.com", "507f1f77bcf86cd799439011", "", []string{models.TenantRoleAdmin}, string(models.RoleScopeTenant))
 	if err != nil {
-		t.Fatalf("GenerateTokens() error = %v", err)
+		t.Fatalf("GenerateTenantTokens() error = %v", err)
 	}
+	oldAuthorizer := routeManagementAuthorizer
+	routeManagementAuthorizer = allowingRouteAuthorizer{}
+	t.Cleanup(func() { routeManagementAuthorizer = oldAuthorizer })
 
 	app := fiber.New()
 	registerBrandingRoutes(app, brandingRouteHandlers{UploadTenant: brandingStub})

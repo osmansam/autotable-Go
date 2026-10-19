@@ -489,8 +489,8 @@ func SwitchToProject(c *fiber.Ctx) error {
 
 // TenantRefreshToken refreshes the access token using a valid refresh token
 func TenantRefreshToken(c *fiber.Ctx) error {
-	if err := requireAuthMutationOrigin(c); err != nil {
-		return err
+	if !enforceAuthMutationOrigin(c) {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -504,8 +504,8 @@ func TenantRefreshToken(c *fiber.Ctx) error {
 
 // TenantLogout logs out the user (client should discard tokens)
 func TenantLogout(c *fiber.Ctx) error {
-	if err := requireAuthMutationOrigin(c); err != nil {
-		return err
+	if !enforceAuthMutationOrigin(c) {
+		return nil
 	}
 	// In a stateless JWT system, logout is handled client-side by removing tokens
 	// Here we can log the logout event for audit purposes

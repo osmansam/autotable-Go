@@ -1,98 +1,16 @@
 package middlewares
 
 import (
-	"log"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
-	"github.com/osmansam/autotableGo/utils"
 )
 
-// TenantAuthenticate middleware validates tenant user JWT tokens
-// This is used for container and page routes (NOT for dynamic routes)
+// TenantAuthenticate is retained as a compatibility name for management-token
+// authentication. It deliberately delegates to the strict management boundary
+// and never accepts application-user tokens. New management routes must use an
+// approved route contract rather than registering this middleware directly.
 func TenantAuthenticate(c *fiber.Ctx) error {
-	credential, credentialErr := ResolveTenantCredential(c)
-	if credentialErr != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Missing or invalid authentication credential",
-		})
-	}
-	if credential.Source == AuthSourceCookie && !isSafeMethod(c.Method()) && !IsTrustedOrigin(c.Get(fiber.HeaderOrigin), configs.GetAppConfig().CorsWhitelist) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Untrusted request origin"})
-	}
-	token := credential.Token
-
-	// Parse tenant token
-	claims, err := utils.ParseTenantToken(token)
-	if err == nil {
-		// Store user context in locals for downstream handlers
-		c.Locals("tenantUserID", claims.UserID)
-		c.Locals("email", claims.Email)
-		c.Locals("tenantID", claims.TenantID)
-		c.Locals("projectID", claims.ProjectID)
-		c.Locals("roles", claims.Roles)
-		c.Locals("roleScope", claims.RoleScope)
-
-		return c.Next()
-	}
-
-	userID, role, tenantID, projectID, _, _, legacyErr := utils.ParseToken(token)
-	if legacyErr != nil {
-		log.Printf("Error parsing tenant token: %v; project auth token: %v", err, legacyErr)
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid or expired token",
-		})
-	}
-
-	roles := []string{}
-	if role != "" {
-		roles = append(roles, role)
-	}
-	c.Locals("tenantUserID", userID)
-	c.Locals("userDisplayName", utils.ParseTokenDisplayName(token))
-	c.Locals("tenantID", tenantID)
-	c.Locals("projectID", projectID)
-	c.Locals("roles", roles)
-	c.Locals("roleScope", string(models.RoleScopeProject))
-
-	return c.Next()
-}
-
-// TenantAuthorize middleware checks if the user has required roles
-// Use after TenantAuthenticate
-func TenantAuthorize(requiredRoles []string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		// TODO: Re-enable role enforcement once project role definitions/assignment are complete.
-		// userRoles, ok := c.Locals("roles").([]string)
-		// if !ok || len(userRoles) == 0 {
-		// 	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-		// 		"error": "No project roles found. Switch to a project and use the returned project access token.",
-		// 	})
-		// }
-		//
-		// hasRole := false
-		// for _, userRole := range userRoles {
-		// 	for _, requiredRole := range requiredRoles {
-		// 		if userRole == requiredRole {
-		// 			hasRole = true
-		// 			break
-		// 		}
-		// 	}
-		// 	if hasRole {
-		// 		break
-		// 	}
-		// }
-		//
-		// if !hasRole {
-		// 	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-		// 		"error":         "Insufficient permissions",
-		// 		"requiredRoles": requiredRoles,
-		// 	})
-		// }
-		_ = requiredRoles
-		return c.Next()
-	}
+	return ManagementAuthenticate(c)
 }
 
 // RequireProjectScope ensures the request is made within a project context

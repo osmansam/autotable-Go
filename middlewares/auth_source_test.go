@@ -109,6 +109,7 @@ func TestCookieOriginMiddlewareUsesSelectedAuthSource(t *testing.T) {
 
 func TestAuthenticateAcceptsProjectAccessCookie(t *testing.T) {
 	t.Setenv("NODE_ENV", "development")
+	t.Setenv("JWT_SECRET", "test-secret")
 	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "davinci", "goblin")
 	if err != nil {
 		t.Fatalf("GenerateTokens() error = %v", err)
@@ -133,6 +134,7 @@ func TestAuthenticateAcceptsProjectAccessCookie(t *testing.T) {
 
 func TestAuthenticateRejectsCookieMutationWithoutTrustedOrigin(t *testing.T) {
 	t.Setenv("NODE_ENV", "development")
+	t.Setenv("JWT_SECRET", "test-secret")
 	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "davinci", "goblin")
 	if err != nil {
 		t.Fatalf("GenerateTokens() error = %v", err)

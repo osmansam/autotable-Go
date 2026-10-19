@@ -20,6 +20,7 @@ import (
 	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/oauth2"
 )
 
@@ -73,7 +74,9 @@ func buildProjectLoginConfig(container models.ContainerModel) projectLoginConfig
 		if field.IsLoginCredential {
 			config.LoginFields = append(config.LoginFields, projected)
 		}
-		config.RegisterFields = append(config.RegisterFields, projected)
+		if !isAccountPrivilegeField(field.Name) {
+			config.RegisterFields = append(config.RegisterFields, projected)
+		}
 	}
 
 	return config
@@ -187,7 +190,12 @@ func auditIdentityValue(user map[string]interface{}, fieldName string) string {
 }
 
 // Register a new user dynamically based on container configuration.
-func Register(c *fiber.Ctx) error {
+func Register(c *fiber.Ctx) error { return registerProjectUser(c, false) }
+
+// RegisterManagedAuthUser creates an account without changing the operator's session.
+func RegisterManagedAuthUser(c *fiber.Ctx) error { return registerProjectUser(c, true) }
+
+func registerProjectUser(c *fiber.Ctx, managed bool) error {
 	log.Println("Dynamic Register endpoint called")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -242,6 +250,20 @@ func Register(c *fiber.Ctx) error {
 			Message: "Failed to parse the request body.",
 			Data:    &fiber.Map{"data": err.Error()},
 		})
+	}
+
+	if !managed {
+		userData, err = publicRegistrationFields(*container, userData)
+		if err != nil {
+			return utils.SendErrorResponse(c, err, "Self-registration is unavailable")
+		}
+		if err := assignPublicRegistrationRole(ctx, tenantID, projectID, *container, userData); err != nil {
+			return utils.SendErrorResponse(c, err, "Self-registration role is not configured")
+		}
+	}
+	// Validate raw values before hashing so length/type rules apply to the input.
+	if err := utils.ValidateContainerModel(userData, *container); err != nil {
+		return utils.SendErrorResponse(c, fiber.NewError(http.StatusBadRequest, err.Error()), "Invalid account fields")
 	}
 
 	// Validate and process login credential fields:
@@ -320,6 +342,12 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	if managed {
+		utils.StripHashed(container.Fields, []map[string]interface{}{userData})
+		userData["_id"] = result.InsertedID
+		return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{Status: http.StatusCreated, Message: "User created successfully.", Data: &fiber.Map{"user": userData}})
+	}
+
 	log.Println("User registered successfully in schema:", schemaName)
 	userID := result.InsertedID.(primitive.ObjectID).Hex()
 	role := "user"
@@ -336,13 +364,24 @@ func Register(c *fiber.Ctx) error {
 	if err := startProjectAuthSession(ctx, tokens); err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "User created, but login session could not be saved"})
 	}
-	delete(userData, "password")
+	utils.StripHashed(container.Fields, []map[string]interface{}{userData})
 	userData["_id"] = result.InsertedID
 	return sendScopedAuthResponse(c, http.StatusCreated, "User registered successfully.", utils.TokenScopeProject, projectCookieTokens(tokens), &fiber.Map{"user": userData})
 }
 
 // Login endpoint dynamically verifies user credentials.
+type projectLoginDependencies struct {
+	loadContainer func(context.Context, string, string) (models.ContainerModel, error)
+	collection    func(string, string, string) *mongo.Collection
+	startSession  func(context.Context, *utils.TokenDetails) error
+	logLogin      func(context.Context, string, string, *models.AuditUser, string, string) error
+}
+
 func Login(c *fiber.Ctx) error {
+	return loginProjectUser(c, projectLoginDependencies{loadContainer: getProjectAuthContainer, collection: utils.GetDynamicCollectionForProject, startSession: startProjectAuthSession, logLogin: utils.LogLogin})
+}
+
+func loginProjectUser(c *fiber.Ctx, dependencies projectLoginDependencies) error {
 	log.Println("Dynamic Login endpoint called")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -362,7 +401,7 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	container, err := getProjectAuthContainer(ctx, tenantID, projectID)
+	container, err := dependencies.loadContainer(ctx, tenantID, projectID)
 	if err != nil {
 		log.Printf("Failed to find auth container: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
@@ -386,28 +425,15 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// Build a filter using login credential fields that are not hashed
-	filter := bson.M{}
-	var hashedFields []models.Field // keep track of fields that need to be checked later
-	for _, field := range container.Fields {
-		if field.IsLoginCredential {
-			val, exists := loginData[field.Name]
-			if !exists {
-				return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
-					Status:  http.StatusBadRequest,
-					Message: "Missing login credential field: " + field.Name,
-				})
-			}
-			if field.IsHashed {
-				// Do not include hashed field in the filter since we'll verify it after retrieval.
-				hashedFields = append(hashedFields, field)
-			} else {
-				filter[field.Name] = val
-			}
+	filter, hashedFields, err := projectLoginCredentials(container, loginData)
+	if err != nil {
+		if err == errUnsafePasswordLogin {
+			return c.Status(http.StatusServiceUnavailable).JSON(responses.GeneralResponse{Status: http.StatusServiceUnavailable, Message: err.Error()})
 		}
+		return utils.SendErrorResponse(c, err, "Invalid login credentials")
 	}
 
-	collection := utils.GetDynamicCollectionForProject(tenantID, projectID, schemaName)
+	collection := dependencies.collection(tenantID, projectID, schemaName)
 	var storedUser map[string]interface{}
 	err = collection.FindOne(ctx, filter).Decode(&storedUser)
 	if err != nil {
@@ -488,10 +514,7 @@ func Login(c *fiber.Ctx) error {
 			Data:    &fiber.Map{"data": err.Error()},
 		})
 	}
-	if err := startProjectAuthSession(ctx, tokenDetails); err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{Status: http.StatusInternalServerError, Message: "Failed to create login session"})
-	}
-	if err := startProjectAuthSession(ctx, tokenDetails); err != nil {
+	if err := dependencies.startSession(ctx, tokenDetails); err != nil {
 		log.Printf("Could not persist auth session: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status: http.StatusInternalServerError, Message: "Could not create login session.",
@@ -499,7 +522,7 @@ func Login(c *fiber.Ctx) error {
 	}
 
 	// Remove any sensitive fields (like hashed passwords) before returning user data.
-	delete(storedUser, "password")
+	utils.StripHashed(container.Fields, []map[string]interface{}{storedUser})
 
 	// Log Login Audit
 	authUser := &models.AuditUser{
@@ -522,7 +545,7 @@ func Login(c *fiber.Ctx) error {
 	ip := c.IP()
 	userAgent := c.Get("User-Agent")
 
-	if err := utils.LogLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
+	if err := dependencies.logLogin(ctx, tenantID, projectID, authUser, ip, userAgent); err != nil {
 		log.Printf("Failed to log login: %v", err)
 	}
 
@@ -953,8 +976,8 @@ func GoogleCallback(c *fiber.Ctx) error {
 // Currently it mainly serves to log the logout action for audit purposes.
 // In the future, it can handle token blacklisting.
 func Logout(c *fiber.Ctx) error {
-	if err := requireAuthMutationOrigin(c); err != nil {
-		return err
+	if !enforceAuthMutationOrigin(c) {
+		return nil
 	}
 	tenantSlug, projectSlug := c.Params("tenantSlug"), c.Params("projectSlug")
 	if c.Cookies(utils.ProjectAuthCookieName(tenantSlug, projectSlug, "access")) == "" {

@@ -91,6 +91,19 @@ func TestIsProduction(t *testing.T) {
 	}
 }
 
+func TestValidateStartupSecurityConfiguration(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("TENANT_JWT_SECRET", "tenant-secret")
+	if err := validateStartupSecurityConfiguration(); err == nil {
+		t.Fatal("validateStartupSecurityConfiguration() without JWT_SECRET error = nil")
+	}
+
+	t.Setenv("JWT_SECRET", "project-secret")
+	if err := validateStartupSecurityConfiguration(); err != nil {
+		t.Fatalf("validateStartupSecurityConfiguration() error = %v", err)
+	}
+}
+
 func TestConfigurePprof(t *testing.T) {
 	t.Setenv("NODE_ENV", "production")
 	app := fiber.New()

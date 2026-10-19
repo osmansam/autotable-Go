@@ -353,7 +353,7 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 			if got.MaxAttempts != tt.wantRetries {
 				t.Fatalf("MaxAttempts = %d, want %d", got.MaxAttempts, tt.wantRetries)
 			}
-			wantKey := "tenant:project:orders:workflow:step-id:" + recordID.Hex() + ":after_create:2"
+			wantKey := "tenant:project:orders:workflow:step-id:after_create:2:event:" + got.ID.Hex()
 			if got.Payload.IdempotencyKey != wantKey {
 				t.Fatalf("IdempotencyKey = %q, want %q", got.Payload.IdempotencyKey, wantKey)
 			}
@@ -403,13 +403,13 @@ func TestBuildWorkflowStepOutboxEvent(t *testing.T) {
 		}
 	})
 
-	t.Run("missing record id leaves generated idempotency key empty", func(t *testing.T) {
+	t.Run("missing record id still has event-scoped replay identity", func(t *testing.T) {
 		step := models.DynamicWorkflowStep{ID: "step-id", Type: models.WorkflowStepTypeCallAPI}
 		got := buildWorkflowStepOutboxEvent(workflowExecutionPayload{
 			TenantID: "tenant", ProjectID: "project", SchemaName: "orders", UserID: "user", Record: map[string]interface{}{},
 		}, "workflow", step)
-		if got.Payload.IdempotencyKey != "" {
-			t.Fatalf("IdempotencyKey = %q, want empty string", got.Payload.IdempotencyKey)
+		if got.Payload.IdempotencyKey != "tenant:project:orders:workflow:step-id::0:event:"+got.ID.Hex() {
+			t.Fatalf("IdempotencyKey = %q, want durable event identity", got.Payload.IdempotencyKey)
 		}
 	})
 }

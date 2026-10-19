@@ -14,20 +14,20 @@ import (
 func TestRouteRegistration(t *testing.T) {
 	app := fiber.New()
 	AuthRoutes("/auth", app)
-	ContainerRoutes("/containers", app)
+	ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
 	DynamicRoutes("/dynamic", app)
-	SetupExcelRoutes(app, "/api")
-	PageRoutes("/pages", app)
+	SetupExcelRoutes(app, "api/v1")
+	PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
 	ProjectRoutes(app)
-	SchemaInfoRoutes("/schema", app)
-	SwaggerRoutes(app)
+	SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app)
+	SwaggerRoutes(app, false)
 	TenantAuthRoutes(app)
 	oldAuditLogsConfigProvider := auditLogsConfigProvider
 	auditLogsConfigProvider = func() (*models.AuditLogsConfig, error) {
 		return &models.AuditLogsConfig{}, nil
 	}
 	t.Cleanup(func() { auditLogsConfigProvider = oldAuditLogsConfigProvider })
-	AuditRoutes("/audit", app)
+	AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 
 	registered := 0
 	for _, route := range app.GetRoutes() {
@@ -38,6 +38,43 @@ func TestRouteRegistration(t *testing.T) {
 	if registered < 40 {
 		t.Fatalf("registered routes = %d, want at least 40", registered)
 	}
+}
+
+func TestSwaggerRoutesDisabledInProduction(t *testing.T) {
+	debugRoutes := []string{
+		"GET /api/swagger",
+		"GET /api/swagger.json",
+		"GET /api/schemas",
+	}
+
+	productionApp := fiber.New()
+	SwaggerRoutes(productionApp, true)
+	productionRoutes := registeredRouteSet(productionApp)
+	for _, route := range debugRoutes {
+		if productionRoutes[route] {
+			t.Errorf("production route %s is registered", route)
+		}
+	}
+
+	developmentApp := fiber.New()
+	SwaggerRoutes(developmentApp, false)
+	developmentRoutes := registeredRouteSet(developmentApp)
+	for _, route := range debugRoutes {
+		if !developmentRoutes[route] {
+			t.Errorf("development route %s is not registered", route)
+		}
+	}
+}
+
+func registeredRouteSet(app *fiber.App) map[string]bool {
+	routes := make(map[string]bool)
+	for _, route := range app.GetRoutes() {
+		if route.Method == http.MethodHead {
+			continue
+		}
+		routes[route.Method+" "+route.Path] = true
+	}
+	return routes
 }
 
 func TestDynamicArrayRoutesRegisteredInSafeOrder(t *testing.T) {
@@ -80,11 +117,10 @@ func TestMetadataRoutesRequireTenantAuthentication(t *testing.T) {
 		register func(*fiber.App)
 		path     string
 	}{
-		{name: "containers", register: func(app *fiber.App) { ContainerRoutes("/containers", app) }, path: "/containers"},
-		{name: "container tenant list", register: func(app *fiber.App) { ContainerRoutes("/containers", app) }, path: "/containers/tenant"},
-		{name: "container types", register: func(app *fiber.App) { ContainerRoutes("/containers", app) }, path: "/containers/types"},
-		{name: "runtime pages list", register: func(app *fiber.App) { PageRoutes("/pages", app) }, path: "/pages"},
-		{name: "admin pages list", register: func(app *fiber.App) { PageRoutes("/pages", app) }, path: "/admin/pages"},
+		{name: "containers", register: func(app *fiber.App) { ContainerRoutes("/api/v1/:tenantSlug/:projectSlug/container", app) }, path: "/api/v1/t/p/container"},
+		{name: "container tenant list", register: func(app *fiber.App) { ContainerRoutes("/api/v1/:tenantSlug/:projectSlug/container", app) }, path: "/api/v1/t/p/container/tenant"},
+		{name: "container types", register: func(app *fiber.App) { ContainerRoutes("/api/v1/:tenantSlug/:projectSlug/container", app) }, path: "/api/v1/t/p/container/types"},
+		{name: "admin pages list", register: func(app *fiber.App) { PageRoutes("/api/v1/:tenantSlug/:projectSlug/page", app) }, path: "/api/v1/t/p/admin/page/"},
 	}
 
 	for _, tt := range tests {
@@ -105,47 +141,14 @@ func TestMetadataRoutesRequireTenantAuthentication(t *testing.T) {
 
 func TestPagePublicRouteRemoved(t *testing.T) {
 	app := fiber.New()
-	PageRoutes("/pages", app)
+	PageRoutes("/api/v1/:tenantSlug/:projectSlug/page", app)
 
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/pages/public", nil))
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/t/p/page/public", nil))
 	if err != nil {
 		t.Fatalf("app.Test() error = %v", err)
 	}
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("/pages/public status = %d, want %d", resp.StatusCode, http.StatusNotFound)
-	}
-}
-
-func TestAuditRoutesReadAuthorizationConfigPerRequest(t *testing.T) {
-	app := fiber.New()
-	auditConfig := &models.AuditLogsConfig{IsAuthorized: false, AuthorizeRole: []string{}}
-	oldAuditLogsConfigProvider := auditLogsConfigProvider
-	auditLogsConfigProvider = func() (*models.AuditLogsConfig, error) {
-		return auditConfig, nil
-	}
-	t.Cleanup(func() { auditLogsConfigProvider = oldAuditLogsConfigProvider })
-	AuditRoutes("/audit", app)
-
-	token := testProjectJWT(t, models.ProjectRoleViewer)
-	req := httptest.NewRequest(http.MethodGet, "/audit/missing", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("app.Test() error = %v", err)
-	}
-	if resp.StatusCode == http.StatusForbidden {
-		t.Fatalf("first /audit/missing status = %d, want config without role authorization to pass middleware", resp.StatusCode)
-	}
-
-	auditConfig = &models.AuditLogsConfig{IsAuthorized: true, AuthorizeRole: []string{models.ProjectRoleAdmin}}
-	req = httptest.NewRequest(http.MethodGet, "/audit/missing", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err = app.Test(req)
-	if err != nil {
-		t.Fatalf("app.Test() error = %v", err)
-	}
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("second /audit/missing status = %d, want %d after config changed", resp.StatusCode, http.StatusForbidden)
+		t.Fatalf("/page/public status = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 }
 
@@ -180,6 +183,7 @@ func TestProjectTemplateRouteRegisteredBeforeProjectIDRoute(t *testing.T) {
 
 func testProjectJWT(t *testing.T, role string) string {
 	t.Helper()
+	t.Setenv("JWT_SECRET", "test-secret")
 	claims := jwt.MapClaims{
 		"authorized":   true,
 		"user_id":      "user-id",
@@ -195,7 +199,7 @@ func testProjectJWT(t *testing.T, role string) string {
 		"family_id":    "test-family",
 		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte{})
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
 	if err != nil {
 		t.Fatalf("SignedString() error = %v", err)
 	}

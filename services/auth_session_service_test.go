@@ -81,3 +81,40 @@ func TestAuthSessionRotateRevokesFamilyOnReuse(t *testing.T) {
 		t.Fatalf("revoked family = %q, want family-1", store.revokedFamily)
 	}
 }
+
+type revokingFakeStore struct {
+	fakeAuthSessionStore
+	userCalls    [][3]string
+	projectCalls [][2]string
+}
+
+func (f *revokingFakeStore) RevokeUserProjectSessions(_ context.Context, userID, tenantID, projectID string, _ time.Time) error {
+	f.userCalls = append(f.userCalls, [3]string{userID, tenantID, projectID})
+	return nil
+}
+
+func (f *revokingFakeStore) RevokeProjectSessions(_ context.Context, tenantID, projectID string, _ time.Time) error {
+	f.projectCalls = append(f.projectCalls, [2]string{tenantID, projectID})
+	return nil
+}
+
+func TestProjectSessionRevocationHooksAreScopedAndFailClosed(t *testing.T) {
+	store := &revokingFakeStore{}
+	svc := NewAuthSessionService(store)
+	ctx := context.Background()
+	if err := svc.RevokeUserProjectSessions(ctx, "u", "t", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeProjectSessions(ctx, "t", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.userCalls) != 1 || store.userCalls[0] != [3]string{"u", "t", "p"} || len(store.projectCalls) != 1 || store.projectCalls[0] != [2]string{"t", "p"} {
+		t.Fatalf("calls = %v %v", store.userCalls, store.projectCalls)
+	}
+	if err := svc.RevokeUserProjectSessions(ctx, "", "t", "p"); err == nil {
+		t.Fatal("unscoped user revocation must be rejected")
+	}
+	if err := NewAuthSessionService(&fakeAuthSessionStore{}).RevokeProjectSessions(ctx, "t", "p"); !errors.Is(err, ErrSessionRevocationUnsupported) {
+		t.Fatalf("unsupported store error = %v, want fail-closed ErrSessionRevocationUnsupported", err)
+	}
+}

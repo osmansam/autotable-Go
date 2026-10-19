@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
-	"plugin"
+	// "os"      // Dynamic functions are paused.
+	// "os/exec" // Restore with the plugin compiler below.
+	// "plugin"  // Restore with the plugin loader below.
 	"strconv"
 	"strings"
 	"time"
@@ -243,15 +243,16 @@ type GetPipelineInput struct {
 	PrepareStage func(string) string
 }
 
-type ExecuteDynamicCodeInput struct {
-	TenantID     string
-	ProjectID    string
-	Schema       string
-	FunctionName string
-	CurrentQuery string
-	Container    *models.ContainerModel
-	FiberCtx     *fiber.Ctx
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// type ExecuteDynamicCodeInput struct {
+// 	TenantID     string
+// 	ProjectID    string
+// 	Schema       string
+// 	FunctionName string
+// 	CurrentQuery string
+// 	Container    *models.ContainerModel
+// 	FiberCtx     *fiber.Ctx
+// }
 
 type DynamicExecutionResult struct {
 	Message    string
@@ -313,12 +314,13 @@ type ExportDynamicItemsResult struct {
 }
 
 type DynamicService struct {
-	repository     *repositories.DynamicRepository
-	parser         *requests.DynamicRequestParser
-	cache          *cache.DynamicCache
-	events         *events.DynamicEvents
-	runTransaction func(context.Context, func(mongo.SessionContext) error) error
-	loadAccessUser func(context.Context, string, string, string) (map[string]interface{}, error)
+	repository            *repositories.DynamicRepository
+	parser                *requests.DynamicRequestParser
+	cache                 *cache.DynamicCache
+	events                *events.DynamicEvents
+	runTransaction        func(context.Context, func(mongo.SessionContext) error) error
+	loadAccessUser        func(context.Context, string, string, string) (map[string]interface{}, error)
+	workflowHTTPTransport http.RoundTripper
 }
 
 func NewDynamicService() *DynamicService {
@@ -1048,7 +1050,7 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 	route := readAccessRoute(container, readAccessGetAll)
 	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItems", input.TenantID, input.ProjectID, schema, container)
 	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
-	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, schema, shouldCache, "GetAllDynamicModelItems", "all")
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, schema, shouldCache, "GetAllDynamicModelItems", fieldProjectionCacheQuery("all", container, input.UserRole))
 	if shouldCache {
 		if items, ok := s.cache.GetItems(ctx, redisKey); ok {
 			log.Printf("Fetched items from cache for schema: %s", schema)
@@ -1247,7 +1249,7 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 	route := readAccessRoute(container, readAccessGetOne)
 	_, shouldCache := utils.GenerateRedisKey("GetDynamicModelItem", input.TenantID, input.ProjectID, container.SchemaName, container, input.ID)
 	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
-	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetDynamicModelItem", input.ID)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetDynamicModelItem", fieldProjectionCacheQuery(input.ID, container, input.UserRole))
 	if shouldCache {
 		if item, ok := s.cache.GetItem(ctx, redisKey); ok {
 			utils.StripHashed(container.Fields, []map[string]interface{}{item})
@@ -1255,7 +1257,7 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 			if len(populated) > 0 {
 				item = populated[0]
 			}
-			return GetDynamicItemResult{Item: item, FromCache: true}, nil
+			return GetDynamicItemResult{Item: utils.FilterDocuments([]map[string]interface{}{item}, container.Fields, input.UserRole)[0], FromCache: true}, nil
 		}
 
 		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
@@ -1273,7 +1275,7 @@ func (s *DynamicService) GetDynamicItem(ctx context.Context, input GetDynamicIte
 				if len(populated) > 0 {
 					cachedItem = populated[0]
 				}
-				return GetDynamicItemResult{Item: cachedItem, FromCache: true}, nil
+				return GetDynamicItemResult{Item: utils.FilterDocuments([]map[string]interface{}{cachedItem}, container.Fields, input.UserRole)[0], FromCache: true}, nil
 			}
 		}
 	}
@@ -1511,7 +1513,7 @@ func (s *DynamicService) GetAllDynamicItemsWithPagination(ctx context.Context, i
 
 	_, shouldCache := utils.GenerateRedisKey("GetAllDynamicModelItemsWithPagination", input.TenantID, input.ProjectID, container.SchemaName, container, cacheQuery)
 	shouldCache = shouldCache && !recordReadRequiresIdentityIsolation(container, route)
-	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetAllDynamicModelItemsWithPagination", cacheQuery)
+	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, container.SchemaName, shouldCache, "GetAllDynamicModelItemsWithPagination", fieldProjectionCacheQuery(cacheQuery, container, input.UserRole))
 	if shouldCache {
 		if response, ok := s.cache.GetResponse(ctx, redisKey); ok {
 			log.Printf("Fetched paginated items from cache for schema: %s", container.SchemaName)
@@ -1971,91 +1973,92 @@ func tableSourceRow(value interface{}) (map[string]interface{}, bool) {
 	}
 }
 
-func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDynamicCodeInput) (DynamicExecutionResult, error) {
-	container, err := s.resolveDynamicCodeContainer(ctx, input)
-	if err != nil {
-		return DynamicExecutionResult{}, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch container model",
-			Err:     err,
-		}
-	}
-
-	pluginFileName := "temp_" + input.FunctionName + ".so"
-	fileName := "temp_" + input.FunctionName + ".go"
-	_, shouldCache := utils.GenerateDynamicFunctionRedisKey(input.TenantID, input.ProjectID, input.Schema, input.FunctionName, container)
-	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "function_"+input.FunctionName, input.CurrentQuery)
-
-	if shouldCache {
-		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
-			return DynamicExecutionResult{
-				Message: "Function result fetched from cache",
-				Data:    result,
-				Source:  "cache",
-			}, nil
-		}
-
-		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
-		if locked {
-			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
-		} else {
-			var cachedResult interface{}
-			if utils.WaitForCacheFill(ctx, func() bool {
-				var ok bool
-				cachedResult, ok = s.cache.GetValue(ctx, redisKey)
-				return ok
-			}) {
-				return DynamicExecutionResult{
-					Message: "Function result fetched from cache",
-					Data:    cachedResult,
-					Source:  "cache",
-				}, nil
-			}
-		}
-	}
-
-	if result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, false); ok {
-		if err != nil {
-			return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: err}
-		}
-		s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
-		return DynamicExecutionResult{Message: "Function result fetched from plugin", Data: result, Source: "plugin"}, nil
-	}
-
-	dynamicFuncCode, found := findDynamicFunctionCode(container, input.FunctionName)
-	if !found {
-		return DynamicExecutionResult{}, &ServiceError{
-			Status:  http.StatusBadRequest,
-			Message: "Function not found",
-			Data:    nil,
-		}
-	}
-
-	if err := os.WriteFile(fileName, []byte(dynamicFuncCode), 0644); err != nil {
-		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to write code to file", Err: err}
-	}
-
-	out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
-	if err != nil {
-		return DynamicExecutionResult{}, &ServiceError{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to compile code into plugin",
-			Data:    string(out),
-			Err:     err,
-		}
-	}
-
-	result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, true)
-	if err != nil {
-		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: pluginExecutionMessage(err), Err: err}
-	}
-	if !ok {
-		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: errors.New("function has incompatible signature")}
-	}
-
-	s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
-	return DynamicExecutionResult{Message: "Function result fetched from new plugin", Data: result, Source: "new plugin"}, nil
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func (s *DynamicService) ExecuteDynamicCode(ctx context.Context, input ExecuteDynamicCodeInput) (DynamicExecutionResult, error) {
+// 	container, err := s.resolveDynamicCodeContainer(ctx, input)
+// 	if err != nil {
+// 		return DynamicExecutionResult{}, &ServiceError{
+// 			Status:  http.StatusInternalServerError,
+// 			Message: "Failed to fetch container model",
+// 			Err:     err,
+// 		}
+// 	}
+//
+// 	pluginFileName := "temp_" + input.FunctionName + ".so"
+// 	fileName := "temp_" + input.FunctionName + ".go"
+// 	_, shouldCache := utils.GenerateDynamicFunctionRedisKey(input.TenantID, input.ProjectID, input.Schema, input.FunctionName, container)
+// 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "function_"+input.FunctionName, input.CurrentQuery)
+//
+// 	if shouldCache {
+// 		if result, ok := s.cache.GetValue(ctx, redisKey); ok {
+// 			return DynamicExecutionResult{
+// 				Message: "Function result fetched from cache",
+// 				Data:    result,
+// 				Source:  "cache",
+// 			}, nil
+// 		}
+//
+// 		lockID, locked := utils.AcquireCacheFillLock(ctx, redisKey)
+// 		if locked {
+// 			defer utils.ReleaseCacheFillLock(ctx, redisKey, lockID)
+// 		} else {
+// 			var cachedResult interface{}
+// 			if utils.WaitForCacheFill(ctx, func() bool {
+// 				var ok bool
+// 				cachedResult, ok = s.cache.GetValue(ctx, redisKey)
+// 				return ok
+// 			}) {
+// 				return DynamicExecutionResult{
+// 					Message: "Function result fetched from cache",
+// 					Data:    cachedResult,
+// 					Source:  "cache",
+// 				}, nil
+// 			}
+// 		}
+// 	}
+//
+// 	if result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, false); ok {
+// 		if err != nil {
+// 			return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: err}
+// 		}
+// 		s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
+// 		return DynamicExecutionResult{Message: "Function result fetched from plugin", Data: result, Source: "plugin"}, nil
+// 	}
+//
+// 	dynamicFuncCode, found := findDynamicFunctionCode(container, input.FunctionName)
+// 	if !found {
+// 		return DynamicExecutionResult{}, &ServiceError{
+// 			Status:  http.StatusBadRequest,
+// 			Message: "Function not found",
+// 			Data:    nil,
+// 		}
+// 	}
+//
+// 	if err := os.WriteFile(fileName, []byte(dynamicFuncCode), 0644); err != nil {
+// 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to write code to file", Err: err}
+// 	}
+//
+// 	out, err := exec.Command("go", "build", "-buildmode=plugin", fileName).CombinedOutput()
+// 	if err != nil {
+// 		return DynamicExecutionResult{}, &ServiceError{
+// 			Status:  http.StatusInternalServerError,
+// 			Message: "Failed to compile code into plugin",
+// 			Data:    string(out),
+// 			Err:     err,
+// 		}
+// 	}
+//
+// 	result, ok, err := s.executePluginFunction(pluginFileName, input.FunctionName, input.FiberCtx, true)
+// 	if err != nil {
+// 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: pluginExecutionMessage(err), Err: err}
+// 	}
+// 	if !ok {
+// 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute function", Err: errors.New("function has incompatible signature")}
+// 	}
+//
+// 	s.cacheDynamicFunctionResult(ctx, redisKey, input.CurrentQuery, result, container, shouldCache)
+// 	return DynamicExecutionResult{Message: "Function result fetched from new plugin", Data: result, Source: "new plugin"}, nil
+// }
 
 func (s *DynamicService) TestPipeline(ctx context.Context, input TestPipelineInput) ([]map[string]interface{}, error) {
 	container, err := s.resolveTestPipelineContainer(ctx, input)
@@ -2070,6 +2073,31 @@ func (s *DynamicService) TestPipeline(ctx context.Context, input TestPipelineInp
 	stage := input.PipelineStage
 	if input.PrepareStage != nil {
 		stage.PipelineJSON = input.PrepareStage(stage.PipelineJSON)
+	}
+
+	validated, err := utils.ReadOnlyProjectPipeline(stage, input.TenantID, input.ProjectID)
+	if err != nil {
+		return nil, &ServiceError{Status: http.StatusBadRequest, Message: "Pipeline is not read-only or project-scoped", Err: err}
+	}
+	for _, entry := range validated {
+		if err := pipelineTestCollectionReferences(entry); err != nil {
+			return nil, &ServiceError{Status: http.StatusBadRequest, Message: "Pipeline testing is limited to the source collection", Err: err}
+		}
+	}
+	filter, err := s.composeReadRecordAccessFilter(ctx, container, readAccessRoute(container, readAccessGetAll), input.TenantID, input.ProjectID, input.Schema, string(readAccessGetAll), AccessIdentityInput{IdentityKind: AccessIdentitySystem}, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	if len(filter) > 0 {
+		var stages []bson.M
+		if err := json.Unmarshal([]byte(stage.PipelineJSON), &stages); err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(append([]bson.M{{"$match": filter}}, stages...))
+		if err != nil {
+			return nil, err
+		}
+		stage.PipelineJSON = string(encoded)
 	}
 
 	resultItems, err := s.repository.ExecutePipeline(ctx, input.TenantID, input.ProjectID, input.Schema, stage)
@@ -2112,6 +2140,16 @@ func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDyn
 		}
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	method, err := workflowAllowedHTTPMethod(dynamicAPI.Method)
+	if err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusBadRequest, Message: "Invalid API method", Err: err}
+	}
+	if err := validateWorkflowCallAPIURL(ctx, dynamicAPI.Url); err != nil {
+		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusBadRequest, Message: "API destination is not allowed", Err: err}
+	}
+
 	apiCacheQuery := cacheValueFingerprint(input.Body)
 	_, shouldCache := utils.GenerateDynamicApiRedisKey(input.TenantID, input.ProjectID, input.Schema, input.APIName, container)
 	redisKey, shouldCache := schemaCacheKey(ctx, input.TenantID, input.ProjectID, input.Schema, shouldCache, "api_"+input.APIName, apiCacheQuery)
@@ -2135,7 +2173,12 @@ func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDyn
 		}
 	}
 
-	apiResultBytes, err := utils.ExecuteApiRequest(ctx, dynamicAPI.Method, dynamicAPI.Url, input.Body)
+	client, closeClient := s.protectedHTTPClient(10*time.Second, nil)
+	defer closeClient()
+	apiResultBytes, statusCode, err := utils.ExecuteApiRequestWithClient(ctx, client, method, dynamicAPI.Url, input.Body, nil, nil)
+	if err == nil {
+		err = workflowCallAPIStatusError(statusCode, apiResultBytes)
+	}
 	if err != nil {
 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to execute API call", Err: err}
 	}
@@ -2205,16 +2248,7 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		payload.StepOutputs = map[string]interface{}{}
 	}
 
-	runWorkflow := func(workflowCtx context.Context) error {
-		return s.runWorkflowDefinition(workflowCtx, &payload, workflow)
-	}
-	if workflowRequiresTransaction(workflow) {
-		err = s.runTransaction(ctx, func(txCtx mongo.SessionContext) error {
-			return runWorkflow(txCtx)
-		})
-	} else {
-		err = runWorkflow(ctx)
-	}
+	err = s.runWorkflowWithTransaction(ctx, &payload, workflow)
 	if err != nil {
 		return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Failed to execute workflow")
 	}
@@ -2244,6 +2278,10 @@ func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDyn
 		if err != nil {
 			return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
 		}
+	}
+
+	if container.SchemaName != req.SchemaName {
+		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusForbidden, Message: "Export schema does not match authorized schema"}
 	}
 
 	filter := buildExportFilter(container, req.Filters)
@@ -2302,7 +2340,18 @@ func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDyn
 		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to populate items", Err: err}
 	}
 
-	content, err := buildExportWorkbook(container, items, req.Fields)
+	projectedContainer := *container
+	projectedContainer.Fields = nil
+	for _, field := range utils.FilterFieldsByRole(container.Fields, input.UserRole) {
+		if !field.IsHashed {
+			projectedContainer.Fields = append(projectedContainer.Fields, field)
+		}
+	}
+	// Project using the original child definitions. An allowed object whose
+	// children are all restricted must become empty, not lose its schema guard.
+	items = utils.FilterDocuments(items, container.Fields, input.UserRole)
+
+	content, err := buildExportWorkbook(&projectedContainer, items, req.Fields)
 	if err != nil {
 		return ExportDynamicItemsResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: err.Error(), Err: err}
 	}
@@ -2688,12 +2737,13 @@ func (s *DynamicService) resolvePipelineContainer(ctx context.Context, input Get
 	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
 }
 
-func (s *DynamicService) resolveDynamicCodeContainer(ctx context.Context, input ExecuteDynamicCodeInput) (*models.ContainerModel, error) {
-	if input.Container != nil {
-		return input.Container, nil
-	}
-	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func (s *DynamicService) resolveDynamicCodeContainer(ctx context.Context, input ExecuteDynamicCodeInput) (*models.ContainerModel, error) {
+// 	if input.Container != nil {
+// 		return input.Container, nil
+// 	}
+// 	return s.repository.GetContainerModel(ctx, input.TenantID, input.ProjectID, input.Schema)
+// }
 
 func (s *DynamicService) resolveTestPipelineContainer(ctx context.Context, input TestPipelineInput) (*models.ContainerModel, error) {
 	if input.Container != nil {
@@ -3028,14 +3078,15 @@ func findPipelineStage(container *models.ContainerModel, pipelineName string) (m
 	return models.PipelineStage{}, false
 }
 
-func findDynamicFunctionCode(container *models.ContainerModel, functionName string) (string, bool) {
-	for _, dynamicFunc := range container.DynamicFunctions {
-		if dynamicFunc.Name == functionName {
-			return dynamicFunc.CodeJSON, true
-		}
-	}
-	return "", false
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func findDynamicFunctionCode(container *models.ContainerModel, functionName string) (string, bool) {
+// 	for _, dynamicFunc := range container.DynamicFunctions {
+// 		if dynamicFunc.Name == functionName {
+// 			return dynamicFunc.CodeJSON, true
+// 		}
+// 	}
+// 	return "", false
+// }
 
 func findDynamicAPI(container *models.ContainerModel, apiName string) (models.DynamicApiModel, bool) {
 	for _, api := range container.DynamicApis {
@@ -3060,44 +3111,46 @@ func missingDynamicAPIDependencies(dynamicAPI models.DynamicApiModel, requestBod
 	return missing
 }
 
-func (s *DynamicService) executePluginFunction(pluginFileName, functionName string, fiberCtx *fiber.Ctx, required bool) (interface{}, bool, error) {
-	loadedPlugin, err := plugin.Open(pluginFileName)
-	if err != nil {
-		if required {
-			return nil, false, fmt.Errorf("load plugin: %w", err)
-		}
-		return nil, false, nil
-	}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func (s *DynamicService) executePluginFunction(pluginFileName, functionName string, fiberCtx *fiber.Ctx, required bool) (interface{}, bool, error) {
+// 	loadedPlugin, err := plugin.Open(pluginFileName)
+// 	if err != nil {
+// 		if required {
+// 			return nil, false, fmt.Errorf("load plugin: %w", err)
+// 		}
+// 		return nil, false, nil
+// 	}
+//
+// 	function, err := loadedPlugin.Lookup(functionName)
+// 	if err != nil {
+// 		if required {
+// 			return nil, false, fmt.Errorf("lookup function: %w", err)
+// 		}
+// 		return nil, false, nil
+// 	}
+//
+// 	executeFunc, ok := function.(func(*fiber.Ctx) (interface{}, error))
+// 	if !ok {
+// 		return nil, true, errors.New("function has incompatible signature")
+// 	}
+//
+// 	result, err := executeFunc(fiberCtx)
+// 	return result, true, err
+// }
 
-	function, err := loadedPlugin.Lookup(functionName)
-	if err != nil {
-		if required {
-			return nil, false, fmt.Errorf("lookup function: %w", err)
-		}
-		return nil, false, nil
-	}
-
-	executeFunc, ok := function.(func(*fiber.Ctx) (interface{}, error))
-	if !ok {
-		return nil, true, errors.New("function has incompatible signature")
-	}
-
-	result, err := executeFunc(fiberCtx)
-	return result, true, err
-}
-
-func (s *DynamicService) cacheDynamicFunctionResult(ctx context.Context, redisKey, currentQuery string, result interface{}, container *models.ContainerModel, shouldCache bool) {
-	if !shouldCache {
-		return
-	}
-	expiration := cacheDuration(container.Redis.CacheTime)
-	s.cache.SetValue(ctx, redisKey, result, expiration)
-	if !configs.RedisCircuitAllow() {
-		return
-	}
-	err := configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration).Err()
-	configs.RedisCircuitRecordResult(err)
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func (s *DynamicService) cacheDynamicFunctionResult(ctx context.Context, redisKey, currentQuery string, result interface{}, container *models.ContainerModel, shouldCache bool) {
+// 	if !shouldCache {
+// 		return
+// 	}
+// 	expiration := cacheDuration(container.Redis.CacheTime)
+// 	s.cache.SetValue(ctx, redisKey, result, expiration)
+// 	if !configs.RedisCircuitAllow() {
+// 		return
+// 	}
+// 	err := configs.RedisClient.Set(ctx, redisKey+"-query", currentQuery, expiration).Err()
+// 	configs.RedisCircuitRecordResult(err)
+// }
 
 func schemaCacheKey(ctx context.Context, tenantID, projectID, schemaName string, shouldCache bool, routeName, queryValue string) (string, bool) {
 	if !shouldCache {
@@ -3131,18 +3184,19 @@ func cacheDuration(cacheMinutes int) time.Duration {
 	return utils.DefaultCacheTTLDuration()
 }
 
-func pluginExecutionMessage(err error) string {
-	if err == nil {
-		return "Failed to execute function"
-	}
-	if strings.Contains(err.Error(), "load plugin") {
-		return "Failed to load new plugin"
-	}
-	if strings.Contains(err.Error(), "lookup function") {
-		return "Failed to lookup function in new plugin"
-	}
-	return "Failed to execute function"
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func pluginExecutionMessage(err error) string {
+// 	if err == nil {
+// 		return "Failed to execute function"
+// 	}
+// 	if strings.Contains(err.Error(), "load plugin") {
+// 		return "Failed to load new plugin"
+// 	}
+// 	if strings.Contains(err.Error(), "lookup function") {
+// 		return "Failed to lookup function in new plugin"
+// 	}
+// 	return "Failed to execute function"
+// }
 
 func cachedResponseItems(response fiber.Map) ([]map[string]interface{}, bool) {
 	itemsInterface, ok := response["items"].([]interface{})
@@ -3359,4 +3413,43 @@ func extractBulkUpdateID(item map[string]interface{}) (string, string) {
 		return idStr, ""
 	}
 	return "", "Missing id field"
+}
+
+// Separate role-specific projections and policy revisions, including legacy cache entries.
+func fieldProjectionCacheQuery(query string, container *models.ContainerModel, role string) string {
+	return cacheValueFingerprint(struct {
+		Version     int
+		Query, Role string
+		Fields      []models.Field
+	}{2, query, role, container.Fields})
+}
+
+func pipelineTestCollectionReferences(value interface{}) error {
+	switch item := value.(type) {
+	case bson.D:
+		for _, entry := range item {
+			if entry.Key == "$lookup" || entry.Key == "$graphLookup" || entry.Key == "$unionWith" {
+				return fmt.Errorf("collection joins are unavailable in pipeline testing")
+			}
+			if err := pipelineTestCollectionReferences(entry.Value); err != nil {
+				return err
+			}
+		}
+	case map[string]interface{}:
+		for key, child := range item {
+			if key == "$lookup" || key == "$graphLookup" || key == "$unionWith" {
+				return fmt.Errorf("collection joins are unavailable in pipeline testing")
+			}
+			if err := pipelineTestCollectionReferences(child); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, child := range item {
+			if err := pipelineTestCollectionReferences(child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

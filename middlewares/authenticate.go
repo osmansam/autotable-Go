@@ -142,9 +142,13 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch container model"})
 		}
 		c.Locals("containerModel", container)
+		// Persisted legacy flags cannot expose account/role data to application users.
+		if isProtectedAccountContainer(container) {
+			return requireAccountManagement(c, tenantID, projectID, accountOperationPermission(routeName), liveAccountAuthorizer{}, accountOperationEnabled(c, routeName, container))
+		}
 
 		sourceType := c.Query("sourceType")
-		isDynamicFunc := routeName == "ExecuteDynamicCode"
+		// isDynamicFunc := routeName == "ExecuteDynamicCode" // Dynamic functions are paused.
 		isPipeline := usesPipelineAuthentication(routeName, sourceType)
 		isExecuteApi := routeName == "ExecuteDynamicAPI"
 		isExecuteWorkflow := usesWorkflowAuthentication(routeName, sourceType)
@@ -164,18 +168,19 @@ func ConditionalAuthentication(routeName string) fiber.Handler {
 					break
 				}
 			}
-		} else if isDynamicFunc {
-			functionName := c.Query("functionName")
-			for _, function := range container.DynamicFunctions {
-				if function.Name == functionName {
-					isAuthenticated = function.IsAuthenticated
-					isAuthorized = function.IsAuthorized
-					isActive = function.IsActive
-					authorizeRole = function.AuthorizeRole
-					c.Locals("dynamicFunction", function)
-					break
-				}
-			}
+			// Dynamic-function authentication is retained with the disabled route.
+			// } else if isDynamicFunc {
+			// 	functionName := c.Query("functionName")
+			// 	for _, function := range container.DynamicFunctions {
+			// 		if function.Name == functionName {
+			// 			isAuthenticated = function.IsAuthenticated
+			// 			isAuthorized = function.IsAuthorized
+			// 			isActive = function.IsActive
+			// 			authorizeRole = function.AuthorizeRole
+			// 			c.Locals("dynamicFunction", function)
+			// 			break
+			// 		}
+			// 	}
 		} else if isExecuteApi {
 			apiName := c.Query("apiName")
 			for _, api := range container.DynamicApis {

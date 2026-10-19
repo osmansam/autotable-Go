@@ -47,13 +47,19 @@ func ProjectSlugsFromRequest(c *fiber.Ctx) (string, string) {
 }
 
 func ResolveTenantCredential(c *fiber.Ctx) (ResolvedCredential, error) {
+	return ResolveManagementCredential(c)
+}
+
+// ResolveManagementCredential selects only the cookie namespace used by management sessions.
+// Token identity is validated separately by ManagementAuthenticate.
+func ResolveManagementCredential(c *fiber.Ctx) (ResolvedCredential, error) {
 	if authHeader := strings.TrimSpace(c.Get(fiber.HeaderAuthorization)); authHeader != "" {
 		return resolveCredential(c, utils.AuthCookieName(utils.TokenScopeTenant, "access"))
 	}
 	preferTenant := strings.HasPrefix(c.Path(), "/api/v1/tenant/")
 	if !preferTenant {
 		tenantSlug, projectSlug := ProjectSlugsFromRequest(c)
-		if token := strings.TrimSpace(c.Cookies(utils.ProjectAuthCookieName(tenantSlug, projectSlug, "access"))); token != "" {
+		if token := strings.TrimSpace(c.Cookies(utils.ManagementProjectAuthCookieName(tenantSlug, projectSlug, "access"))); token != "" {
 			credential := ResolvedCredential{Token: token, Source: AuthSourceCookie}
 			c.Locals(AuthSourceLocalKey, credential.Source)
 			return credential, nil

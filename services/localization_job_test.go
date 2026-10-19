@@ -80,11 +80,13 @@ func (f *fakeLocalizationJobRepository) ApplyReconciledEntries(_ context.Context
 	return nil
 }
 
-func (f *fakeLocalizationJobRepository) LeaseNextJob(context.Context, string, time.Time, time.Duration) (*models.TranslationJob, error) {
+func (f *fakeLocalizationJobRepository) LeaseNextJob(_ context.Context, owner string, _ time.Time, _ time.Duration) (*models.TranslationJob, error) {
 	if len(f.leasedJobs) == 0 {
 		return nil, mongo.ErrNoDocuments
 	}
 	job := f.leasedJobs[0]
+	job.LeaseOwner = owner
+	job.LeaseToken = "fake-claim-" + job.ID.Hex()
 	f.leasedJobs = f.leasedJobs[1:]
 	return job, nil
 }
@@ -284,4 +286,8 @@ func TestProjectTranslationJobProtectedTokenFailureAffectsOnlyEntry(t *testing.T
 	if len(jobs.errorSummary) != 1 || !strings.Contains(jobs.errorSummary[0], "protected") {
 		t.Fatalf("errors = %#v", jobs.errorSummary)
 	}
+}
+
+func (f *fakeLocalizationJobRepository) RenewJobLease(context.Context, *models.TranslationJob, time.Time, time.Duration) (bool, error) {
+	return true, nil
 }

@@ -161,6 +161,39 @@ type ProjectMembership struct {
 	UpdatedAt time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
+// ManagementPrincipal is the authenticated management identity. TokenRoles are
+// informational only; management authorization is evaluated from live membership.
+type ManagementPrincipal struct {
+	UserID     string
+	Email      string
+	TenantID   string
+	ProjectID  string
+	Scope      string
+	RoleScope  string
+	TokenRoles []string
+	TokenID    string
+	FamilyID   string
+}
+
+type ManagementAuthorizationSubject struct {
+	UserID     string
+	TenantID   string
+	TokenRoles []string
+}
+
+type ManagementAuthorizationTarget struct {
+	TenantID  string
+	ProjectID string
+}
+
+type ManagementMembershipSnapshot struct {
+	UserActive        bool
+	TenantActive      bool
+	ProjectActive     bool
+	TenantMembership  *TenantMembership
+	ProjectMembership *ProjectMembership
+}
+
 /*
 INVITES
 */
