@@ -41,7 +41,8 @@ func TestProjectPasswordLoginCreatesOneSession(t *testing.T) {
 		})
 		request := httptest.NewRequest("POST", "/", strings.NewReader(`{"email":"person@example.com","password":"correct-password"}`))
 		request.Header.Set("Content-Type", "application/json")
-		response, err := app.Test(request)
+		// Real bcrypt verification can exceed Fiber's default 1s timeout under -race on CI.
+		response, err := app.Test(request, 10_000)
 		if err != nil {
 			mt.Fatal(err)
 		}
