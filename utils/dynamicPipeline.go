@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
@@ -38,13 +40,17 @@ func CreateDynamicPipeline(input models.PipelineStage) (mongo.Pipeline, error) {
 }
 
 // ExecuteDynamicPipeline executes a pipeline against a MongoDB collection.
-func ExecuteDynamicPipeline(ctx context.Context, collection *mongo.Collection, pipelineStage models.PipelineStage) ([]bson.M, error) {
-	pipeline, err := CreateDynamicPipeline(pipelineStage)
+func ExecuteDynamicPipeline(ctx context.Context, collection *mongo.Collection, pipelineStage models.PipelineStage, scope ...string) ([]bson.M, error) {
+	tenantID, projectID := "", ""
+	if len(scope) == 2 {
+		tenantID, projectID = scope[0], scope[1]
+	}
+	pipeline, err := ReadOnlyProjectPipeline(pipelineStage, tenantID, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("error creating pipeline: %w", err)
 	}
 
-	cursor, err := collection.Aggregate(ctx, pipeline)
+	cursor, err := collection.Aggregate(ctx, pipeline, options.Aggregate().SetAllowDiskUse(false).SetMaxTime(10*time.Second))
 	if err != nil {
 		return nil, fmt.Errorf("error executing pipeline: %w", err)
 	}
@@ -60,33 +66,53 @@ func ExecuteDynamicPipeline(ctx context.Context, collection *mongo.Collection, p
 
 // ReplacePlaceholdersWithQueryParams replaces placeholders in a pipeline JSON string with query parameters.
 func ReplacePlaceholdersWithQueryParams(pipelineJSON string, c *fiber.Ctx) string {
-	modifiedJSON := pipelineJSON
-
-	// Regular expression to find placeholders like {{placeholder}}
-	re := regexp.MustCompile(`\{\{(.+?)\}\}`)
-	matches := re.FindAllStringSubmatch(modifiedJSON, -1)
-
-	for _, match := range matches {
-		if len(match) > 1 {
-			rawPlaceholder := match[1]
-			placeholder := strings.TrimSpace(rawPlaceholder)
-			if placeholder == "" {
-				continue
-			}
-			queryValue := c.Query(placeholder)
-
-			// Check if the query value is an integer
-			if _, err := strconv.Atoi(queryValue); err == nil {
-				// It's an integer, so replace the placeholder without quotes
-				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("\"{{%s}}\"", rawPlaceholder), queryValue)
-			} else if queryValue != "" {
-				// Replace placeholder with query parameter value (as string)
-				modifiedJSON = strings.ReplaceAll(modifiedJSON, fmt.Sprintf("{{%s}}", rawPlaceholder), queryValue)
-			}
-		}
+	var pipeline interface{}
+	decoder := json.NewDecoder(strings.NewReader(pipelineJSON))
+	decoder.UseNumber()
+	if err := decoder.Decode(&pipeline); err != nil {
+		return pipelineJSON
 	}
-
-	return modifiedJSON
+	re := regexp.MustCompile(`\{\{(.+?)\}\}`)
+	var resolve func(interface{}) interface{}
+	resolve = func(value interface{}) interface{} {
+		switch item := value.(type) {
+		case map[string]interface{}:
+			for key, child := range item {
+				item[key] = resolve(child)
+			}
+			return item
+		case []interface{}:
+			for i, child := range item {
+				item[i] = resolve(child)
+			}
+			return item
+		case string:
+			match := re.FindStringSubmatch(item)
+			if len(match) == 2 && match[0] == item {
+				query := c.Query(strings.TrimSpace(match[1]))
+				if query != "" {
+					if number, err := strconv.ParseInt(query, 10, 64); err == nil {
+						return number
+					}
+					return query
+				}
+			}
+			return re.ReplaceAllStringFunc(item, func(token string) string {
+				match := re.FindStringSubmatch(token)
+				query := c.Query(strings.TrimSpace(match[1]))
+				if query == "" {
+					return token
+				}
+				return query
+			})
+		}
+		return value
+	}
+	result, err := json.Marshal(resolve(pipeline))
+	if err != nil {
+		return pipelineJSON
+	}
+	return string(result)
 }
 
 // ReplacePlaceholdersWithProjectContext replaces project-scoped placeholders in pipeline JSON.

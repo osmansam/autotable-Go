@@ -1,21 +1,20 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
 )
 
 func IntegrationRoutes(baseUrl string, app *fiber.App) {
-	group := app.Group(baseUrl)
-	group.Use(middlewares.TenantAuthenticate)
-	group.Use(middlewares.GeneralRateLimit())
+	base := "/" + strings.TrimPrefix(baseUrl, "/")
+	app.Get(base+"/credentials", strictManagementRouteHandlers("GET", base+"/credentials", middlewares.GeneralRateLimit(), controllers.ListIntegrationCredentials)...)
+	app.Post(base+"/credentials", strictManagementRouteHandlers("POST", base+"/credentials", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), controllers.CreateIntegrationCredential)...)
+	app.Post(base+"/credentials/:id/revoke", strictManagementRouteHandlers("POST", base+"/credentials/:id/revoke", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), controllers.RevokeIntegrationCredential)...)
 
-	group.Get("/credentials", controllers.ListIntegrationCredentials)
-	group.Post("/credentials", middlewares.DefaultBodySizeLimit(), controllers.CreateIntegrationCredential)
-	group.Post("/credentials/:id/revoke", middlewares.DefaultBodySizeLimit(), controllers.RevokeIntegrationCredential)
-
-	group.Get("/external-api-credentials", controllers.ListExternalAPICredentials)
-	group.Post("/external-api-credentials", middlewares.DefaultBodySizeLimit(), controllers.CreateExternalAPICredential)
-	group.Post("/external-api-credentials/:id/revoke", middlewares.DefaultBodySizeLimit(), controllers.RevokeExternalAPICredential)
+	app.Get(base+"/external-api-credentials", strictManagementRouteHandlers("GET", base+"/external-api-credentials", middlewares.GeneralRateLimit(), controllers.ListExternalAPICredentials)...)
+	app.Post(base+"/external-api-credentials", strictManagementRouteHandlers("POST", base+"/external-api-credentials", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), controllers.CreateExternalAPICredential)...)
+	app.Post(base+"/external-api-credentials/:id/revoke", strictManagementRouteHandlers("POST", base+"/external-api-credentials/:id/revoke", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), controllers.RevokeExternalAPICredential)...)
 }

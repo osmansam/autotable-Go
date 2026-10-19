@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
+	"strings"
 )
 
 func AuthRoutes(baseUrl string, app *fiber.App) {
@@ -20,4 +21,8 @@ func AuthRoutes(baseUrl string, app *fiber.App) {
 
 	// Logout
 	authGroup.Post("/logout", middlewares.DefaultBodySizeLimit(), middlewares.GeneralRateLimit(), controllers.Logout)
+	if strings.Contains(baseUrl, ":tenantSlug/:projectSlug") {
+		path := "/" + strings.TrimSuffix(strings.Trim(baseUrl, "/"), "/auth") + "/admin/auth/users"
+		app.Post(path, strictManagementRouteHandlers("POST", path, middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.RegisterManagedAuthUser)...)
+	}
 }

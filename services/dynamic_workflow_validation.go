@@ -3,12 +3,14 @@ package services
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/osmansam/autotableGo/models"
 	"github.com/robfig/cron/v3"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const maxWorkflowTimeoutSec = 300
@@ -24,7 +26,6 @@ var workflowStepTypes = map[string]bool{
 	models.WorkflowStepTypeRunPipeline:        true,
 	models.WorkflowStepTypeAggregate:          true,
 	models.WorkflowStepTypeDistinct:           true,
-	models.WorkflowStepTypeDynamicFunction:    true,
 	models.WorkflowStepTypeEmitOutboxEvent:    true,
 	models.WorkflowStepTypeCreateNotification: true,
 	models.WorkflowStepTypeGetRecord:          true,
@@ -122,6 +123,9 @@ func validateWorkflowStepsWithContext(workflow models.DynamicWorkflow, steps []m
 			return fmt.Errorf("workflow %s step %s timeoutSec must be between 0 and %d", workflow.Name, step.Name, maxWorkflowTimeoutSec)
 		}
 		if step.Type == models.WorkflowStepTypeCallAPI {
+			if _, err := workflowProviderIdempotencyHeader(step.Config); err != nil {
+				return fmt.Errorf("workflow %s step %s: %w", workflow.Name, step.Name, err)
+			}
 			if step.TimeoutSec < minWorkflowCallAPITimeoutSec {
 				return fmt.Errorf("workflow %s step %s call_api timeoutSec must be at least %d", workflow.Name, step.Name, minWorkflowCallAPITimeoutSec)
 			}
@@ -184,7 +188,7 @@ func validateWorkflowStepsWithContext(workflow models.DynamicWorkflow, steps []m
 		if step.Type == models.WorkflowStepTypeReturn && workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeOutbox {
 			return fmt.Errorf("workflow %s step %s return requires transactional executionMode", workflow.Name, step.Name)
 		}
-		if step.Type == models.WorkflowStepTypeReturn && len(step.Conditions) == 0 && workflowHasActiveStepAfter(orderedSteps, index, workflowStepExecutionMode(step, workflow.Mode), workflow.Mode) {
+		if step.IsActive && step.Type == models.WorkflowStepTypeReturn && len(step.Conditions) == 0 && workflowHasActiveStepAfter(orderedSteps, index, workflowStepExecutionMode(step, workflow.Mode), workflow.Mode) {
 			return fmt.Errorf("workflow %s step %s return must be the last active step in its list", workflow.Name, step.Name)
 		}
 		if workflowStepExecutionMode(step, workflow.Mode) == models.WorkflowModeTransactional && workflowStepHasNonTransactionalSideEffect(step) {
@@ -304,6 +308,16 @@ func validateWorkflowConditions(trigger string, conditions []models.WorkflowCond
 			if trigger != models.WorkflowTriggerBeforeUpdate && trigger != models.WorkflowTriggerAfterUpdate {
 				return fmt.Errorf("condition operator %s requires an update trigger", condition.Operator)
 			}
+		case "", models.WorkflowConditionEqual, models.WorkflowConditionNotEqual,
+			models.WorkflowConditionGreaterThan, models.WorkflowConditionGreaterEqual,
+			models.WorkflowConditionLessThan, models.WorkflowConditionLessEqual,
+			models.WorkflowConditionIn, models.WorkflowConditionNotIn,
+			models.WorkflowConditionContains, models.WorkflowConditionNotContains,
+			models.WorkflowConditionStartsWith, models.WorkflowConditionEndsWith,
+			models.WorkflowConditionIsEmpty, models.WorkflowConditionIsNotEmpty,
+			models.WorkflowConditionBetween, models.WorkflowConditionExists:
+		default:
+			return fmt.Errorf("unsupported condition operator: %s", condition.Operator)
 		}
 	}
 	return nil
@@ -338,6 +352,8 @@ func workflowContainsUnsafeOutboxReference(value interface{}) bool {
 				return true
 			}
 		}
+	case bson.M:
+		return workflowContainsUnsafeOutboxReference(map[string]interface{}(typed))
 	case []interface{}:
 		for _, item := range typed {
 			if workflowContainsUnsafeOutboxReference(item) {
@@ -350,6 +366,16 @@ func workflowContainsUnsafeOutboxReference(value interface{}) bool {
 				workflowContainsUnsafeOutboxReference(condition.Value) ||
 				workflowContainsUnsafeOutboxReference(condition.Conditions) {
 				return true
+			}
+		}
+	default:
+		// Template resolution accepts typed slices, including BSON arrays.
+		reflected := reflect.ValueOf(value)
+		if reflected.Kind() == reflect.Slice {
+			for i := 0; i < reflected.Len(); i++ {
+				if workflowContainsUnsafeOutboxReference(reflected.Index(i).Interface()) {
+					return true
+				}
 			}
 		}
 	}

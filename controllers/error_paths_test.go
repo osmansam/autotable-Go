@@ -98,7 +98,8 @@ func TestDynamicHandlersRejectMissingProjectContext(t *testing.T) {
 		{name: "filter", method: http.MethodGet, path: "/", handler: HandleFilterDynamicModelItem},
 		{name: "pipeline", method: http.MethodGet, path: "/", handler: GetPipeline},
 		{name: "pagination", method: http.MethodGet, path: "/", handler: GetAllDynamicModelItemsWithPagination},
-		{name: "execute code", method: http.MethodPost, path: "/", handler: ExecuteDynamicCode},
+		// Dynamic functions are paused; keep this case with the commented handler.
+		// {name: "execute code", method: http.MethodPost, path: "/", handler: ExecuteDynamicCode},
 		{name: "test pipeline", method: http.MethodPost, path: "/", handler: TestPipeline},
 		{name: "execute api", method: http.MethodPost, path: "/", handler: ExecuteDynamicAPI},
 		{name: "execute workflow", method: http.MethodPost, path: "/", handler: ExecuteWorkflow},
@@ -240,7 +241,7 @@ func TestContainerHandlersRejectMissingProjectContext(t *testing.T) {
 		{name: "update", method: http.MethodPatch, path: "/id", handler: UpdateContainer},
 		{name: "pipelines", method: http.MethodPatch, path: "/id", handler: UpdatePipelines},
 		{name: "workflows", method: http.MethodPatch, path: "/id", handler: UpdateWorkflows},
-		{name: "functions", method: http.MethodPatch, path: "/id", handler: UpdateDynamicFunctions},
+		// {name: "functions", method: http.MethodPatch, path: "/id", handler: UpdateDynamicFunctions},
 		{name: "dynamic apis", method: http.MethodPatch, path: "/id", handler: UpdateDynamicApis},
 		{name: "get", method: http.MethodGet, path: "/id", handler: GetContainer},
 		{name: "types", method: http.MethodGet, path: "/", handler: GetAllContainerTypes},

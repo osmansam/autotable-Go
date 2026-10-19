@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -116,6 +117,54 @@ func TestProjectAuthCookieNamesAreStableAndIsolatedByProject(t *testing.T) {
 	}
 	if first != ProjectAuthCookieName("DAVINCI", "GOBLIN", "access") {
 		t.Fatalf("project cookie name is not normalized and stable")
+	}
+}
+
+func TestManagementAndApplicationProjectCookiesAreIsolated(t *testing.T) {
+	t.Setenv("NODE_ENV", "development")
+	application := ProjectAuthCookieName("davinci", "goblin", "access")
+	management := ManagementProjectAuthCookieName("davinci", "goblin", "access")
+	otherProject := ManagementProjectAuthCookieName("davinci", "phoenix", "access")
+	if application == management || management == otherProject {
+		t.Fatalf("cookie namespaces are not isolated: app=%q management=%q other=%q", application, management, otherProject)
+	}
+}
+
+func TestManagementProjectCookiesUseExactProjectPathAndClearSamePath(t *testing.T) {
+	t.Setenv("NODE_ENV", "development")
+	now := time.Now()
+	setApp := fiber.New()
+	setApp.Get("/", func(c *fiber.Ctx) error {
+		SetManagementProjectAuthCookies(c, "davinci", "goblin", AuthTokenPair{AccessToken: "a", RefreshToken: "r", ATExpires: now.Add(time.Hour).Unix(), RTExpires: now.Add(24 * time.Hour).Unix()})
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	setResp, err := setApp.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearApp := fiber.New()
+	clearApp.Get("/", func(c *fiber.Ctx) error {
+		ClearManagementProjectAuthCookies(c, "davinci", "goblin")
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	clearResp, err := clearApp.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := ProjectAuthCookiePath("davinci", "goblin")
+	foundSet, foundClear := false, false
+	for _, header := range setResp.Header.Values("Set-Cookie") {
+		if strings.Contains(header, ManagementProjectAuthCookieName("davinci", "goblin", "access")+"=a") && strings.Contains(header, "path="+path) {
+			foundSet = true
+		}
+	}
+	for _, header := range clearResp.Header.Values("Set-Cookie") {
+		if strings.Contains(header, ManagementProjectAuthCookieName("davinci", "goblin", "access")+"=") && strings.Contains(header, "path="+path) && strings.Contains(header, "expires=Thu, 01 Jan 1970") {
+			foundClear = true
+		}
+	}
+	if !foundSet || !foundClear {
+		t.Fatalf("set headers = %q, clear headers = %q", setResp.Header.Values("Set-Cookie"), clearResp.Header.Values("Set-Cookie"))
 	}
 }
 

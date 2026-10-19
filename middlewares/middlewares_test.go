@@ -362,25 +362,15 @@ func TestTenantAuthenticateRejectsMissingOrInvalidToken(t *testing.T) {
 	}
 }
 
-func TestTenantAuthenticateAcceptsProjectAuthToken(t *testing.T) {
+func TestTenantAuthenticateRejectsProjectApplicationToken(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
 	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "acme", "retailerv2")
 	if err != nil {
 		t.Fatalf("GenerateTokens() error = %v", err)
 	}
 
 	app := fiber.New()
-	app.Get("/", TenantAuthenticate, RequireProjectScope, func(c *fiber.Ctx) error {
-		if got := c.Locals("tenantUserID"); got != "user" {
-			t.Fatalf("tenantUserID = %v, want user", got)
-		}
-		if got := c.Locals("tenantID"); got != "tenant" {
-			t.Fatalf("tenantID = %v, want tenant", got)
-		}
-		if got := c.Locals("projectID"); got != "project" {
-			t.Fatalf("projectID = %v, want project", got)
-		}
-		return c.SendStatus(http.StatusNoContent)
-	})
+	app.Get("/", TenantAuthenticate, func(c *fiber.Ctx) error { return c.SendStatus(http.StatusNoContent) })
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
@@ -388,8 +378,8 @@ func TestTenantAuthenticateAcceptsProjectAuthToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.Test() error = %v", err)
 	}
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
 
@@ -400,8 +390,6 @@ func TestTenantAuthorizationMiddleware(t *testing.T) {
 		middleware fiber.Handler
 		wantStatus int
 	}{
-		{name: "authorize allows matching role", locals: map[string]interface{}{"roles": []string{models.ProjectRoleAdmin}}, middleware: TenantAuthorize([]string{models.ProjectRoleAdmin}), wantStatus: http.StatusNoContent},
-		{name: "authorize temporarily allows missing roles", middleware: TenantAuthorize([]string{models.ProjectRoleAdmin}), wantStatus: http.StatusNoContent},
 		{name: "project scope allows project", locals: map[string]interface{}{"roleScope": string(models.RoleScopeProject), "projectID": "project"}, middleware: RequireProjectScope, wantStatus: http.StatusNoContent},
 		{name: "project scope rejects tenant", locals: map[string]interface{}{"roleScope": string(models.RoleScopeTenant)}, middleware: RequireProjectScope, wantStatus: http.StatusForbidden},
 		{name: "tenant scope allows tenant", locals: map[string]interface{}{"roleScope": string(models.RoleScopeTenant)}, middleware: RequireTenantScope, wantStatus: http.StatusNoContent},
@@ -438,6 +426,7 @@ func TestAuthenticateRejectsMissingToken(t *testing.T) {
 }
 
 func TestAuthenticate(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
 	tokens, err := utils.GenerateTokens("user", "admin", "tenant", "project", "", "")
 	if err != nil {
 		t.Fatalf("GenerateTokens() error = %v", err)

@@ -181,7 +181,8 @@ func TestGenerateRedisKeys(t *testing.T) {
 		}, want: "tenant_t_project_p_schema_orders_route_GetDynamicModelItem_42"},
 		{name: "route legacy", run: func() (string, bool) { return GenerateRedisKey("GetAllDynamicModelItems", "", "", "orders", container) }, want: "schema_orders_route_GetAllDynamicModelItems"},
 		{name: "pipeline", run: func() (string, bool) { return GeneratePipelineRedisKey("t", "p", "orders", "summary", container) }, want: "tenant_t_project_p_pipeline_summary_schema_orders"},
-		{name: "function", run: func() (string, bool) { return GenerateDynamicFunctionRedisKey("t", "p", "orders", "total", container) }, want: "tenant_t_project_p_function_total_schema_orders"},
+		// Dynamic functions are paused; retain the cache case for future use.
+		// {name: "function", run: func() (string, bool) { return GenerateDynamicFunctionRedisKey("t", "p", "orders", "total", container) }, want: "tenant_t_project_p_function_total_schema_orders"},
 		{name: "api", run: func() (string, bool) { return GenerateDynamicApiRedisKey("t", "p", "orders", "status", container) }, want: "tenant_t_project_p_api_status_schema_orders"},
 	}
 	for _, tt := range tests {

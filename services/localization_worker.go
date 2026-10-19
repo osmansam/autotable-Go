@@ -14,7 +14,6 @@ func StartLocalizationWorker(ctx context.Context, owner string, pollInterval tim
 	if pollInterval <= 0 {
 		pollInterval = time.Second
 	}
-	const leaseDuration = 30 * time.Minute
 	repository := localizationJobRepositoryFactory()
 	timer := time.NewTimer(0)
 	defer timer.Stop()
@@ -24,10 +23,13 @@ func StartLocalizationWorker(ctx context.Context, owner string, pollInterval tim
 			return
 		case <-timer.C:
 		}
-		job, err := repository.LeaseNextJob(ctx, owner, time.Now().UTC(), leaseDuration)
+		job, err := repository.LeaseNextJob(ctx, owner, time.Now().UTC(), localizationJobLeaseDuration)
 		switch {
 		case err == nil:
-			if processErr := processLocalizationJob(ctx, job); processErr != nil && ctx.Err() == nil {
+			heartbeat := time.NewTicker(localizationJobLeaseDuration / 3)
+			processErr := runLocalizationJobWithLease(ctx, repository, job, heartbeat.C, processLocalizationJob)
+			heartbeat.Stop()
+			if processErr != nil && ctx.Err() == nil {
 				log.Printf("localization_worker owner=%s job_id=%s error=%q", owner, job.ID.Hex(), processErr.Error())
 			}
 			timer.Reset(0)

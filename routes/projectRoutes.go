@@ -4,75 +4,53 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
-	"github.com/osmansam/autotableGo/models"
 )
 
 // ProjectRoutes sets up all project management routes
 func ProjectRoutes(app *fiber.App) {
-	// All project routes require tenant authentication and tenant scope
-	projectGroup := app.Group("/api/v1/tenant/projects")
-	projectGroup.Use(middlewares.TenantAuthenticate)
-	projectGroup.Use(middlewares.GeneralRateLimit())
-	projectGroup.Use(middlewares.RequireTenantScope)
+	const base = "/api/v1/tenant/projects"
 
-	// Create project - requires tenant admin or owner
-	projectGroup.Post("/",
-		middlewares.TenantAuthorize([]string{
-			models.TenantRoleOwner,
-			models.TenantRoleAdmin,
-		}),
+	app.Post(base+"/", strictManagementRouteHandlers("POST", base+"/",
+		middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreateProject,
-	)
+	)...)
 
-	// List all projects in tenant - any tenant member can view
-	projectGroup.Get("/", middlewares.SearchRateLimit(), controllers.GetAllProjects)
+	app.Get(base+"/", strictManagementRouteHandlers("GET", base+"/", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllProjects)...)
 
-	projectGroup.Get("/templates", middlewares.SearchRateLimit(), controllers.GetProjectTemplates)
+	app.Get(base+"/templates", strictManagementRouteHandlers("GET", base+"/templates", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetProjectTemplates)...)
 
-	projectGroup.Patch("/:id/locales",
+	app.Patch(base+"/:id/locales", strictManagementRouteHandlers("PATCH", base+"/:id/locales", middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateProjectLocales,
-	)
-	projectGroup.Get("/:id/translations", middlewares.SearchRateLimit(), controllers.ListProjectTranslations)
-	projectGroup.Post("/:id/translations/generate",
+	)...)
+	app.Get(base+"/:id/translations", strictManagementRouteHandlers("GET", base+"/:id/translations", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.ListProjectTranslations)...)
+	app.Post(base+"/:id/translations/generate", strictManagementRouteHandlers("POST", base+"/:id/translations/generate", middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.GenerateProjectTranslations,
-	)
-	projectGroup.Get("/:id/translation-jobs/:jobId", middlewares.SearchRateLimit(), controllers.GetProjectTranslationJob)
-	projectGroup.Patch("/:id/translations/:locale/:key",
+	)...)
+	app.Get(base+"/:id/translation-jobs/:jobId", strictManagementRouteHandlers("GET", base+"/:id/translation-jobs/:jobId", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetProjectTranslationJob)...)
+	app.Patch(base+"/:id/translations/:locale/:key", strictManagementRouteHandlers("PATCH", base+"/:id/translations/:locale/:key", middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), controllers.UpdateProjectTranslation,
-	)
+	)...)
 
-	projectGroup.Patch("/:id/template",
-		middlewares.TenantAuthorize([]string{
-			models.TenantRoleOwner,
-			models.TenantRoleAdmin,
-		}),
+	app.Patch(base+"/:id/template", strictManagementRouteHandlers("PATCH", base+"/:id/template", middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateProjectTemplate,
-	)
+	)...)
 
-	// Get single project - any tenant member can view
-	projectGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetProject)
+	app.Get(base+"/:id", strictManagementRouteHandlers("GET", base+"/:id", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetProject)...)
 
-	// Update project - requires tenant admin or owner
-	projectGroup.Patch("/:id",
-		middlewares.TenantAuthorize([]string{
-			models.TenantRoleOwner,
-			models.TenantRoleAdmin,
-		}),
+	app.Patch(base+"/:id", strictManagementRouteHandlers("PATCH", base+"/:id", middlewares.GeneralRateLimit(),
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateProject,
-	)
+	)...)
 
-	// Delete project - requires tenant owner only
-	projectGroup.Delete("/:id",
-		middlewares.TenantOwnerOnly,
+	app.Delete(base+"/:id", strictManagementRouteHandlers("DELETE", base+"/:id", middlewares.GeneralRateLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.DeleteProject,
-	)
+	)...)
 }

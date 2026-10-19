@@ -1,27 +1,22 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
-	"github.com/osmansam/autotableGo/models"
 )
 
 func SchemaInfoRoutes(baseUrl string, app *fiber.App) {
-	roleGroup := app.Group(baseUrl)
-
-	// Apply tenant authentication and project scope requirement to all routes
-	roleGroup.Use(middlewares.TenantAuthenticate)
-	roleGroup.Use(middlewares.GeneralRateLimit())
-	roleGroup.Use(middlewares.RequireProjectScope)
-
-	roleGroup.Get("/roles",
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin, models.ProjectRoleDeveloper}),
+	base := "/" + strings.TrimPrefix(baseUrl, "/")
+	app.Get(base+"/roles", strictManagementRouteHandlers("GET", base+"/roles",
+		middlewares.GeneralRateLimit(),
 		middlewares.SearchRateLimit(),
-		controllers.GetRoleItems)
+		controllers.GetRoleItems)...)
 
-	roleGroup.Get("/roles/:id",
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin, models.ProjectRoleDeveloper}),
+	app.Get(base+"/roles/:id", strictManagementRouteHandlers("GET", base+"/roles/:id",
+		middlewares.GeneralRateLimit(),
 		middlewares.SearchRateLimit(),
-		controllers.GetRoleItemById)
+		controllers.GetRoleItemById)...)
 }

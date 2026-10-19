@@ -598,9 +598,10 @@ func TestDynamicServiceLookupAndFormattingHelpers(t *testing.T) {
 	if _, ok := findPipelineStage(container, "summary"); !ok {
 		t.Fatal("findPipelineStage() = false")
 	}
-	if code, ok := findDynamicFunctionCode(container, "total"); !ok || code != "code" {
-		t.Fatalf("findDynamicFunctionCode() = %q, %v", code, ok)
-	}
+	// Dynamic functions are paused; retain this lookup case with the implementation.
+	// if code, ok := findDynamicFunctionCode(container, "total"); !ok || code != "code" {
+	// 	t.Fatalf("findDynamicFunctionCode() = %q, %v", code, ok)
+	// }
 	api, ok := findDynamicAPI(container, "status")
 	if !ok || !reflect.DeepEqual(missingDynamicAPIDependencies(api, map[string]interface{}{"id": "1"}), []string{"token"}) {
 		t.Fatal("dynamic API lookup or dependency detection failed")
@@ -618,9 +619,9 @@ func TestErrorMappingHelpers(t *testing.T) {
 	if parseCreateErrorMessage(errors.New("multipart failure")) != "Error parsing form." || parseUpdateErrorMessage(errors.New("multipart failure")) != "Error in multipart form" {
 		t.Fatal("multipart error mapping failed")
 	}
-	if pluginExecutionMessage(errors.New("load plugin: failure")) != "Failed to load new plugin" || pluginExecutionMessage(nil) != "Failed to execute function" {
-		t.Fatal("pluginExecutionMessage() returned incorrect value")
-	}
+	// if pluginExecutionMessage(errors.New("load plugin: failure")) != "Failed to load new plugin" || pluginExecutionMessage(nil) != "Failed to execute function" {
+	// 	t.Fatal("pluginExecutionMessage() returned incorrect value")
+	// }
 }
 
 func TestExportHelpers(t *testing.T) {
@@ -1519,9 +1520,9 @@ func TestDynamicServiceEarlyValidationPaths(t *testing.T) {
 	if _, err := service.GetPipeline(ctx, GetPipelineInput{Schema: "orders", PipelineName: "missing", Container: container}); serviceErrorStatus(err) != http.StatusNotFound {
 		t.Fatalf("GetPipeline(missing stage) error = %v", err)
 	}
-	if _, err := service.ExecuteDynamicCode(ctx, ExecuteDynamicCodeInput{Container: container, FunctionName: "missing"}); serviceErrorStatus(err) != http.StatusBadRequest {
-		t.Fatalf("ExecuteDynamicCode() error = %v", err)
-	}
+	// if _, err := service.ExecuteDynamicCode(ctx, ExecuteDynamicCodeInput{Container: container, FunctionName: "missing"}); serviceErrorStatus(err) != http.StatusBadRequest {
+	// 	t.Fatalf("ExecuteDynamicCode() error = %v", err)
+	// }
 	if _, err := service.ExecuteDynamicAPI(ctx, ExecuteDynamicAPIInput{Container: container, APIName: "missing"}); serviceErrorStatus(err) != http.StatusBadRequest {
 		t.Fatalf("ExecuteDynamicAPI(missing API) error = %v", err)
 	}
@@ -1758,9 +1759,9 @@ func TestDynamicServiceSuppliedContainerResolvers(t *testing.T) {
 		{name: "pipeline", resolve: func() (*models.ContainerModel, error) {
 			return service.resolvePipelineContainer(ctx, GetPipelineInput{Container: container})
 		}},
-		{name: "dynamic code", resolve: func() (*models.ContainerModel, error) {
-			return service.resolveDynamicCodeContainer(ctx, ExecuteDynamicCodeInput{Container: container})
-		}},
+		// {name: "dynamic code", resolve: func() (*models.ContainerModel, error) {
+		// 	return service.resolveDynamicCodeContainer(ctx, ExecuteDynamicCodeInput{Container: container})
+		// }},
 		{name: "test pipeline", resolve: func() (*models.ContainerModel, error) {
 			return service.resolveTestPipelineContainer(ctx, TestPipelineInput{Container: container})
 		}},
@@ -1836,7 +1837,7 @@ func TestWorkflowHandlerEarlyValidation(t *testing.T) {
 	}
 }
 
-func TestWorkflowAndDynamicFunctionRedisCaching(t *testing.T) {
+func TestWorkflowRedisCaching(t *testing.T) {
 	server := miniredis.RunT(t)
 	oldClient := configs.RedisClient
 	configs.RedisClient = redis.NewClient(&redis.Options{Addr: server.Addr()})
@@ -1859,11 +1860,12 @@ func TestWorkflowAndDynamicFunctionRedisCaching(t *testing.T) {
 		}
 	}
 
-	container := &models.ContainerModel{Redis: models.Redis{CacheTime: 1}}
-	service.cacheDynamicFunctionResult(ctx, "function-key", "query=1", map[string]interface{}{"count": 2}, container, true)
-	if got, err := configs.RedisClient.Get(ctx, "function-key-query").Result(); err != nil || got != "query=1" {
-		t.Fatalf("dynamic function query cache = %q, %v", got, err)
-	}
+	// Dynamic-function cache coverage is retained for the future implementation.
+	// container := &models.ContainerModel{Redis: models.Redis{CacheTime: 1}}
+	// service.cacheDynamicFunctionResult(ctx, "function-key", "query=1", map[string]interface{}{"count": 2}, container, true)
+	// if got, err := configs.RedisClient.Get(ctx, "function-key-query").Result(); err != nil || got != "query=1" {
+	// 	t.Fatalf("dynamic function query cache = %q, %v", got, err)
+	// }
 	if key, ok := schemaCacheKey(ctx, "tenant", "project", "orders", true, "route", "query"); !ok || key == "" {
 		t.Fatalf("schemaCacheKey() = %q, %v", key, ok)
 	}

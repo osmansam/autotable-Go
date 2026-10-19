@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
@@ -8,14 +10,7 @@ import (
 
 // SetupExcelRoutes sets up routes for Excel upload functionality
 func SetupExcelRoutes(app *fiber.App, baseURL string) {
-	// Excel routes under tenant/project context
-	excelGroup := app.Group(baseURL + "/:tenantSlug/:projectSlug/excel")
-
-	// Require tenant authentication and project scope for Excel upload
-	excelGroup.Use(middlewares.TenantAuthenticate)
-	excelGroup.Use(middlewares.GeneralRateLimit())
-	excelGroup.Use(middlewares.RequireProjectScope)
-
-	excelGroup.Post("/upload", middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadExcel)
-	excelGroup.Post("/upload-multiple", middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadMultipleExcel)
+	base := "/" + strings.TrimPrefix(baseURL, "/") + "/:tenantSlug/:projectSlug/excel"
+	app.Post(base+"/upload", strictManagementRouteHandlers("POST", base+"/upload", middlewares.GeneralRateLimit(), middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadExcel)...)
+	app.Post(base+"/upload-multiple", strictManagementRouteHandlers("POST", base+"/upload-multiple", middlewares.GeneralRateLimit(), middlewares.UploadBodySizeLimit(), middlewares.UploadRateLimit(), controllers.UploadMultipleExcel)...)
 }

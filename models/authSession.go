@@ -11,6 +11,8 @@ const (
 )
 
 type AuthSession struct {
+	// SessionKey is present only on sessions issued under the unique-family protocol.
+	SessionKey         string     `bson:"sessionKey,omitempty" json:"-"`
 	FamilyID           string     `bson:"familyId" json:"familyId"`
 	CurrentJTIHash     string     `bson:"currentJtiHash" json:"-"`
 	PreviousJTIHash    string     `bson:"previousJtiHash,omitempty" json:"-"`

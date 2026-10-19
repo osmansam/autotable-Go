@@ -3,107 +3,130 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/repositories"
 	"log"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/osmansam/autotableGo/models"
-	"github.com/osmansam/autotableGo/repositories"
-	"github.com/osmansam/autotableGo/utils"
-	"github.com/robfig/cron/v3"
 )
 
-const (
-	dynamicCronReloadEvery = 1 * time.Minute
-	dynamicCronLockTTL     = 10 * time.Minute
-	dynamicCronRunTimeout  = 5 * time.Minute
-)
+const dynamicCronReloadEvery = time.Minute
+const dynamicCronRunTimeout = 5 * time.Minute
 
 type dynamicCronScheduler struct {
-	repository *repositories.DynamicRepository
-	service    *DynamicService
-
+	repository  dynamicCronRepository
+	queue       cronScheduleQueue
 	mu          sync.Mutex
-	cron        *cron.Cron
+	workflows   []scheduledWorkflow
 	fingerprint string
+	rotation    int
+	stopped     bool
 }
-
+type dynamicCronRepository interface {
+	GetScheduledWorkflowContainers(context.Context) ([]repositories.ScheduledWorkflowContainer, error)
+}
 type scheduledWorkflow struct {
-	TenantID  string
-	ProjectID string
-	Schema    string
-	Workflow  models.DynamicWorkflow
-	Container models.ContainerModel
+	TenantID, ProjectID, Schema string
+	Workflow                    models.DynamicWorkflow
+	Container                   models.ContainerModel
 }
 
-// StartDynamicCronScheduler loads active cron workflows and executes them on schedule.
+// The scheduler only materializes durable jobs. Execution, retry, and recovery
+// belong to the existing outbox processor, so timer/process death loses no claim.
 func StartDynamicCronScheduler(ctx context.Context) {
-	scheduler := &dynamicCronScheduler{
-		repository: repositories.NewDynamicRepository(),
-		service:    NewDynamicService(),
-	}
+	repository := repositories.NewDynamicRepository()
+	scheduler := &dynamicCronScheduler{repository: repository, queue: repository}
 	defer scheduler.stop()
-
-	if err := scheduler.reload(ctx); err != nil {
-		log.Printf("dynamic cron: initial load failed: %v", err)
+	reload := func() {
+		loadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := scheduler.reload(loadCtx); err != nil {
+			log.Printf("dynamic cron: reload failed: %v", err)
+		}
 	}
-
-	ticker := time.NewTicker(dynamicCronReloadEvery)
-	defer ticker.Stop()
-
+	poll := func() {
+		pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := scheduler.poll(pollCtx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+			log.Printf("dynamic cron: materialization failed: %v", err)
+		}
+	}
+	reload()
+	poll()
+	due := time.NewTicker(time.Second)
+	defer due.Stop()
+	registry := time.NewTicker(dynamicCronReloadEvery)
+	defer registry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if err := scheduler.reload(ctx); err != nil {
-				log.Printf("dynamic cron: reload failed: %v", err)
-			}
+		case <-registry.C:
+			reload()
+		case <-due.C:
+			poll()
 		}
 	}
 }
-
 func (s *dynamicCronScheduler) reload(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	workflows, err := s.loadWorkflows(ctx)
 	if err != nil {
 		return err
 	}
-
 	fingerprint := scheduledWorkflowFingerprint(workflows)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if fingerprint == s.fingerprint {
+	if s.stopped || fingerprint == s.fingerprint {
 		return nil
 	}
-
-	nextCron := cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
-	for _, scheduled := range workflows {
-		scheduled := scheduled
-		spec := scheduled.Workflow.Schedule
-		if tz := strings.TrimSpace(scheduled.Workflow.Timezone); tz != "" {
-			spec = "CRON_TZ=" + tz + " " + spec
-		}
-		if _, err := nextCron.AddFunc(spec, func() {
-			runCtx, cancel := context.WithTimeout(ctx, dynamicCronRunTimeout)
-			defer cancel()
-			s.runWorkflow(runCtx, scheduled)
-		}); err != nil {
-			return fmt.Errorf("register workflow %s/%s/%s: %w", scheduled.TenantID, scheduled.ProjectID, scheduled.Workflow.Name, err)
-		}
-	}
-	nextCron.Start()
-
-	if s.cron != nil {
-		stopCtx := s.cron.Stop()
-		<-stopCtx.Done()
-	}
-	s.cron = nextCron
+	s.workflows = workflows
 	s.fingerprint = fingerprint
-	log.Printf("dynamic cron: registered %d workflow(s)", len(workflows))
+	log.Printf("dynamic cron: loaded %d durable schedule(s)", len(workflows))
 	return nil
+}
+func (s *dynamicCronScheduler) poll(ctx context.Context, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if s.stopped || len(s.workflows) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	workflows := append([]scheduledWorkflow(nil), s.workflows...)
+	start := s.rotation % len(workflows)
+	s.rotation = (s.rotation + 1) % len(workflows)
+	s.mu.Unlock()
+	if s.queue == nil {
+		return errors.New("durable cron queue is unavailable")
+	}
+	budget := cronPollBatch
+	var failures []error
+	for offset := 0; offset < len(workflows) && budget > 0; offset++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		scheduled := workflows[(start+offset)%len(workflows)]
+		queued, err := materializeCronSchedule(ctx, s.queue, scheduled, now, budget)
+		budget -= queued
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", scheduledWorkflowKey(scheduled), err))
+		}
+	}
+	return errors.Join(failures...)
+}
+func (s *dynamicCronScheduler) stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopped = true
+	s.workflows = nil
 }
 
 func (s *dynamicCronScheduler) loadWorkflows(ctx context.Context) ([]scheduledWorkflow, error) {
@@ -139,36 +162,12 @@ func (s *dynamicCronScheduler) loadWorkflows(ctx context.Context) ([]scheduledWo
 	return workflows, nil
 }
 
-func (s *dynamicCronScheduler) runWorkflow(ctx context.Context, scheduled scheduledWorkflow) {
-	lockKey := "cron:" + scheduledWorkflowKey(scheduled)
-	lockID, ok := utils.AcquireLock(lockKey, dynamicCronLockTTL)
-	if !ok {
-		return
-	}
-	defer utils.ReleaseLock(lockKey, lockID)
-
-	if err := s.service.RunCronWorkflow(ctx, scheduled.TenantID, scheduled.ProjectID, scheduled.Schema, &scheduled.Container, scheduled.Workflow, time.Now()); err != nil {
-		log.Printf("dynamic cron: workflow %s failed: %v", scheduledWorkflowKey(scheduled), err)
-	}
-}
-
-func (s *dynamicCronScheduler) stop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.cron == nil {
-		return
-	}
-	stopCtx := s.cron.Stop()
-	<-stopCtx.Done()
-	s.cron = nil
-}
-
 func scheduledWorkflowFingerprint(workflows []scheduledWorkflow) string {
 	parts := make([]string, 0, len(workflows))
 	for _, workflow := range workflows {
-		encoded, err := json.Marshal(workflow.Workflow)
+		encoded, err := json.Marshal(workflow)
 		if err != nil {
-			encoded = []byte(fmt.Sprintf("%#v", workflow.Workflow))
+			encoded = []byte(fmt.Sprintf("%#v", workflow))
 		}
 		parts = append(parts, scheduledWorkflowKey(workflow)+":"+string(encoded))
 	}
@@ -189,7 +188,7 @@ func (s *DynamicService) RunCronWorkflow(ctx context.Context, tenantID, projectI
 		return fmt.Errorf("container is required")
 	}
 	payload := newCronWorkflowPayload(tenantID, projectID, schemaName, container, workflow, triggeredAt)
-	return s.runWorkflowDefinition(ctx, &payload, workflow)
+	return s.runWorkflowWithTransaction(ctx, &payload, workflow)
 }
 
 func newCronWorkflowPayload(tenantID, projectID, schemaName string, container *models.ContainerModel, workflow models.DynamicWorkflow, triggeredAt time.Time) workflowExecutionPayload {
@@ -202,8 +201,8 @@ func newCronWorkflowPayload(tenantID, projectID, schemaName string, container *m
 		IdentityKind:    AccessIdentitySystem,
 		Container:       container,
 		Record: map[string]interface{}{
-			"_id":         triggeredAt.UTC().Format(time.RFC3339),
-			"triggeredAt": triggeredAt.UTC().Format(time.RFC3339),
+			"_id":         triggeredAt.UTC().Format(time.RFC3339Nano),
+			"triggeredAt": triggeredAt.UTC().Format(time.RFC3339Nano),
 		},
 	}
 }

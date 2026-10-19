@@ -1,117 +1,71 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
-	"github.com/osmansam/autotableGo/models"
 )
 
-// ContainerRoutes sets up all container management routes
-// Management routes require tenant authentication; the development bulk importer is public.
+// ContainerRoutes sets up all container management routes.
 func ContainerRoutes(baseUrl string, app *fiber.App) {
-	// Development-only public importer: remove this registration after use.
-	// Register before the authenticated group so no token is required.
-	app.Post(baseUrl+"/create-multiple",
-		middlewares.DefaultBodySizeLimit(),
-		middlewares.WriteRateLimit(),
-		controllers.CreateMultipleContainers,
-	)
+	base := "/" + strings.TrimPrefix(baseUrl, "/")
+	app.Get(base, strictManagementRouteHandlers("GET", base, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllContainers)...)
 
-	// All container routes require tenant authentication and project scope
-	app.Get(baseUrl, middlewares.TenantAuthenticate, middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllContainers)
-	containerGroup := app.Group(baseUrl)
-	containerGroup.Use(middlewares.TenantAuthenticate)
-	containerGroup.Use(middlewares.GeneralRateLimit())
-	containerGroup.Use(middlewares.RequireProjectScope)
-
-	// Create container - requires project admin or developer role
-	containerGroup.Post("/",
-		// TODO: Re-enable once project role definitions/assignment are complete.
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// }),
+	app.Post(base+"/", strictManagementRouteHandlers("POST", base+"/",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.CreateContainer,
-	)
+	)...)
+	app.Post(base+"/create-multiple", strictManagementRouteHandlers("POST", base+"/create-multiple",
+		middlewares.BulkWriteBodySizeLimit(), middlewares.BulkRateLimit(), controllers.CreateMultipleContainers,
+	)...)
 
-	// Reset Redis cache - requires project admin role
-	containerGroup.Post("/reset-redis",
-		// middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+	app.Post(base+"/reset-redis", strictManagementRouteHandlers("POST", base+"/reset-redis",
 		middlewares.WriteRateLimit(),
 		controllers.ResetRedis,
-	)
+	)...)
 
-	// Get all containers-tenantlevel - any project member can view
-	containerGroup.Get("/tenant", middlewares.SearchRateLimit(), controllers.GetAllContainers)
+	app.Get(base+"/tenant", strictManagementRouteHandlers("GET", base+"/tenant", middlewares.SearchRateLimit(), controllers.GetAllContainers)...)
 
-	// Get container types - any project member can view
-	containerGroup.Get("/types", middlewares.SearchRateLimit(), controllers.GetAllContainerTypes)
+	app.Get(base+"/types", strictManagementRouteHandlers("GET", base+"/types", middlewares.SearchRateLimit(), controllers.GetAllContainerTypes)...)
 
-	// Update dynamic functions - requires project admin or developer role
-	containerGroup.Patch("/dynamicFunctions/:id",
-		middlewares.TenantAuthorize([]string{
-			models.ProjectRoleAdmin,
-			models.ProjectRoleDeveloper,
-		}),
-		middlewares.DefaultBodySizeLimit(),
-		middlewares.WriteRateLimit(),
-		controllers.UpdateDynamicFunctions,
-	)
+	// Dynamic functions are paused; retain the update route for future use.
+	// app.Patch(base+"/dynamicFunctions/:id", strictManagementRouteHandlers("PATCH", base+"/dynamicFunctions/:id",
+	// 	middlewares.DefaultBodySizeLimit(),
+	// 	middlewares.WriteRateLimit(),
+	// 	controllers.UpdateDynamicFunctions,
+	// )...)
 
-	// Update pipelines - requires project admin or developer role
-	containerGroup.Patch("/pipelines/:id",
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// }),
+	app.Patch(base+"/pipelines/:id", strictManagementRouteHandlers("PATCH", base+"/pipelines/:id",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdatePipelines,
-	)
+	)...)
 
-	// Update workflows - requires project admin or developer role
-	containerGroup.Patch("/workflows/:id",
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// }),
+	app.Patch(base+"/workflows/:id", strictManagementRouteHandlers("PATCH", base+"/workflows/:id",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateWorkflows,
-	)
+	)...)
 
-	// Update dynamic APIs - requires project admin or developer role
-	containerGroup.Patch("/dynamicApis/:id",
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// }),
+	app.Patch(base+"/dynamicApis/:id", strictManagementRouteHandlers("PATCH", base+"/dynamicApis/:id",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateDynamicApis,
-	)
+	)...)
 
-	// Get single container - any project member can view
-	containerGroup.Get("/:id", middlewares.SearchRateLimit(), controllers.GetContainer)
+	app.Get(base+"/:id", strictManagementRouteHandlers("GET", base+"/:id", middlewares.SearchRateLimit(), controllers.GetContainer)...)
 
-	// Delete container - requires project admin role
-	containerGroup.Delete("/:id",
-		middlewares.TenantAuthorize([]string{models.ProjectRoleAdmin}),
+	app.Delete(base+"/:id", strictManagementRouteHandlers("DELETE", base+"/:id",
 		middlewares.WriteRateLimit(),
 		controllers.DeleteContainer,
-	)
+	)...)
 
-	// Update container - requires project admin or developer role
-	containerGroup.Patch("/:id",
-		// middlewares.TenantAuthorize([]string{
-		// 	models.ProjectRoleAdmin,
-		// 	models.ProjectRoleDeveloper,
-		// }),
+	app.Patch(base+"/:id", strictManagementRouteHandlers("PATCH", base+"/:id",
 		middlewares.DefaultBodySizeLimit(),
 		middlewares.WriteRateLimit(),
 		controllers.UpdateContainer,
-	)
+	)...)
 }

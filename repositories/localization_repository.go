@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
@@ -87,20 +88,7 @@ func (r *LocalizationRepository) ApplyReconciledEntries(ctx context.Context, ent
 	now := time.Now().UTC()
 	writes := make([]mongo.WriteModel, 0, len(entries))
 	for _, entry := range entries {
-		createdAt := entry.CreatedAt
-		if createdAt.IsZero() {
-			createdAt = now
-		}
-		update := bson.M{
-			"$set": bson.M{
-				"resourceType": entry.ResourceType, "resourceId": entry.ResourceID, "propertyPath": entry.PropertyPath,
-				"sourceText": entry.SourceText, "sourceHash": entry.SourceHash, "translatedText": entry.TranslatedText,
-				"origin": entry.Origin, "status": entry.Status, "isActive": entry.IsActive,
-				"orphanedAt": entry.OrphanedAt, "lastDiscovered": entry.LastDiscovered,
-				"updatedBy": entry.UpdatedBy, "updatedAt": now,
-			},
-			"$setOnInsert": bson.M{"createdAt": createdAt},
-		}
+		update := reconciliationUpdate(entry, now)
 		writes = append(writes, mongo.NewUpdateOneModel().
 			SetFilter(translationIdentityFilter(entry)).
 			SetUpdate(update).
@@ -119,18 +107,24 @@ func (r *LocalizationRepository) UpsertGeneratedTranslation(ctx context.Context,
 			"status": models.TranslationStatusCurrent, "updatedBy": entry.UpdatedBy, "updatedAt": now,
 		},
 	}
-	result, err := r.translations.UpdateOne(ctx, filter, update)
-	if err != nil {
-		return false, err
-	}
-	return result.MatchedCount > 0, nil
+	var stored bool
+	err := r.writeContentWithClaim(ctx, func(tx context.Context) error {
+		result, err := r.translations.UpdateOne(tx, filter, update)
+		if err == nil {
+			stored = result.MatchedCount > 0
+		}
+		return err
+	})
+	return stored && err == nil, err
 }
 
 func (r *LocalizationRepository) MarkGeneratedTranslationFailed(ctx context.Context, entry models.TranslationEntry) error {
-	_, err := r.translations.UpdateOne(ctx, generatedTranslationFilter(entry), bson.M{"$set": bson.M{
-		"status": models.TranslationStatusFailed, "updatedAt": time.Now().UTC(),
-	}})
-	return err
+	return r.writeContentWithClaim(ctx, func(tx context.Context) error {
+		_, err := r.translations.UpdateOne(tx, generatedTranslationFilter(entry), bson.M{"$set": bson.M{
+			"status": models.TranslationStatusFailed, "updatedAt": time.Now().UTC(),
+		}})
+		return err
+	})
 }
 
 func generatedTranslationFilter(entry models.TranslationEntry) bson.M {
@@ -173,19 +167,39 @@ func (r *LocalizationRepository) GetJob(ctx context.Context, tenantID, projectID
 }
 
 func (r *LocalizationRepository) SetJobRunning(ctx context.Context, id primitive.ObjectID, total int64) error {
-	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+	filter, err := localizationJobClaimFilter(ctx, id, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	result, err := r.jobs.UpdateOne(ctx, filter, bson.M{"$set": bson.M{
 		"status": models.TranslationJobRunning, "total": total, "completed": 0,
 		"skippedManual": 0, "failed": 0, "errorSummary": []string{}, "updatedAt": time.Now().UTC(),
 	}})
-	return err
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return ErrLocalizationLeaseLost
+	}
+	return nil
 }
 
 func (r *LocalizationRepository) UpdateJobProgress(ctx context.Context, id primitive.ObjectID, completed, skippedManual, failed int64, messages []string) error {
-	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+	filter, err := localizationJobClaimFilter(ctx, id, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	result, err := r.jobs.UpdateOne(ctx, filter, bson.M{"$set": bson.M{
 		"completed": completed, "skippedManual": skippedManual, "failed": failed,
 		"errorSummary": messages, "updatedAt": time.Now().UTC(),
 	}})
-	return err
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return ErrLocalizationLeaseLost
+	}
+	return nil
 }
 
 func (r *LocalizationRepository) CompleteJob(ctx context.Context, id primitive.ObjectID, completed, skippedManual, failed int64, messages []string) error {
@@ -193,11 +207,21 @@ func (r *LocalizationRepository) CompleteJob(ctx context.Context, id primitive.O
 	if failed > 0 {
 		status = models.TranslationJobFailed
 	}
-	_, err := r.jobs.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+	filter, err := localizationJobClaimFilter(ctx, id, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	result, err := r.jobs.UpdateOne(ctx, filter, bson.M{"$set": bson.M{
 		"status": status, "completed": completed, "skippedManual": skippedManual,
 		"failed": failed, "errorSummary": messages, "updatedAt": time.Now().UTC(),
-	}, "$unset": bson.M{"leaseOwner": "", "leaseExpiresAt": ""}})
-	return err
+	}, "$unset": bson.M{"leaseOwner": "", "leaseToken": "", "leaseExpiresAt": ""}})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return ErrLocalizationLeaseLost
+	}
+	return nil
 }
 
 func IsNoLocalizationJob(err error) bool { return errors.Is(err, mongo.ErrNoDocuments) }
@@ -302,7 +326,7 @@ func (r *LocalizationRepository) LeaseNextJob(ctx context.Context, owner string,
 		},
 	}
 	update := bson.M{"$set": bson.M{
-		"status": models.TranslationJobRunning, "leaseOwner": owner,
+		"status": models.TranslationJobRunning, "leaseOwner": owner, "leaseToken": uuid.NewString(),
 		"leaseExpiresAt": now.Add(leaseDuration), "updatedAt": now,
 	}}
 	findOptions := options.FindOneAndUpdate().

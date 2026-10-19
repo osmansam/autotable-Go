@@ -47,7 +47,33 @@ func StartDynamicOutboxProcessor(ctx context.Context) {
 }
 
 func processDynamicOutboxBatch(ctx context.Context, repository *repositories.DynamicRepository, events modelsOutboxEvents, limit int) {
-	for i := 0; i < limit; i++ {
+	processDynamicOutboxBatchWithDispatch(ctx, repository, func(dispatchCtx context.Context, event *models.DynamicOutboxEvent) error {
+		return dispatchDynamicOutboxEvent(dispatchCtx, repository, event, events)
+	}, limit)
+}
+
+type dynamicOutboxLeaseRepository interface {
+	RenewOutboxEventLease(context.Context, models.DynamicOutboxEvent, time.Time) (bool, error)
+}
+
+type dynamicOutboxBatchRepository interface {
+	dynamicOutboxLeaseRepository
+	RecoverExhaustedOutboxEvents(context.Context, time.Time) error
+	ClaimPendingOutboxEvent(context.Context, time.Time) (*models.DynamicOutboxEvent, error)
+	MarkClaimedOutboxEventDone(context.Context, models.DynamicOutboxEvent) (bool, error)
+	MarkClaimedOutboxEventFailed(context.Context, models.DynamicOutboxEvent, string, time.Duration) (bool, error)
+}
+
+func processDynamicOutboxBatchWithDispatch(ctx context.Context, repository dynamicOutboxBatchRepository, dispatch func(context.Context, *models.DynamicOutboxEvent) error, limit int) {
+	if ctx.Err() != nil || limit <= 0 {
+		return
+	}
+	if err := repository.RecoverExhaustedOutboxEvents(ctx, time.Now()); err != nil {
+		observability.ErrorCtx(ctx, "dynamic outbox exhausted claim recovery failed", err,
+			slog.String(observability.FieldOperation, "recover_exhausted"))
+		return
+	}
+	for i := 0; i < limit && ctx.Err() == nil; i++ {
 		event, err := repository.ClaimPendingOutboxEvent(ctx, time.Now())
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			if i == 0 {
@@ -76,7 +102,16 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 				slog.Int("attempt", event.Attempts+1),
 			)...,
 		)
-		if err := dispatchDynamicOutboxEvent(ctx, repository, event, events); err != nil {
+		ticker := time.NewTicker(repositories.DynamicOutboxLeaseDuration / 3)
+		dispatchErr, owned := dispatchDynamicOutboxEventWithLease(ctx, repository, event, dispatch, ticker.C)
+		ticker.Stop()
+		if !owned {
+			observability.ErrorCtx(ctx, "dynamic outbox claim ownership lost", dispatchErr,
+				slog.String(observability.FieldOperation, "renew_lease"),
+				slog.String("outbox_event_id", event.ID.Hex()))
+			continue
+		}
+		if err := dispatchErr; err != nil {
 			observability.RecordOutboxJob(event.Operation, "failed")
 			attrs := append(observability.TenantProjectAttrs(event.TenantID, event.ProjectID),
 				slog.String(observability.FieldSchemaName, event.SchemaName),
@@ -84,14 +119,17 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 				slog.String(observability.FieldStatus, "failed"),
 				slog.Float64(observability.FieldDurationMS, observability.DurationMS(start)))
 			observability.ErrorCtx(ctx, "dynamic outbox dispatch failed", err, attrs...)
-			if markErr := repository.MarkOutboxEventFailed(ctx, *event, err.Error(), outboxRetryDelay(event.Attempts)); markErr != nil {
+			if _, markErr := repository.MarkClaimedOutboxEventFailed(ctx, *event, err.Error(), outboxRetryDelay(event.Attempts)); markErr != nil {
 				observability.RecordOutboxJob("mark_failed", "error")
 				observability.ErrorCtx(ctx, "dynamic outbox mark failed failed", markErr, attrs...)
 			}
 			continue
 		}
 
-		if err := repository.MarkOutboxEventDone(ctx, event.ID); err != nil {
+		if owned, err := repository.MarkClaimedOutboxEventDone(ctx, *event); err != nil || !owned {
+			if err == nil {
+				err = errDynamicOutboxLeaseLost
+			}
 			observability.RecordOutboxJob("mark_done", "error")
 			observability.ErrorCtx(ctx, "dynamic outbox mark done failed", err,
 				slog.String(observability.FieldOperation, "mark_done"),
@@ -112,11 +150,65 @@ func processDynamicOutboxBatch(ctx context.Context, repository *repositories.Dyn
 	}
 }
 
+var errDynamicOutboxLeaseLost = errors.New("outbox claim is no longer owned by this attempt")
+
+// A processing attempt keeps its lease for arbitrarily long workflow steps.
+// Dispatch is canceled when renewal fails; completion remains guarded in Mongo.
+func dispatchDynamicOutboxEventWithLease(ctx context.Context, repository dynamicOutboxLeaseRepository, event *models.DynamicOutboxEvent, dispatch func(context.Context, *models.DynamicOutboxEvent) error, renewals <-chan time.Time) (error, bool) {
+	if err := ctx.Err(); err != nil {
+		return err, false
+	}
+	if event.Operation == models.DynamicOutboxOperationCronWorkflow {
+		// Concurrent lease writes would conflict with the root transaction's
+		// final claim fence. Reserve the entire bounded execution window first.
+		renewCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+		owned, err := repository.RenewOutboxEventLease(renewCtx, *event, time.Now().Add(cronRootLeaseDuration))
+		stop()
+		if err != nil {
+			return err, false
+		}
+		if !owned {
+			return errDynamicOutboxLeaseLost, false
+		}
+		runCtx, cancel := context.WithTimeout(ctx, cronRootExecutionTimeout)
+		defer cancel()
+		return dispatch(runCtx, event), ctx.Err() == nil
+	}
+	dispatchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- dispatch(dispatchCtx, event) }()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err(), false
+		case err := <-result:
+			if ctx.Err() != nil {
+				return ctx.Err(), false
+			}
+			return err, true
+		case <-renewals:
+			renewCtx, renewCancel := context.WithTimeout(dispatchCtx, repositories.DynamicOutboxLeaseDuration/3)
+			owned, err := repository.RenewOutboxEventLease(renewCtx, *event, time.Now().Add(repositories.DynamicOutboxLeaseDuration))
+			renewCancel()
+			if err != nil {
+				return err, false
+			}
+			if !owned {
+				return errDynamicOutboxLeaseLost, false
+			}
+		}
+	}
+}
+
 type modelsOutboxEvents interface {
 	EmitInvalidate(schemaName, userID, tenantID, projectID string, eventID ...string)
 }
 
 func dispatchDynamicOutboxEvent(ctx context.Context, repository *repositories.DynamicRepository, event *models.DynamicOutboxEvent, events modelsOutboxEvents) error {
+	if event.Operation == models.DynamicOutboxOperationCronWorkflow {
+		return processCronWorkflowOutbox(ctx, repository, event)
+	}
 	if event.Operation == models.DynamicOutboxOperationWorkflowStep {
 		return processWorkflowOutboxStep(ctx, repository, event)
 	}
@@ -270,6 +362,9 @@ func uniqueSchemaNames(schemaNames []string) []string {
 func outboxRetryDelay(attempts int) time.Duration {
 	if attempts < 1 {
 		attempts = 1
+	}
+	if attempts >= 8 {
+		return time.Minute
 	}
 	delay := time.Duration(attempts*attempts) * time.Second
 	if delay > time.Minute {

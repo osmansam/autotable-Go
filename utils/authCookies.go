@@ -38,6 +38,20 @@ func ProjectAuthCookieName(tenantSlug, projectSlug, kind string) string {
 	return name
 }
 
+func ManagementProjectAuthCookieName(tenantSlug, projectSlug, kind string) string {
+	name := managementProjectAuthCookieBaseName(tenantSlug, projectSlug, kind)
+	if isProductionCookieEnvironment() {
+		return "__Secure-" + name
+	}
+	return name
+}
+
+func managementProjectAuthCookieBaseName(tenantSlug, projectSlug, kind string) string {
+	identity := strings.ToLower(strings.TrimSpace(tenantSlug)) + "/" + strings.ToLower(strings.TrimSpace(projectSlug))
+	digest := sha256.Sum256([]byte(identity))
+	return "management_project_v1_" + hex.EncodeToString(digest[:]) + "_" + kind + "_token"
+}
+
 func projectAuthCookieBaseName(tenantSlug, projectSlug, kind string) string {
 	identity := strings.ToLower(strings.TrimSpace(tenantSlug)) + "/" + strings.ToLower(strings.TrimSpace(projectSlug))
 	digest := sha256.Sum256([]byte(identity))
@@ -70,6 +84,18 @@ func ClearProjectAuthCookies(c *fiber.Ctx, tenantSlug, projectSlug string) {
 	path := ProjectAuthCookiePath(tenantSlug, projectSlug)
 	clearAuthCookieWithPath(c, ProjectAuthCookieName(tenantSlug, projectSlug, "access"), path)
 	clearAuthCookieWithPath(c, ProjectAuthCookieName(tenantSlug, projectSlug, "refresh"), path)
+}
+
+func SetManagementProjectAuthCookies(c *fiber.Ctx, tenantSlug, projectSlug string, tokens AuthTokenPair) {
+	path := ProjectAuthCookiePath(tenantSlug, projectSlug)
+	setAuthCookieWithPath(c, ManagementProjectAuthCookieName(tenantSlug, projectSlug, "access"), tokens.AccessToken, tokens.ATExpires, path)
+	setAuthCookieWithPath(c, ManagementProjectAuthCookieName(tenantSlug, projectSlug, "refresh"), tokens.RefreshToken, tokens.RTExpires, path)
+}
+
+func ClearManagementProjectAuthCookies(c *fiber.Ctx, tenantSlug, projectSlug string) {
+	path := ProjectAuthCookiePath(tenantSlug, projectSlug)
+	clearAuthCookieWithPath(c, ManagementProjectAuthCookieName(tenantSlug, projectSlug, "access"), path)
+	clearAuthCookieWithPath(c, ManagementProjectAuthCookieName(tenantSlug, projectSlug, "refresh"), path)
 }
 
 func SetAuthCookies(c *fiber.Ctx, scope string, tokens AuthTokenPair) {

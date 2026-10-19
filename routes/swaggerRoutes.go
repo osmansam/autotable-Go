@@ -5,13 +5,17 @@ import (
 	"github.com/osmansam/autotableGo/controllers"
 )
 
-func SwaggerRoutes(app *fiber.App) {
+func SwaggerRoutes(app *fiber.App, production bool) {
+	if production {
+		return
+	}
+
 	// Swagger UI route
 	app.Get("/api/swagger", controllers.GetSwaggerUI)
-	
+
 	// Swagger JSON specification
 	app.Get("/api/swagger.json", controllers.GenerateDynamicSwagger)
-	
+
 	// List all available schemas
 	app.Get("/api/schemas", controllers.ListAllSchemas)
 }

@@ -336,7 +336,6 @@ func TestBuildProjectLoginConfigLimitsAuthContainerMetadata(t *testing.T) {
 	if !reflect.DeepEqual(config.RegisterFields, []projectLoginConfigField{
 		{Name: "email", Type: "string", IsLoginCredential: true, DisplayName: "Email"},
 		{Name: "password", Type: "string", IsHashed: true, IsLoginCredential: true},
-		{Name: "role", Type: "objectId"},
 	}) {
 		t.Fatalf("RegisterFields = %#v", config.RegisterFields)
 	}

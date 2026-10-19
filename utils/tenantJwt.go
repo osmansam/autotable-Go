@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -10,8 +11,6 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
-
-var tenantJwtSecret = []byte(os.Getenv("TENANT_JWT_SECRET"))
 
 // TenantTokenClaims represents the claims stored in a tenant user JWT
 type TenantTokenClaims struct {
@@ -29,6 +28,14 @@ type TenantTokenClaims struct {
 
 const TenantTokenAudience = "autoapi-tenant"
 
+func tenantJWTSecret() ([]byte, error) {
+	value := os.Getenv("TENANT_JWT_SECRET")
+	if strings.TrimSpace(value) == "" {
+		return nil, errors.New("TENANT_JWT_SECRET not set in environment")
+	}
+	return []byte(value), nil
+}
+
 // TenantTokenDetails holds both access and refresh tokens for tenant users
 type TenantTokenDetails struct {
 	AccessToken  string
@@ -45,9 +52,9 @@ func GenerateTenantTokens(userID, email, tenantID, projectID string, roles []str
 }
 
 func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, roles []string, roleScope, familyID string) (*TenantTokenDetails, error) {
-	// Validate tenant JWT secret
-	if len(tenantJwtSecret) == 0 {
-		return nil, errors.New("TENANT_JWT_SECRET not set in environment")
+	secret, err := tenantJWTSecret()
+	if err != nil {
+		return nil, err
 	}
 
 	td := &TenantTokenDetails{}
@@ -78,7 +85,7 @@ func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, ro
 	}
 
 	at := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
-	accessToken, err := at.SignedString(tenantJwtSecret)
+	accessToken, err := at.SignedString(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +111,7 @@ func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, ro
 	}
 
 	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, rtClaims)
-	refreshToken, err := rt.SignedString(tenantJwtSecret)
+	refreshToken, err := rt.SignedString(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -123,16 +130,17 @@ func ParseTenantRefreshToken(tokenString string) (*TenantTokenClaims, error) {
 }
 
 func parseTenantToken(tokenString, expectedType string) (*TenantTokenClaims, error) {
-	if len(tenantJwtSecret) == 0 {
-		return nil, errors.New("TENANT_JWT_SECRET not set in environment")
+	secret, err := tenantJWTSecret()
+	if err != nil {
+		return nil, err
 	}
 
 	token, err := jwt.ParseWithClaims(tokenString, &TenantTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// Verify signing method
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, errors.New("unexpected signing method")
 		}
-		return tenantJwtSecret, nil
+		return secret, nil
 	})
 
 	if err != nil {

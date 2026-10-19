@@ -40,19 +40,15 @@ func registerBrandingRoutes(app *fiber.App, handlers brandingRouteHandlers) {
 		handlers.Runtime,
 	)
 
-	tenant := app.Group("/api/v1/tenant/branding")
-	tenant.Use(middlewares.TenantAuthenticate)
-	tenant.Use(middlewares.GeneralRateLimit())
-	tenant.Get("/", handlers.GetTenant)
-	tenant.Patch("/", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchTenant)
-	tenant.Post("/assets/:slot", middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadTenant)
-	tenant.Delete("/assets/:slot", middlewares.WriteRateLimit(), handlers.DeleteTenant)
+	const tenant = "/api/v1/tenant/branding"
+	app.Get(tenant+"/", strictManagementRouteHandlers("GET", tenant+"/", middlewares.GeneralRateLimit(), handlers.GetTenant)...)
+	app.Patch(tenant+"/", strictManagementRouteHandlers("PATCH", tenant+"/", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchTenant)...)
+	app.Post(tenant+"/assets/:slot", strictManagementRouteHandlers("POST", tenant+"/assets/:slot", middlewares.GeneralRateLimit(), middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadTenant)...)
+	app.Delete(tenant+"/assets/:slot", strictManagementRouteHandlers("DELETE", tenant+"/assets/:slot", middlewares.GeneralRateLimit(), middlewares.WriteRateLimit(), handlers.DeleteTenant)...)
 
-	project := app.Group("/api/v1/tenant/projects/:id/branding")
-	project.Use(middlewares.TenantAuthenticate)
-	project.Use(middlewares.GeneralRateLimit())
-	project.Get("/", handlers.GetProject)
-	project.Patch("/", middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchProject)
-	project.Post("/assets/:slot", middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadProject)
-	project.Delete("/assets/:slot", middlewares.WriteRateLimit(), handlers.DeleteProject)
+	const project = "/api/v1/tenant/projects/:id/branding"
+	app.Get(project+"/", strictManagementRouteHandlers("GET", project+"/", middlewares.GeneralRateLimit(), handlers.GetProject)...)
+	app.Patch(project+"/", strictManagementRouteHandlers("PATCH", project+"/", middlewares.GeneralRateLimit(), middlewares.DefaultBodySizeLimit(), middlewares.WriteRateLimit(), handlers.PatchProject)...)
+	app.Post(project+"/assets/:slot", strictManagementRouteHandlers("POST", project+"/assets/:slot", middlewares.GeneralRateLimit(), middlewares.UploadBodySizeLimit(), middlewares.WriteRateLimit(), handlers.UploadProject)...)
+	app.Delete(project+"/assets/:slot", strictManagementRouteHandlers("DELETE", project+"/assets/:slot", middlewares.GeneralRateLimit(), middlewares.WriteRateLimit(), handlers.DeleteProject)...)
 }

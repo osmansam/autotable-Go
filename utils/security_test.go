@@ -3,15 +3,53 @@ package utils
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+func TestProjectTokensRejectMissingSecretAndNonHS256Algorithm(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	if _, err := GenerateTokens("user", "admin", "tenant", "project", "tenant-slug", "project-slug"); err == nil {
+		t.Fatal("GenerateTokens() without JWT_SECRET error = nil")
+	}
+
+	t.Setenv("JWT_SECRET", "test-secret")
+	claims := jwt.MapClaims{
+		"user_id": "user", "role": "admin", "tenant_id": "tenant", "project_id": "project",
+		"token_type": TokenTypeAccess, "scope": TokenScopeProject, "aud": ProjectTokenAudience,
+		"jti": "jti", "family_id": "family", "exp": time.Now().Add(time.Hour).Unix(),
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString([]byte("test-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, _, _, err := ParseToken(token); err == nil {
+		t.Fatal("ParseToken(HS384) error = nil")
+	}
+}
+
+func TestTenantTokensRejectNonHS256Algorithm(t *testing.T) {
+	t.Setenv("TENANT_JWT_SECRET", "tenant-test-secret")
+
+	claims := TenantTokenClaims{
+		UserID: "user", Email: "user@example.com", TenantID: "tenant", Roles: []string{models.TenantRoleOwner},
+		RoleScope: string(models.RoleScopeTenant), TokenType: TokenTypeAccess, Scope: TokenScopeTenant, FamilyID: "family",
+		StandardClaims: jwt.StandardClaims{Audience: TenantTokenAudience, ExpiresAt: time.Now().Add(time.Hour).Unix(), Id: "jti"},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString([]byte("tenant-test-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseTenantToken(token); err == nil {
+		t.Fatal("ParseTenantToken(HS384) error = nil")
+	}
+}
+
 func TestGenerateAndParseTokens(t *testing.T) {
-	oldSecret := jwtSecret
-	jwtSecret = []byte("test-secret")
-	t.Cleanup(func() { jwtSecret = oldSecret })
+	t.Setenv("JWT_SECRET", "test-secret")
 
 	tokens, err := GenerateTokens("user", "admin", "tenant", "project", "tenant-slug", "project-slug")
 	if err != nil {
@@ -54,9 +92,7 @@ func TestGenerateAndParseTokens(t *testing.T) {
 }
 
 func TestGenerateProjectTokensForFamilyPreservesFamilyAndRotatesJTI(t *testing.T) {
-	oldSecret := jwtSecret
-	jwtSecret = []byte("test-secret")
-	t.Cleanup(func() { jwtSecret = oldSecret })
+	t.Setenv("JWT_SECRET", "test-secret")
 
 	first, err := GenerateTokensForFamily("user", "admin", "tenant", "project", "davinci", "goblin", "Ada", "family-1")
 	if err != nil {
@@ -74,15 +110,12 @@ func TestGenerateProjectTokensForFamilyPreservesFamilyAndRotatesJTI(t *testing.T
 }
 
 func TestGenerateAndParseTenantTokens(t *testing.T) {
-	oldSecret := tenantJwtSecret
-	t.Cleanup(func() { tenantJwtSecret = oldSecret })
-
-	tenantJwtSecret = nil
+	t.Setenv("TENANT_JWT_SECRET", "")
 	if _, err := GenerateTenantTokens("user", "user@example.com", "tenant", "", []string{models.TenantRoleOwner}, string(models.RoleScopeTenant)); err == nil {
 		t.Fatal("GenerateTenantTokens() without secret error = nil")
 	}
 
-	tenantJwtSecret = []byte("tenant-test-secret")
+	t.Setenv("TENANT_JWT_SECRET", "tenant-test-secret")
 	tokens, err := GenerateTenantTokens("user", "user@example.com", "tenant", "project", []string{models.ProjectRoleAdmin}, string(models.RoleScopeProject))
 	if err != nil {
 		t.Fatalf("GenerateTenantTokens() error = %v", err)
@@ -113,9 +146,7 @@ func TestGenerateAndParseTenantTokens(t *testing.T) {
 }
 
 func TestGenerateTenantTokensForFamilyPreservesFamily(t *testing.T) {
-	oldSecret := tenantJwtSecret
-	tenantJwtSecret = []byte("tenant-test-secret")
-	t.Cleanup(func() { tenantJwtSecret = oldSecret })
+	t.Setenv("TENANT_JWT_SECRET", "tenant-test-secret")
 
 	tokens, err := GenerateTenantTokensForFamily("user", "user@example.com", "tenant", "", []string{models.TenantRoleOwner}, string(models.RoleScopeTenant), "family-tenant")
 	if err != nil {

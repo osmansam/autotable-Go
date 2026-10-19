@@ -82,3 +82,39 @@ func hashTokenIdentifier(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
+
+// ProjectSessionRevoker is implemented by session stores that can revoke
+// sessions by tenant/project scope. Membership-mutation code must call these
+// hooks when a membership is disabled, downgraded, or removed, and when a
+// project is deactivated or deleted.
+type ProjectSessionRevoker interface {
+	RevokeUserProjectSessions(ctx context.Context, userID, tenantID, projectID string, revokedAt time.Time) error
+	RevokeProjectSessions(ctx context.Context, tenantID, projectID string, revokedAt time.Time) error
+}
+
+var ErrSessionRevocationUnsupported = errors.New("session store cannot revoke project sessions")
+
+// RevokeUserProjectSessions revokes only the user's sessions in the exact tenant/project.
+// It fails closed: callers must treat an error as "revocation not guaranteed".
+func (s *AuthSessionService) RevokeUserProjectSessions(ctx context.Context, userID, tenantID, projectID string) error {
+	revoker, ok := s.store.(ProjectSessionRevoker)
+	if !ok {
+		return ErrSessionRevocationUnsupported
+	}
+	if userID == "" || tenantID == "" || projectID == "" {
+		return errors.New("user, tenant, and project are required")
+	}
+	return revoker.RevokeUserProjectSessions(ctx, userID, tenantID, projectID, s.now())
+}
+
+// RevokeProjectSessions revokes every session in the tenant/project (deactivation, deletion).
+func (s *AuthSessionService) RevokeProjectSessions(ctx context.Context, tenantID, projectID string) error {
+	revoker, ok := s.store.(ProjectSessionRevoker)
+	if !ok {
+		return ErrSessionRevocationUnsupported
+	}
+	if tenantID == "" || projectID == "" {
+		return errors.New("tenant and project are required")
+	}
+	return revoker.RevokeProjectSessions(ctx, tenantID, projectID, s.now())
+}

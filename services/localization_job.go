@@ -14,6 +14,7 @@ import (
 )
 
 type localizationJobRepository interface {
+	RenewJobLease(context.Context, *models.TranslationJob, time.Time, time.Duration) (bool, error)
 	CreateJob(context.Context, *models.TranslationJob) error
 	ListProjectTranslations(context.Context, primitive.ObjectID, primitive.ObjectID) ([]models.TranslationEntry, error)
 	SetJobRunning(context.Context, primitive.ObjectID, int64) error
@@ -115,6 +116,9 @@ func ProcessProjectTranslationJob(ctx context.Context, job *models.TranslationJo
 	for _, locale := range targets {
 		localeEntries := byLocale[locale]
 		for start := 0; start < len(localeEntries); start += 50 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			end := start + 50
 			if end > len(localeEntries) {
 				end = len(localeEntries)
@@ -130,6 +134,9 @@ func ProcessProjectTranslationJob(ctx context.Context, job *models.TranslationJo
 			outputs, translateErr := translateLocalizationBatch(ctx, job.SourceLocale, locale, sources)
 			if translateErr != nil {
 				for index := range batch {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
 					markTranslationJobEntryFailed(ctx, repository, &batch[index])
 					failed++
 				}
@@ -146,6 +153,9 @@ func ProcessProjectTranslationJob(ctx context.Context, job *models.TranslationJo
 				outputByKey[output.Key] = output
 			}
 			for index := range batch {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				entry := batch[index]
 				output, found := outputByKey[entry.TranslationKey]
 				var validationErr error

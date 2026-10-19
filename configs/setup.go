@@ -3,9 +3,11 @@ package configs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,6 +168,17 @@ func GetAppConfig() *Config {
 	})
 
 	return appConfig
+}
+
+// ValidateJWTSecrets fails closed when either authentication domain lacks a signing key.
+func ValidateJWTSecrets() error {
+	if strings.TrimSpace(os.Getenv("JWT_SECRET")) == "" {
+		return errors.New("JWT_SECRET must be set")
+	}
+	if strings.TrimSpace(os.Getenv("TENANT_JWT_SECRET")) == "" {
+		return errors.New("TENANT_JWT_SECRET must be set")
+	}
+	return nil
 }
 
 func GetDefaultPageLimit() int {

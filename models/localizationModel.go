@@ -100,6 +100,7 @@ type TranslationJob struct {
 	SkippedManual   int64                `bson:"skippedManual" json:"skippedManual"`
 	Failed          int64                `bson:"failed" json:"failed"`
 	RetryCount      int                  `bson:"retryCount" json:"retryCount"`
+	LeaseToken      string               `bson:"leaseToken,omitempty" json:"-"`
 	LeaseOwner      string               `bson:"leaseOwner,omitempty" json:"leaseOwner,omitempty"`
 	LeaseExpiresAt  *time.Time           `bson:"leaseExpiresAt,omitempty" json:"leaseExpiresAt,omitempty"`
 	NextAttemptAt   time.Time            `bson:"nextAttemptAt" json:"nextAttemptAt"`

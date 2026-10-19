@@ -32,16 +32,6 @@ func ExecuteApiRequestWithStatus(ctx context.Context, method string, url string,
 // ExecuteApiRequestWithStatusAndHeaders makes an HTTP request with user-provided
 // headers and protected headers. Protected headers always win.
 func ExecuteApiRequestWithStatusAndHeaders(ctx context.Context, method string, requestURL string, body interface{}, userHeaders, protectedHeaders map[string]string, hostAllowed func(string) bool) ([]byte, int, error) {
-	var reqBody []byte
-	var err error
-
-	if body != nil {
-		reqBody, err = json.Marshal(body)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -51,6 +41,20 @@ func ExecuteApiRequestWithStatusAndHeaders(ctx context.Context, method string, r
 				return errAPIRedirectTargetHostNotAllowed
 			}
 			return nil
+		}
+	}
+	return ExecuteApiRequestWithClient(ctx, client, method, requestURL, body, userHeaders, protectedHeaders)
+}
+
+// ExecuteApiRequestWithClient applies the same request encoding, protected headers,
+// and response limit using a caller-owned client's transport and redirect policy.
+func ExecuteApiRequestWithClient(ctx context.Context, client *http.Client, method string, requestURL string, body interface{}, userHeaders, protectedHeaders map[string]string) ([]byte, int, error) {
+	var reqBody []byte
+	var err error
+	if body != nil {
+		reqBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, 0, err
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, requestURL, bytes.NewBuffer(reqBody))

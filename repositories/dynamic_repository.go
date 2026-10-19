@@ -26,6 +26,7 @@ type ScheduledWorkflowContainer struct {
 }
 
 type DynamicRepository struct {
+	database           *mongo.Database
 	collection         func(tenantID, projectID, schemaName string) *mongo.Collection
 	globalCollection   func(collectionName string) *mongo.Collection
 	getContainerModel  func(context.Context, string, string, string) (*models.ContainerModel, error)
@@ -133,7 +134,7 @@ func (r *DynamicRepository) GetProjectCollection(tenantID, projectID, collection
 	if tenantID == "" || projectID == "" {
 		return r.globalCollection(collectionName)
 	}
-	return utils.GetProjectCollection(tenantID, projectID, collectionName)
+	return r.globalCollection(utils.GetProjectCollectionName(tenantID, projectID, collectionName))
 }
 
 func (r *DynamicRepository) externalAPICredentialsCollection() *mongo.Collection {
@@ -443,7 +444,7 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 
 func (r *DynamicRepository) ExecutePipeline(ctx context.Context, tenantID, projectID, schemaName string, pipelineStage models.PipelineStage) ([]map[string]interface{}, error) {
 	ctx, span := observability.StartSpan(ctx, "mongo.operation", observability.MongoTraceAttrs("aggregate", schemaName)...)
-	items, err := utils.ExecuteDynamicPipeline(ctx, r.GetCollection(tenantID, projectID, schemaName), pipelineStage)
+	items, err := utils.ExecuteDynamicPipeline(ctx, r.GetCollection(tenantID, projectID, schemaName), pipelineStage, tenantID, projectID)
 	if err != nil {
 		observability.EndSpan(span, "error", err)
 		return nil, err
@@ -514,8 +515,14 @@ func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.S
 	if r.withTransaction != nil {
 		return r.withTransaction(ctx, fn)
 	}
-	configs.InitDB()
-	session, err := configs.DB.StartSession()
+	client := configs.DB
+	if r.database != nil {
+		client = r.database.Client()
+	} else {
+		configs.InitDB()
+		client = configs.DB
+	}
+	session, err := client.StartSession()
 	if err != nil {
 		return err
 	}
@@ -640,7 +647,7 @@ func (r *DynamicRepository) ClaimPendingOutboxEvent(ctx context.Context, now tim
 	update := bson.M{
 		"$set": bson.M{
 			"status":        models.DynamicOutboxStatusProcessing,
-			"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(30 * time.Second)),
+			"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(DynamicOutboxLeaseDuration)),
 			"updatedAt":     primitive.NewDateTimeFromTime(now),
 		},
 		"$inc": bson.M{"attempts": 1},
@@ -656,36 +663,12 @@ func (r *DynamicRepository) ClaimPendingOutboxEvent(ctx context.Context, now tim
 }
 
 func (r *DynamicRepository) MarkOutboxEventDone(ctx context.Context, eventID primitive.ObjectID) error {
-	now := time.Now()
-	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, eventID, bson.M{
-		"$set": bson.M{
-			"status":      models.DynamicOutboxStatusDone,
-			"updatedAt":   primitive.NewDateTimeFromTime(now),
-			"processedAt": primitive.NewDateTimeFromTime(now),
-			"expireAt":    primitive.NewDateTimeFromTime(now.Add(configs.GetOutboxDoneRetention())),
-		},
-		"$unset": bson.M{"lastError": ""},
-	})
+	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, eventID, outboxEventDoneUpdate(time.Now()))
 	return err
 }
 
 func (r *DynamicRepository) MarkOutboxEventFailed(ctx context.Context, event models.DynamicOutboxEvent, errMessage string, retryAfter time.Duration) error {
-	now := time.Now()
-	status := models.DynamicOutboxStatusPending
-	setFields := bson.M{
-		"status":        status,
-		"lastError":     errMessage,
-		"nextAttemptAt": primitive.NewDateTimeFromTime(now.Add(retryAfter)),
-		"updatedAt":     primitive.NewDateTimeFromTime(now),
-	}
-	update := bson.M{"$set": setFields, "$unset": bson.M{"expireAt": ""}}
-	if event.Attempts >= event.MaxAttempts {
-		status = models.DynamicOutboxStatusFailed
-		setFields["status"] = status
-		setFields["expireAt"] = primitive.NewDateTimeFromTime(now.Add(configs.GetOutboxFailedRetention()))
-		delete(update, "$unset")
-	}
-	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, event.ID, update)
+	_, err := r.globalCollection("dynamic_outbox").UpdateByID(ctx, event.ID, outboxEventFailedUpdate(event, errMessage, retryAfter, time.Now()))
 	return err
 }
 

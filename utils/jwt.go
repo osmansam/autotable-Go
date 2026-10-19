@@ -4,19 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 )
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-
 type TokenDetails struct {
 	AccessToken  string
 	RefreshToken string
 	ATExpires    int64
 	RTExpires    int64
+}
+
+func projectJWTSecret() ([]byte, error) {
+	value := os.Getenv("JWT_SECRET")
+	if strings.TrimSpace(value) == "" {
+		return nil, errors.New("JWT_SECRET not set in environment")
+	}
+	return []byte(value), nil
 }
 
 const (
@@ -50,11 +57,14 @@ func GenerateTokensWithDisplayName(userID string, role string, tenantID string, 
 }
 
 func GenerateTokensForFamily(userID string, role string, tenantID string, projectID string, tenantSlug string, projectSlug string, displayName string, familyID string) (*TokenDetails, error) {
+	secret, err := projectJWTSecret()
+	if err != nil {
+		return nil, err
+	}
 	td := &TokenDetails{}
 	td.ATExpires = time.Now().Add(time.Hour * 24).Unix()     // 24 hours validity
 	td.RTExpires = time.Now().Add(time.Hour * 24 * 7).Unix() // 7 days validity
 
-	var err error
 	// Access Token
 	atClaims := jwt.MapClaims{}
 	atClaims["authorized"] = true
@@ -74,7 +84,7 @@ func GenerateTokensForFamily(userID string, role string, tenantID string, projec
 	}
 	atClaims["exp"] = td.ATExpires
 	at := jwt.NewWithClaims(jwt.SigningMethodHS256, atClaims)
-	td.AccessToken, err = at.SignedString(jwtSecret)
+	td.AccessToken, err = at.SignedString(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +107,7 @@ func GenerateTokensForFamily(userID string, role string, tenantID string, projec
 	}
 	rtClaims["exp"] = td.RTExpires
 	rt := jwt.NewWithClaims(jwt.SigningMethodHS256, rtClaims)
-	td.RefreshToken, err = rt.SignedString(jwtSecret)
+	td.RefreshToken, err = rt.SignedString(secret)
 	if err != nil {
 		return nil, err
 	}
@@ -118,11 +128,15 @@ func ParseProjectRefreshToken(tokenStr string) (*ProjectTokenClaims, error) {
 }
 
 func parseProjectTokenClaims(tokenStr, expectedType string) (*ProjectTokenClaims, error) {
+	secret, err := projectJWTSecret()
+	if err != nil {
+		return nil, err
+	}
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return secret, nil
 	})
 
 	if err != nil {
@@ -190,11 +204,15 @@ func parseProjectTokenClaims(tokenStr, expectedType string) (*ProjectTokenClaims
 }
 
 func ParseTokenDisplayName(tokenStr string) string {
+	secret, secretErr := projectJWTSecret()
+	if secretErr != nil {
+		return ""
+	}
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return jwtSecret, nil
+		return secret, nil
 	})
 	if err != nil || !token.Valid {
 		return ""

@@ -19,6 +19,7 @@ import (
 	"github.com/osmansam/autotableGo/controllers"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/observability"
+	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/routes"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
@@ -29,6 +30,9 @@ func main() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found, using system environment variables")
+	}
+	if err := validateStartupSecurityConfiguration(); err != nil {
+		log.Fatalf("Invalid JWT configuration: %v", err)
 	}
 
 	appConfig := configs.GetAppConfig()
@@ -87,6 +91,20 @@ func main() {
 	app.Use(corsFromConfig(appConfig))
 	//run database
 	configs.InitDB()
+	indexCtx, cancelIndexes := context.WithTimeout(appCtx, 30*time.Second)
+	if err := repositories.NewAuthSessionRepository().EnsureIndexes(indexCtx); err != nil {
+		cancelIndexes()
+		log.Fatalf("Auth session indexes could not be initialized: %v", err)
+	}
+	if err := repositories.NewLocalizationRepository().EnsureIndexes(indexCtx); err != nil {
+		cancelIndexes()
+		log.Fatalf("Localization indexes could not be initialized: %v", err)
+	}
+	if err := repositories.NewDynamicRepository().EnsureOutboxIndexes(indexCtx); err != nil {
+		cancelIndexes()
+		log.Fatalf("Durable workflow indexes could not be initialized: %v", err)
+	}
+	cancelIndexes()
 	hostname, _ := os.Hostname()
 	go services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
 
@@ -127,6 +145,10 @@ func main() {
 			"message": "Server is healthy",
 		})
 	})
+	app.Get("/ready", readinessHandler(
+		func(ctx context.Context) error { return configs.DB.Ping(ctx, nil) },
+		func(ctx context.Context) error { return configs.RedisClient.Ping(ctx).Err() },
+	))
 	//routes
 	routes.TenantAuthRoutes(app) // Tenant authentication routes (new multi-tenancy system)
 	routes.ProjectRoutes(app)    // Project management routes
@@ -148,7 +170,7 @@ func main() {
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
 	routes.SetupExcelRoutes(app, "api/v1")                          // Excel upload routes
-	routes.SwaggerRoutes(app)
+	routes.SwaggerRoutes(app, isProduction())
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -171,6 +193,26 @@ func main() {
 	if err := app.Listen(portNumber); err != nil {
 		log.Printf("Server stopped: %v", err)
 	}
+}
+
+// Readiness includes dependencies required to serve requests and run workers.
+// Keep diagnostics out of the public response; connection details are private.
+func readinessHandler(checks ...func(context.Context) error) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(fiber.HeaderCacheControl, "no-store")
+		ctx, cancel := context.WithTimeout(c.UserContext(), 2*time.Second)
+		defer cancel()
+		for _, check := range checks {
+			if err := check(ctx); err != nil {
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "unavailable"})
+			}
+		}
+		return c.JSON(fiber.Map{"status": "ready"})
+	}
+}
+
+func validateStartupSecurityConfiguration() error {
+	return configs.ValidateJWTSecrets()
 }
 
 func corsFromConfig(cfg *configs.Config) fiber.Handler {

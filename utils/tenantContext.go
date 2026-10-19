@@ -19,6 +19,65 @@ var (
 	ErrProjectMismatch    = errors.New("URL project does not match authenticated project scope")
 )
 
+func slugMappingCacheKey(tenantSlug, projectSlug string) string {
+	return "slug_mapping:" + tenantSlug + ":" + projectSlug
+}
+
+// InvalidateProjectSlugMappings removes cached slug->ID mappings so renamed,
+// deactivated, or deleted projects stop resolving immediately. Pass every slug
+// that may be cached (previous and new). Failures are returned so callers can
+// log them; correctness for cache hits is additionally protected by the live
+// active-project check in GetTenantAndProjectFromSlugs.
+func InvalidateProjectSlugMappings(ctx context.Context, tenantSlug string, projectSlugs ...string) error {
+	if tenantSlug == "" || len(projectSlugs) == 0 || configs.RedisClient == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(projectSlugs))
+	for _, slug := range projectSlugs {
+		if slug != "" {
+			keys = append(keys, slugMappingCacheKey(tenantSlug, slug))
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return configs.RedisClient.Del(ctx, keys...).Err()
+}
+
+// verifyCachedProjectActive ensures a cached mapping never outlives project
+// deactivation or deletion; stale entries are evicted. Lookup errors fail closed.
+func verifyCachedProjectActive(ctx context.Context, cacheKey, tenantID, projectID string) error {
+	active, err := projectActiveChecker(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	if !active {
+		_ = configs.RedisClient.Del(ctx, cacheKey).Err()
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+// projectActiveChecker verifies against the database that a project is still active.
+// It is a variable so tests can run without MongoDB.
+var projectActiveChecker = func(ctx context.Context, tenantID, projectID string) (bool, error) {
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return false, nil
+	}
+	projectOID, err := primitive.ObjectIDFromHex(projectID)
+	if err != nil {
+		return false, nil
+	}
+	count, err := configs.GetCollection("projects").CountDocuments(ctx, bson.M{
+		"_id": projectOID, "tenantId": tenantOID, "isActive": true,
+	})
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // GetTenantAndProjectFromSlugs extracts tenant and project IDs from URL slugs
 // URL pattern: /api/:tenantSlug/:projectSlug/...
 // Optimized: Checks Redis cache first, falls back to DB query if not cached
@@ -38,7 +97,7 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 	}
 
 	// Try to get from Redis cache first
-	cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
+	cacheKey := slugMappingCacheKey(tenantSlug, projectSlug)
 	if configs.RedisCircuitAllow() {
 		cachedValue, err := configs.RedisClient.Get(ctx, cacheKey).Result()
 		configs.RedisCircuitRecordResult(err)
@@ -49,6 +108,10 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 			if len(parts) == 2 {
 				tenantID = parts[0]
 				projectID = parts[1]
+
+				if activeErr := verifyCachedProjectActive(ctx, cacheKey, tenantID, projectID); activeErr != nil {
+					return "", "", activeErr
+				}
 
 				// Store in locals for downstream use
 				c.Locals("tenantID", tenantID)
@@ -138,7 +201,7 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 		defer cancel()
 
 		// Try cache first
-		cacheKey := "slug_mapping:" + tenantSlug + ":" + projectSlug
+		cacheKey := slugMappingCacheKey(tenantSlug, projectSlug)
 		var urlTenantID, urlProjectID string
 
 		if configs.RedisCircuitAllow() {
@@ -147,6 +210,9 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 			if cacheErr == nil && cachedValue != "" {
 				parts := splitCachedValue(cachedValue)
 				if len(parts) == 2 {
+					if activeErr := verifyCachedProjectActive(ctx, cacheKey, parts[0], parts[1]); activeErr != nil {
+						return "", "", activeErr
+					}
 					urlTenantID = parts[0]
 					urlProjectID = parts[1]
 				}
@@ -184,14 +250,13 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 			}()
 		}
 
-		// SECURITY CHECK: If user has project-scoped JWT token, URL MUST match
-		if hasTokenProject && tokenProjectID != "" {
-			if urlProjectID != tokenProjectID {
-				return "", "", ErrProjectMismatch
-			}
-			if hasTokenTenant && tokenTenantID != "" && urlTenantID != tokenTenantID {
-				return "", "", ErrProjectMismatch
-			}
+		// SECURITY CHECK: URL tenant must always match authenticated tenant context.
+		if hasTokenTenant && tokenTenantID != "" && urlTenantID != tokenTenantID {
+			return "", "", ErrProjectMismatch
+		}
+		// Project-scoped tokens must also match the exact project.
+		if hasTokenProject && tokenProjectID != "" && urlProjectID != tokenProjectID {
+			return "", "", ErrProjectMismatch
 		}
 
 		// Only NOW update locals after validation passes
@@ -206,6 +271,12 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 	// Fall back to query params or locals (old pattern for backward compatibility)
 	tenantID = c.Query("tenantID")
 	projectID = c.Query("projectID")
+	if tenantID != "" && hasTokenTenant && tokenTenantID != "" && tenantID != tokenTenantID {
+		return "", "", ErrProjectMismatch
+	}
+	if projectID != "" && hasTokenProject && tokenProjectID != "" && projectID != tokenProjectID {
+		return "", "", ErrProjectMismatch
+	}
 
 	if tenantID == "" {
 		tenantID = tokenTenantID
@@ -223,4 +294,13 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 	}
 
 	return tenantID, projectID, nil
+}
+
+// OverrideProjectActiveChecker replaces the live active-project lookup used on
+// slug-cache hits and returns a restore function. Intended for tests that run
+// without MongoDB.
+func OverrideProjectActiveChecker(checker func(ctx context.Context, tenantID, projectID string) (bool, error)) (restore func()) {
+	previous := projectActiveChecker
+	projectActiveChecker = checker
+	return func() { projectActiveChecker = previous }
 }

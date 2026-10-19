@@ -46,7 +46,7 @@ func FilterFieldsByRole(fields []models.Field, userRole string) []models.Field {
 // GetAllowedFieldNames returns a set of field names the user is authorized to see
 func GetAllowedFieldNames(fields []models.Field, userRole string) map[string]bool {
 	allowedFields := make(map[string]bool)
-	
+
 	for _, field := range fields {
 		// If IsAuthorized is false, field is visible to everyone
 		if !field.IsAuthorized {
@@ -84,38 +84,57 @@ func GetAllowedFieldNames(fields []models.Field, userRole string) map[string]boo
 // Only fields present in 'fields' (and allowed) or '_id' are kept.
 // Unknown fields are discarded.
 func FilterDocumentFields(doc bson.M, fields []models.Field, userRole string) bson.M {
-	allowedFields := GetAllowedFieldNames(fields, userRole)
-	filteredDoc := bson.M{}
-
-	for key, value := range doc {
-		// Always include _id field
-		if key == "_id" {
-			filteredDoc[key] = value
+	allowed := GetAllowedFieldNames(fields, userRole)
+	result := bson.M{}
+	if id, ok := doc["_id"]; ok {
+		result["_id"] = id
+	}
+	for _, field := range fields {
+		if !allowed[field.Name] {
 			continue
 		}
-
-		// Check if field is allowed
-		if allowedFields[key] {
-			// If value is a nested document, filter it recursively
-			if nestedDoc, ok := value.(bson.M); ok {
-				// Find the field definition
-				for _, field := range fields {
-					if field.Name == key && len(field.Children) > 0 {
-						filteredDoc[key] = FilterDocumentFields(nestedDoc, field.Children, userRole)
-						break
-					}
-				}
-				// If no children definition found, include as-is
-				if _, exists := filteredDoc[key]; !exists {
-					filteredDoc[key] = value
-				}
-			} else {
-				filteredDoc[key] = value
-			}
+		if value, ok := doc[field.Name]; ok {
+			result[field.Name] = filterNestedFieldValue(value, field.Children, userRole)
 		}
 	}
+	return result
+}
 
-	return filteredDoc
+func filterNestedFieldValue(value interface{}, fields []models.Field, role string) interface{} {
+	if len(fields) == 0 {
+		return value
+	}
+	switch item := value.(type) {
+	case bson.M:
+		return FilterDocumentFields(item, fields, role)
+	case map[string]interface{}:
+		return map[string]interface{}(FilterDocumentFields(bson.M(item), fields, role))
+	case []interface{}:
+		result := make([]interface{}, len(item))
+		for i, child := range item {
+			result[i] = filterNestedFieldValue(child, fields, role)
+		}
+		return result
+	case bson.A:
+		result := make(bson.A, len(item))
+		for i, child := range item {
+			result[i] = filterNestedFieldValue(child, fields, role)
+		}
+		return result
+	case []map[string]interface{}:
+		result := make([]map[string]interface{}, len(item))
+		for i, child := range item {
+			result[i] = map[string]interface{}(FilterDocumentFields(bson.M(child), fields, role))
+		}
+		return result
+	case []bson.M:
+		result := make([]bson.M, len(item))
+		for i, child := range item {
+			result[i] = FilterDocumentFields(child, fields, role)
+		}
+		return result
+	}
+	return value
 }
 
 // FilterDocumentFieldsRelaxed removes unauthorized fields from a document (Relaxed Mode)
@@ -123,7 +142,7 @@ func FilterDocumentFields(doc bson.M, fields []models.Field, userRole string) bs
 // Only fields explicitly defined in 'fields' AND restricted are removed.
 func FilterDocumentFieldsRelaxed(doc bson.M, fields []models.Field, userRole string) bson.M {
 	allowedFields := GetAllowedFieldNames(fields, userRole)
-	
+
 	// Map used to quickly check if a field is defined in the schema
 	definedFields := make(map[string]models.Field)
 	for _, f := range fields {
@@ -138,7 +157,7 @@ func FilterDocumentFieldsRelaxed(doc bson.M, fields []models.Field, userRole str
 			filteredDoc[key] = value
 			continue
 		}
-		
+
 		fieldDef, isDefined := definedFields[key]
 
 		if isDefined {
@@ -166,7 +185,6 @@ func FilterDocumentFieldsRelaxed(doc bson.M, fields []models.Field, userRole str
 
 	return filteredDoc
 }
-
 
 // FilterDocuments filters multiple documents (Strict Mode)
 func FilterDocuments(docs []map[string]interface{}, fields []models.Field, userRole string) []map[string]interface{} {

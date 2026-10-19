@@ -175,31 +175,32 @@ func GeneratePipelineRedisKey(tenantID, projectID, schemaName, pipelineName stri
 
 // GenerateDynamicFunctionRedisKey generates a Redis key for caching dynamic functions based on tenant/project context, schema name and function name.
 // For non-tenant routes, pass empty strings for tenantID and projectID.
-func GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName string, container *models.ContainerModel) (string, bool) {
-	var redisKey string
-	var shouldCache bool
-
-	// Check if caching should be applied based on the IsRedisCached flag for the specified function
-	for _, function := range container.DynamicFunctions {
-		if function.Name == functionName && function.IsRedisCached {
-			shouldCache = true
-			break
-		}
-	}
-
-	if shouldCache {
-		// Build project-specific prefix if tenant/project are provided
-		var prefix string
-		if tenantID != "" && projectID != "" {
-			prefix = "tenant_" + tenantID + "_project_" + projectID + "_"
-		} else {
-			prefix = "" // Legacy global cache
-		}
-		redisKey = prefix + "function_" + functionName + "_schema_" + schemaName
-	}
-
-	return redisKey, shouldCache
-}
+// Disabled: dynamic functions are paused; retained for a future implementation.
+// func GenerateDynamicFunctionRedisKey(tenantID, projectID, schemaName, functionName string, container *models.ContainerModel) (string, bool) {
+// 	var redisKey string
+// 	var shouldCache bool
+//
+// 	// Check if caching should be applied based on the IsRedisCached flag for the specified function
+// 	for _, function := range container.DynamicFunctions {
+// 		if function.Name == functionName && function.IsRedisCached {
+// 			shouldCache = true
+// 			break
+// 		}
+// 	}
+//
+// 	if shouldCache {
+// 		// Build project-specific prefix if tenant/project are provided
+// 		var prefix string
+// 		if tenantID != "" && projectID != "" {
+// 			prefix = "tenant_" + tenantID + "_project_" + projectID + "_"
+// 		} else {
+// 			prefix = "" // Legacy global cache
+// 		}
+// 		redisKey = prefix + "function_" + functionName + "_schema_" + schemaName
+// 	}
+//
+// 	return redisKey, shouldCache
+// }
 
 // GenerateDynamicApiRedisKey generates a Redis key for caching dynamic APIs based on tenant/project context, schema name and API name.
 // For non-tenant routes, pass empty strings for tenantID and projectID.
