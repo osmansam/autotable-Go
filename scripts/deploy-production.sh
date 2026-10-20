@@ -23,7 +23,9 @@ switched=false
 wait_ready() {
   probe_path="${1:-ready}"
   for _ in $(seq 1 30); do
-    if docker compose exec -T app wget --quiet --spider --timeout=5 "http://localhost:4000/$probe_path"; then return 0; fi
+    # Fiber listens on IPv4. BusyBox wget can resolve localhost to ::1 and
+    # report connection refused without trying the healthy IPv4 listener.
+    if docker compose exec -T app wget --quiet --spider --timeout=5 "http://127.0.0.1:4000/$probe_path"; then return 0; fi
     sleep 2
   done
   return 1
@@ -34,11 +36,26 @@ refresh_ingress() {
   # Resolve the app's new container IP after every replacement.
   docker compose exec -T nginx nginx -s reload
 }
+capture_diagnostics() {
+  local phase="$1"
+  local diagnostic_file=".deploy/${AUTOTABLE_RELEASE_TAG}.${phase}.log"
+  # Print only lifecycle fields, never the full inspect output or environment.
+  docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}' autotable-app >&2 || true
+  # App logs can contain customer data. Preserve them on the host rather than
+  # sending their contents to the CI console, before recreation loses them.
+  if : > "$diagnostic_file" && chmod 600 "$diagnostic_file"; then
+    docker compose logs --no-color --tail=100 app > "$diagnostic_file" 2>&1 || true
+    echo "Container logs saved on deployment host: $diagnostic_file" >&2
+  else
+    echo "Could not save container logs to $diagnostic_file" >&2
+  fi
+}
 rollback() {
   result=$?
   trap - ERR INT TERM
   set +e
   if [[ "$switched" == true ]]; then
+    capture_diagnostics failed
     echo 'Deployment failed; restoring previous image and environment.' >&2
     if [[ "$had_environment" == true ]]; then cp .deploy/previous.env .env; fi
     if [[ -n "$previous_image" ]]; then
@@ -51,6 +68,7 @@ rollback() {
       if docker compose up -d --no-deps --force-recreate app && wait_ready "$previous_probe" && refresh_ingress; then
         echo 'Previous release restored.' >&2
       else
+        capture_diagnostics rollback
         echo 'Automatic rollback failed; operator intervention required.' >&2
       fi
     else
