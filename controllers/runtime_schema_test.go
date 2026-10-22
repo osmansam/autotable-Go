@@ -30,8 +30,10 @@ func TestRuntimeSchemasRespectApplicationAccessAndHideManagementDefinitions(t *t
 	auth := public
 	auth.SchemaName = "accounts"
 	auth.IsAuthContainer = true
+	auth.Routes = models.Routes{}
 	roles := public
 	roles.SchemaName = "role"
+	roles.Routes = models.Routes{}
 	all := []models.ContainerModel{public, private, auth, roles, {SchemaName: "disabled"}}
 	metadata := buildRuntimeSchemas(all, "", nil)
 	if len(metadata) != 1 || metadata[0].SchemaName != "products" {
@@ -148,5 +150,46 @@ func TestRuntimeSchemaHandlerUsesProjectIdentityAndReturnsNoStoreMetadata(t *tes
 	resp.Body.Close()
 	if resp.StatusCode != fiber.StatusInternalServerError || strings.Contains(string(body), "database-secret") {
 		t.Fatalf("error response = %d %s", resp.StatusCode, body)
+	}
+}
+
+func TestRuntimeAccountSchemasExposeOnlyConfiguredReadableMetadata(t *testing.T) {
+	for _, schema := range []string{"auth", "role"} {
+		for _, tc := range []struct {
+			name, user   string
+			roles        []string
+			route        models.RouteSpec
+			writableOnly bool
+			want         int
+		}{
+			{name: "public selection", route: models.RouteSpec{IsActive: true}, want: 1},
+			{name: "disabled"},
+			{name: "private anonymous", route: models.RouteSpec{IsActive: true, IsAuthenticated: true}},
+			{name: "allowed member", user: "user", roles: []string{"member"}, route: models.RouteSpec{IsActive: true, IsAuthorized: true, AuthorizeRole: []string{"member"}}, want: 1},
+			{name: "wrong role", user: "user", roles: []string{"other"}, route: models.RouteSpec{IsActive: true, IsAuthorized: true, AuthorizeRole: []string{"member"}}},
+			{name: "account writes do not grant runtime metadata", writableOnly: true, route: models.RouteSpec{IsActive: true}},
+		} {
+			t.Run(schema+"/"+tc.name, func(t *testing.T) {
+				container := models.ContainerModel{SchemaName: schema, IsAuthContainer: schema == "auth", Fields: []models.Field{{Name: "name", Type: "string"}, {Name: "password", Type: "string", IsHashed: true}, {Name: "internal", IsAuthorized: true, AuthorizeRole: []string{"admin"}}}}
+				if tc.writableOnly {
+					container.Routes.CreateDynamicModelItem = tc.route
+				} else {
+					container.Routes.GetItemsForSelection = tc.route
+				}
+				got := buildRuntimeSchemas([]models.ContainerModel{container}, tc.user, tc.roles)
+				if len(got) != tc.want {
+					t.Fatalf("schemas=%d want=%d", len(got), tc.want)
+				}
+				if len(got) > 0 {
+					body, err := json.Marshal(got)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if strings.Contains(string(body), "password") || strings.Contains(string(body), "internal") || !strings.Contains(string(body), `"name":"name"`) {
+						t.Fatalf("unsafe or incomplete metadata: %s", body)
+					}
+				}
+			})
+		}
 	}
 }

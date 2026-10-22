@@ -8,10 +8,36 @@ import (
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/services"
+	"github.com/osmansam/autotableGo/utils"
 )
 
 func isProtectedAccountContainer(container *models.ContainerModel) bool {
 	return container != nil && (container.IsAuthContainer || container.SchemaName == "role")
+}
+
+// Schema reads use the configured data-route permissions. Management clients
+// keep their account administration path; executable sources and writes stay
+// behind management authorization.
+func accountReadUsesRoutePermissions(c *fiber.Ctx, operation string) bool {
+	if !isAccountDataRead(operation, c.Query("sourceType")) {
+		return false
+	}
+	credential, err := ResolveManagementCredential(c)
+	if err != nil {
+		return true
+	}
+	if credential.Source == AuthSourceCookie {
+		return false
+	}
+	_, err = utils.ParseTenantToken(credential.Token)
+	return err != nil
+}
+
+func isAccountDataRead(operation, sourceType string) bool {
+	if operation == "GetTableSource" {
+		return sourceType == "" || bindingKindMatches(sourceType, models.BindingKindSchema)
+	}
+	return accountOperationPermission(operation) == services.PermissionProjectConfigRead
 }
 
 func accountOperationPermission(operation string) services.ManagementPermission {
