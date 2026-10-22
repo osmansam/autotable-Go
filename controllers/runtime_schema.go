@@ -115,14 +115,25 @@ func runtimeRouteAccessible(route models.RouteSpec, userID string, roles []strin
 }
 
 func runtimeSchemaAccessible(container models.ContainerModel, userID string, roles []string) bool {
-	if container.IsAuthContainer {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(container.SchemaName)) {
-	case "auth", "role", "containers":
+	name := strings.ToLower(strings.TrimSpace(container.SchemaName))
+	if name == "containers" {
 		return false
 	}
 	r := container.Routes
+	if container.IsAuthContainer || name == "auth" || name == "role" {
+		// Account writes and executable sources remain management-only. Expose
+		// safe metadata only when an application data read is actually allowed.
+		for _, route := range []models.RouteSpec{
+			r.GetAllDynamicModelItems, r.GetAllDynamicModelItemsWithPagination, r.GetDynamicModelItem,
+			r.GetItemsForSelection, r.HandleSearchDynamicModelItem, r.HandleFilterDynamicModelItem,
+			r.ExportDynamicModelItems,
+		} {
+			if runtimeRouteAccessible(route, userID, roles) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, route := range []models.RouteSpec{
 		r.GetAllDynamicModelItems, r.GetAllDynamicModelItemsWithPagination, r.GetDynamicModelItem,
 		r.GetItemsForSelection, r.HandleSearchDynamicModelItem, r.HandleFilterDynamicModelItem,

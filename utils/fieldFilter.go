@@ -90,7 +90,7 @@ func FilterDocumentFields(doc bson.M, fields []models.Field, userRole string) bs
 		result["_id"] = id
 	}
 	for _, field := range fields {
-		if !allowed[field.Name] {
+		if field.IsHashed || !allowed[field.Name] {
 			continue
 		}
 		if value, ok := doc[field.Name]; ok {
