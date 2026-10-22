@@ -161,6 +161,7 @@ func main() {
 
 	// Project-scoped routes with tenant and project slugs in URL
 	routes.ContainerRoutes("api/v1/:tenantSlug/:projectSlug/container", app)
+	routes.RuntimeSchemaRoutes(app)
 	routes.DynamicRoutes("api/v1/:tenantSlug/:projectSlug/dynamic", app)
 	routes.IntegrationRoutes("api/v1/:tenantSlug/:projectSlug/integrations", app)
 	routes.NotificationRoutes("api/v1/:tenantSlug/:projectSlug/notifications", app)

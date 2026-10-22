@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
@@ -14,7 +15,7 @@ import (
 
 func enforceAuthMutationOrigin(c *fiber.Ctx) bool {
 	origin := c.Get(fiber.HeaderOrigin)
-	allowed := []string{"https://tenant.autoapi.org", "https://panel.autoapi.org", "http://localhost:3001", "http://localhost:3005", "http://localhost:5173"}
+	allowed := configs.GetAppConfig().CorsWhitelist
 	if origin == "" || strings.EqualFold(origin, "null") || !middlewares.IsTrustedOrigin(origin, allowed) {
 		_ = c.Status(fiber.StatusForbidden).JSON(responses.GeneralResponse{Status: fiber.StatusForbidden, Message: "Untrusted request origin"})
 		return false
