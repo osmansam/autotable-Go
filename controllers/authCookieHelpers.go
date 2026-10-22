@@ -15,6 +15,10 @@ import (
 
 var errMissingRefreshCookie = errors.New("refresh cookie is missing")
 
+var rotateProjectAuthSession = func(ctx context.Context, familyID, presentedID, nextID string, expiresAt time.Time) error {
+	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Rotate(ctx, familyID, presentedID, nextID, expiresAt)
+}
+
 var rotateManagementAuthSession = func(ctx context.Context, familyID, presentedID, nextID string, expiresAt time.Time) error {
 	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Rotate(ctx, familyID, presentedID, nextID, expiresAt)
 }
@@ -178,7 +182,7 @@ func rotateProjectCookieSession(c *fiber.Ctx, ctx context.Context) (*utils.Proje
 	if err != nil {
 		return nil, nil, err
 	}
-	err = services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Rotate(ctx, claims.FamilyID, claims.ID, next.ID, time.Unix(tokens.RTExpires, 0))
+	err = rotateProjectAuthSession(ctx, claims.FamilyID, claims.ID, next.ID, time.Unix(tokens.RTExpires, 0))
 	return claims, tokens, err
 }
 

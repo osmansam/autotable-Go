@@ -32,6 +32,35 @@ var loadRuntimeSchemaContainers = func(ctx context.Context, tenantID, projectID 
 // GetRuntimeSchemas runs after optional, project-bound application authentication.
 // Its response is filtered by current application access, never management roles.
 func GetRuntimeSchemas(c *fiber.Ctx) error {
+	return serveRuntimeSchemas(c, func(schemas []runtimeSchema) error { return c.JSON(schemas) })
+}
+
+func GetRuntimeSchema(c *fiber.Ctx) error {
+	return serveRuntimeSchemas(c, func(schemas []runtimeSchema) error {
+		for _, schema := range schemas {
+			if strings.EqualFold(schema.ID, c.Params("id")) {
+				return c.JSON(schema)
+			}
+		}
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"message": "Schema metadata not found"})
+	})
+}
+
+func GetRuntimeSchemaTypes(c *fiber.Ctx) error {
+	return serveRuntimeSchemas(c, func(schemas []runtimeSchema) error {
+		result := make([]models.ContainerTypes, 0, len(schemas))
+		for _, schema := range schemas {
+			fields := make(map[string]string, len(schema.Fields))
+			for _, field := range schema.Fields {
+				fields[field.Name] = field.Type
+			}
+			result = append(result, models.ContainerTypes{ID: schema.ID, SchemaName: schema.SchemaName, FieldTypes: fields})
+		}
+		return c.JSON(result)
+	})
+}
+
+func serveRuntimeSchemas(c *fiber.Ctx, respond func([]runtimeSchema) error) error {
 	setAuthNoStoreHeaders(c)
 	userID, roles := getPageRequestUserID(c), getPageRequestRoles(c)
 	_, credentialErr := middlewares.ResolveProjectCredential(c)
@@ -50,7 +79,7 @@ func GetRuntimeSchemas(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Schema metadata could not be loaded"})
 	}
-	return c.JSON(buildRuntimeSchemas(containers, userID, roles))
+	return respond(buildRuntimeSchemas(containers, userID, roles))
 }
 
 // Runtime metadata is a deliberate allowlist, never the management container model.

@@ -35,10 +35,19 @@ type ManagementRouteContract struct {
 	Identity   ManagementRouteIdentity
 	Scope      ManagementRouteScope
 	Permission services.ManagementPermission
+	// Full definitions require management; this flag permits only a filtered
+	// read-only metadata response for a separately authenticated application user.
+	RuntimeMetadata bool
 }
 
 func contract(method, path string, identity ManagementRouteIdentity, scope ManagementRouteScope, permission services.ManagementPermission) ManagementRouteContract {
 	return ManagementRouteContract{Method: method, Path: path, Identity: identity, Scope: scope, Permission: permission}
+}
+
+func containerMetadataContract(path string) ManagementRouteContract {
+	c := contract("GET", path, IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead)
+	c.RuntimeMetadata = true
+	return c
 }
 
 var approvedManagementRouteContracts = []ManagementRouteContract{
@@ -75,19 +84,19 @@ var approvedManagementRouteContracts = []ManagementRouteContract{
 	contract("POST", "/api/v1/tenant/projects/:id/branding/assets/:slot", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectBrandingManage),
 	contract("DELETE", "/api/v1/tenant/projects/:id/branding/assets/:slot", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectBrandingManage),
 
-	contract("GET", "/api/v1/:tenantSlug/:projectSlug/container", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
+	containerMetadataContract("/api/v1/:tenantSlug/:projectSlug/container"),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/admin/auth/users", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/container/", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/container/create-multiple", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/container/reset-redis", IdentityManagement, ManagementScopeProject, services.PermissionProjectCacheReset),
 	contract("GET", "/api/v1/:tenantSlug/:projectSlug/container/tenant", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
-	contract("GET", "/api/v1/:tenantSlug/:projectSlug/container/types", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
+	containerMetadataContract("/api/v1/:tenantSlug/:projectSlug/container/types"),
 	// Dynamic functions are paused; restore this contract with the update route.
 	// contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/dynamicFunctions/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/pipelines/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/workflows/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/dynamicApis/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
-	contract("GET", "/api/v1/:tenantSlug/:projectSlug/container/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
+	containerMetadataContract("/api/v1/:tenantSlug/:projectSlug/container/:id"),
 	contract("DELETE", "/api/v1/:tenantSlug/:projectSlug/container/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaDelete),
 	contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 
@@ -121,6 +130,12 @@ func ApprovedManagementRouteContracts() []ManagementRouteContract {
 func validateManagementContracts(contracts []ManagementRouteContract) error {
 	seen := make(map[string]struct{}, len(contracts))
 	for _, c := range contracts {
+		if c.RuntimeMetadata {
+			allowed := c.Path == "/api/v1/:tenantSlug/:projectSlug/container" || c.Path == "/api/v1/:tenantSlug/:projectSlug/container/types" || c.Path == "/api/v1/:tenantSlug/:projectSlug/container/:id"
+			if !allowed || c.Method != "GET" || c.Identity != IdentityManagement || c.Scope != ManagementScopeProject || c.Permission != services.PermissionProjectConfigRead {
+				return errors.New("runtime metadata is permitted only on approved container reads")
+			}
+		}
 		if strings.TrimSpace(c.Method) == "" || strings.TrimSpace(c.Path) == "" || c.Identity == "" || c.Scope == "" || c.Permission == "" {
 			return errors.New("management route contract has an empty method, path, identity, scope, or permission")
 		}
