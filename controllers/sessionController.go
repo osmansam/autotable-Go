@@ -28,6 +28,11 @@ func ProjectSession(c *fiber.Ctx) error {
 	token := c.Cookies(utils.ProjectAuthCookieName(c.Params("tenantSlug"), c.Params("projectSlug"), "access"))
 	userID, role, tenantID, projectID, tenantSlug, projectSlug, err := utils.ParseToken(token)
 	if err != nil {
+		// A remaining refresh cookie lets the runtime client's 401 interceptor
+		// recover an expired access session before deciding the visitor is anonymous.
+		if c.Cookies(utils.ProjectAuthCookieName(c.Params("tenantSlug"), c.Params("projectSlug"), "refresh")) != "" {
+			return refreshErrorResponse(c, err)
+		}
 		return sendAnonymousSession(c)
 	}
 	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": userID, "role": role}, "tenantId": tenantID, "projectId": projectID, "tenantSlug": tenantSlug, "projectSlug": projectSlug})
