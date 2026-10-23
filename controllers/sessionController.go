@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/middlewares"
+	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/responses"
 	"github.com/osmansam/autotableGo/utils"
 )
@@ -56,7 +57,12 @@ func TenantSession(c *fiber.Ctx) error {
 	setAuthNoStoreHeaders(c)
 	token := c.Cookies(utils.AuthCookieName(utils.TokenScopeTenant, "access"))
 	claims, err := utils.ParseTenantToken(token)
-	if err != nil {
+	if err != nil || claims.UserID == "" || claims.TenantID == "" || claims.Scope != utils.TokenScopeTenant || claims.RoleScope != string(models.RoleScopeTenant) || claims.ProjectID != "" {
+		// Signal recovery only for this tenant session. Application-user and
+		// project-management cookies must never authenticate the tenant panel.
+		if c.Cookies(utils.AuthCookieName(utils.TokenScopeTenant, "refresh")) != "" {
+			return refreshErrorResponse(c, err)
+		}
 		return sendAnonymousSession(c)
 	}
 	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": claims.UserID, "email": claims.Email}, "tenantId": claims.TenantID, "roles": claims.Roles})
