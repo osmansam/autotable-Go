@@ -1195,6 +1195,17 @@ func DeleteProject(c *fiber.Ctx) error {
 		})
 	}
 
+	// Drop all project collections and project-scoped shared rows first. This is
+	// idempotent, so if it fails the project still exists and deletion can be retried.
+	droppedCollections, err := deleteProjectData(ctx, tenantOID, projectOID)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
+			Status:  http.StatusInternalServerError,
+			Message: "Failed to delete project data",
+			Data:    &fiber.Map{"error": err.Error()},
+		})
+	}
+
 	// Delete project memberships
 	if _, err = projectMembershipsCollection().DeleteMany(ctx, bson.M{
 		"projectId": projectOID,
@@ -1222,14 +1233,11 @@ func DeleteProject(c *fiber.Ctx) error {
 
 	invalidateProjectLifecycle(ctx, project, nil, true)
 
-	// Note: We don't automatically delete all collections for safety
-	// You may want to add a background job or manual cleanup process
-
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "Project deleted successfully",
 		Data: &fiber.Map{
-			"warning": "Project collections were not automatically deleted. Contact admin for cleanup if needed.",
+			"deletedCollections": droppedCollections,
 		},
 	})
 }
