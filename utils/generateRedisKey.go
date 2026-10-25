@@ -54,12 +54,19 @@ func GetSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName 
 }
 
 func IncrementSchemaCacheVersion(ctx context.Context, tenantID, projectID, schemaName string) error {
+	deferredWorkflowInvalidation := deferProjectWorkflowInvalidation(ctx, tenantID, projectID)
 	if !configs.RedisCircuitAllow() {
 		return nil
 	}
 
 	versionKey := BuildSchemaCacheVersionKey(tenantID, projectID, schemaName)
-	err := configs.RedisClient.Incr(ctx, versionKey).Err()
+	_, err := configs.RedisClient.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+		pipe.Incr(ctx, versionKey)
+		if tenantID != "" && projectID != "" && !deferredWorkflowInvalidation {
+			pipe.Incr(ctx, projectWorkflowCacheVersionKey(tenantID, projectID))
+		}
+		return nil
+	})
 	configs.RedisCircuitRecordResult(err)
 	return err
 }

@@ -256,6 +256,24 @@ func containerCacheKeys(tenantID, projectID string, containerIDs []primitive.Obj
 	return keys
 }
 
+func invalidateContainerCaches(ctx context.Context, tenantID, projectID string, keys ...string) {
+	bounded, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	_ = configs.RedisDelKeys(bounded, keys...)
+	utils.InvalidateWorkflowResultsAfterWrite(bounded, tenantID, projectID)
+}
+
+// Called only after the primary container write commits. Invalidate even if a
+// later reference-maintenance operation fails and the handler returns an error.
+func syncContainerInvalidationsAfterWrite(ctx context.Context, collection *mongo.Collection, tenantID, projectID string, previous, current models.ContainerModel, references map[string]primitive.ObjectID) ([]primitive.ObjectID, error) {
+	ids := []primitive.ObjectID{previous.ID, current.ID}
+	for _, id := range references {
+		ids = append(ids, id)
+	}
+	invalidateContainerCaches(ctx, tenantID, projectID, containerCacheKeys(tenantID, projectID, ids)...)
+	return syncReferencedInvalidations(ctx, collection, previous, current, references)
+}
+
 func appendContainerCacheKey(keys []string, tenantID, projectID, containerID string) []string {
 	if containerID == "" {
 		return keys
@@ -462,14 +480,17 @@ func createContainerForProject(ctx context.Context, container models.ContainerMo
 		return nil, containerCreationFailure(err, "Failed to insert the container into the database. Please try again later.")
 	}
 
-	referencedContainerIDs, err := syncReferencedInvalidations(ctx, containerCollection, models.ContainerModel{}, newContainer, referencedIDs)
+	if id, ok := result.InsertedID.(primitive.ObjectID); ok {
+		newContainer.ID = id
+	}
+	referencedContainerIDs, err := syncContainerInvalidationsAfterWrite(ctx, containerCollection, tenantID, projectID, models.ContainerModel{}, newContainer, referencedIDs)
 	if err != nil {
 		log.Printf("Failed to update referenced container invalidation settings: %v", err)
 		return result, containerCreationFailure(err, "Container created but failed to update referenced container invalidation settings.")
 	}
 
 	// Invalidate Redis cache for all containers (project-specific)
-	_ = configs.RedisDelKeys(ctx, containerCacheKeys(tenantID, projectID, referencedContainerIDs)...)
+	invalidateContainerCaches(ctx, tenantID, projectID, containerCacheKeys(tenantID, projectID, referencedContainerIDs)...)
 	log.Println("Invalidated containers cache after creation")
 
 	return result, nil
@@ -596,6 +617,7 @@ func DeleteContainer(c *fiber.Ctx) error {
 		log.Printf("Failed to delete container: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to delete the container from the database. Please try again later.")
 	}
+	invalidateContainerCaches(ctx, tenantID, projectID, appendContainerCacheKey(containerCacheKeys(tenantID, projectID, nil), tenantID, projectID, deleteIdStr)...)
 
 	// Drop indexes for the container (before dropping collection)
 	projectCollectionName := utils.GetProjectCollectionName(tenantID, projectID, container.SchemaName)
@@ -612,7 +634,7 @@ func DeleteContainer(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
+	invalidateContainerCaches(ctx, tenantID, projectID,
 		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
 		fmt.Sprintf("container:%s:tenant_%s:project_%s", deleteIdStr, tenantID, projectID),
 	)
@@ -768,7 +790,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 		})
 	}
 
-	referencedContainerIDs, err := syncReferencedInvalidations(ctx, containerCollection, existingContainer, updatedContainer, referencedIDs)
+	referencedContainerIDs, err := syncContainerInvalidationsAfterWrite(ctx, containerCollection, tenantID, projectID, existingContainer, updatedContainer, referencedIDs)
 	if err != nil {
 		log.Printf("Failed to update referenced container invalidation settings: %v", err)
 		return utils.SendErrorResponse(c, err, "Container updated but failed to update referenced container invalidation settings.")
@@ -776,7 +798,7 @@ func UpdateContainer(c *fiber.Ctx) error {
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
 	cacheKeys := appendContainerCacheKey(containerCacheKeys(tenantID, projectID, referencedContainerIDs), tenantID, projectID, updateIdStr)
-	_ = configs.RedisDelKeys(ctx, cacheKeys...)
+	invalidateContainerCaches(ctx, tenantID, projectID, cacheKeys...)
 	log.Println("Invalidated containers cache after update")
 
 	// Emit WebSocket event for container change
@@ -844,7 +866,7 @@ func UpdatePipelines(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
+	invalidateContainerCaches(ctx, tenantID, projectID,
 		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
 		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
 	)
@@ -922,7 +944,7 @@ func UpdateWorkflows(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
+	invalidateContainerCaches(ctx, tenantID, projectID,
 		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
 		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
 	)
@@ -1065,7 +1087,7 @@ func UpdateDynamicApis(c *fiber.Ctx) error {
 	}
 
 	// Invalidate Redis cache for all containers and this specific container (project-specific)
-	_ = configs.RedisDelKeys(ctx,
+	invalidateContainerCaches(ctx, tenantID, projectID,
 		fmt.Sprintf("containers:all:tenant_%s:project_%s", tenantID, projectID),
 		fmt.Sprintf("container:%s:tenant_%s:project_%s", containerIdStr, tenantID, projectID),
 	)

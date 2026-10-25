@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -78,6 +79,9 @@ func (r *LocalizationRepository) UpsertPlaceholder(ctx context.Context, entry mo
 		"$unset": bson.M{"orphanedAt": ""},
 	}
 	_, err := r.translations.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err == nil {
+		utils.InvalidateWorkflowResultsAfterWrite(ctx, entry.TenantID.Hex(), entry.ProjectID.Hex())
+	}
 	return err
 }
 
@@ -95,6 +99,15 @@ func (r *LocalizationRepository) ApplyReconciledEntries(ctx context.Context, ent
 			SetUpsert(true))
 	}
 	_, err := r.translations.BulkWrite(ctx, writes, options.BulkWrite().SetOrdered(false))
+	// Unordered bulk writes may have committed a subset even on error.
+	seen := map[[2]primitive.ObjectID]bool{}
+	for _, entry := range entries {
+		project := [2]primitive.ObjectID{entry.TenantID, entry.ProjectID}
+		if !seen[project] {
+			utils.InvalidateWorkflowResultsAfterWrite(ctx, entry.TenantID.Hex(), entry.ProjectID.Hex())
+			seen[project] = true
+		}
+	}
 	return err
 }
 
@@ -115,16 +128,23 @@ func (r *LocalizationRepository) UpsertGeneratedTranslation(ctx context.Context,
 		}
 		return err
 	})
+	if stored && err == nil {
+		utils.InvalidateWorkflowResultsAfterWrite(ctx, entry.TenantID.Hex(), entry.ProjectID.Hex())
+	}
 	return stored && err == nil, err
 }
 
 func (r *LocalizationRepository) MarkGeneratedTranslationFailed(ctx context.Context, entry models.TranslationEntry) error {
-	return r.writeContentWithClaim(ctx, func(tx context.Context) error {
+	err := r.writeContentWithClaim(ctx, func(tx context.Context) error {
 		_, err := r.translations.UpdateOne(tx, generatedTranslationFilter(entry), bson.M{"$set": bson.M{
 			"status": models.TranslationStatusFailed, "updatedAt": time.Now().UTC(),
 		}})
 		return err
 	})
+	if err == nil {
+		utils.InvalidateWorkflowResultsAfterWrite(ctx, entry.TenantID.Hex(), entry.ProjectID.Hex())
+	}
+	return err
 }
 
 func generatedTranslationFilter(entry models.TranslationEntry) bson.M {
@@ -245,6 +265,9 @@ func (r *LocalizationRepository) UpsertManualTranslation(ctx context.Context, en
 		"$unset":       bson.M{"orphanedAt": ""},
 	}
 	_, err := r.translations.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err == nil {
+		utils.InvalidateWorkflowResultsAfterWrite(ctx, entry.TenantID.Hex(), entry.ProjectID.Hex())
+	}
 	return err
 }
 

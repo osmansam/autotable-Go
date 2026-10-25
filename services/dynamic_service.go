@@ -2196,6 +2196,9 @@ func (s *DynamicService) ExecuteDynamicAPI(ctx context.Context, input ExecuteDyn
 }
 
 func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkflowInput) (DynamicExecutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Failed to execute workflow")
+	}
 	container, err := s.resolveWorkflowContainer(ctx, input)
 	if err != nil {
 		return DynamicExecutionResult{}, &ServiceError{Status: http.StatusInternalServerError, Message: "Failed to fetch container model", Err: err}
@@ -2213,6 +2216,29 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		return DynamicExecutionResult{}, err
 	}
 	input.Record = verifiedRecord
+	if workflow.IsRedisCached {
+		if err := ValidateWorkflow(workflow); err != nil {
+			return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Invalid workflow")
+		}
+	}
+	cacheKey, shouldCache := workflowResultCacheKey(ctx, input, workflow, container)
+	if shouldCache {
+		if result, ok := s.cachedWorkflowResult(ctx, cacheKey); ok {
+			return result, nil
+		}
+		lockID, locked := utils.AcquireCacheFillLock(ctx, cacheKey)
+		if locked {
+			defer utils.ReleaseCacheFillLock(ctx, cacheKey, lockID)
+			if result, ok := s.cachedWorkflowResult(ctx, cacheKey); ok {
+				return result, nil
+			}
+		} else {
+			var cached DynamicExecutionResult
+			if utils.WaitForCacheFill(ctx, func() bool { var found bool; cached, found = s.cachedWorkflowResult(ctx, cacheKey); return found }) {
+				return cached, nil
+			}
+		}
+	}
 
 	var pagination *workflowTableSourcePagination
 	if input.Pager != nil && input.Pager.Enabled {
@@ -2248,17 +2274,23 @@ func (s *DynamicService) ExecuteWorkflow(ctx context.Context, input ExecuteWorkf
 		payload.StepOutputs = map[string]interface{}{}
 	}
 
+	cacheReadFailed := false
+	payload.CacheReadFailed = &cacheReadFailed
 	err = s.runWorkflowWithTransaction(ctx, &payload, workflow)
 	if err != nil {
 		return DynamicExecutionResult{}, workflowExecutionServiceError(err, "Failed to execute workflow")
 	}
 
-	return DynamicExecutionResult{
+	result := DynamicExecutionResult{
 		Message:    "Workflow executed successfully",
 		Data:       workflowExecutionReturnValue(workflow, &payload),
 		Source:     "workflow",
 		pagination: pagination,
-	}, nil
+	}
+	if shouldCache && !cacheReadFailed {
+		s.storeWorkflowResult(ctx, cacheKey, workflow, result)
+	}
+	return result, nil
 }
 
 func (s *DynamicService) ExportDynamicItems(ctx context.Context, input ExportDynamicItemsInput) (ExportDynamicItemsResult, error) {

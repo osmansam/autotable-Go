@@ -512,8 +512,13 @@ func (r *DynamicRepository) NextSequence(ctx context.Context, schemaName string)
 }
 
 func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.SessionContext) error) error {
+	ctx, finishInvalidation := utils.BeginWorkflowCacheInvalidation(ctx)
+	committed := false
+	defer func() { finishInvalidation(committed) }()
 	if r.withTransaction != nil {
-		return r.withTransaction(ctx, fn)
+		err := r.withTransaction(ctx, fn)
+		committed = err == nil
+		return err
 	}
 	client := configs.DB
 	if r.database != nil {
@@ -535,6 +540,7 @@ func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.S
 	_, err = session.WithTransaction(ctx, func(sessionCtx mongo.SessionContext) (interface{}, error) {
 		return nil, fn(sessionCtx)
 	}, txnOptions)
+	committed = err == nil
 	return err
 }
 
