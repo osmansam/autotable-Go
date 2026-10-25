@@ -45,3 +45,7 @@ Writes through AutoTable's schema invalidation path advance the project's workfl
 Project-wide invalidation is conservative: editing one visual block also invalidates unrelated cached pages in that project. Changes made directly to MongoDB or to external GET services are discovered on the next cache miss/expiry. If Redis invalidation is unavailable after a committed write, the write remains successful and TTL bounds the stale period when Redis recovers.
 
 The Next.js page-data cache is a separate layer with its own lifetime and invalidation. Backend caching does not remove either layer's first-request execution cost.
+
+## Request overhead
+
+Middleware and handlers reuse a successfully resolved URL project within the same HTTP request. This avoids repeating its Redis slug lookup and live MongoDB activity check before a workflow cache hit. Every new request still verifies the project, and each context lookup still validates the current authenticated tenant/project scope. Nothing is shared across requests by this optimization; collection permissions and authentication remain ahead of workflow result lookup.

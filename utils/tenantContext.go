@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -78,23 +79,23 @@ var projectActiveChecker = func(ctx context.Context, tenantID, projectID string)
 	return count > 0, nil
 }
 
-// GetTenantAndProjectFromSlugs extracts tenant and project IDs from URL slugs
-// URL pattern: /api/:tenantSlug/:projectSlug/...
-// Optimized: Checks Redis cache first, falls back to DB query if not cached
-func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err error) {
+type resolvedProjectContextKey struct{}
+
+type resolvedProjectContext struct {
+	tenantSlug, projectSlug string
+	tenantID, projectID     string
+}
+
+// resolveProjectFromSlugs reuses a successful URL resolution only within this
+// request. Authentication locals are deliberately not a verification marker.
+func resolveProjectFromSlugs(c *fiber.Ctx, tenantSlug, projectSlug string) (tenantID, projectID string, err error) {
+	if resolved, ok := c.Locals(resolvedProjectContextKey{}).(resolvedProjectContext); ok &&
+		resolved.tenantSlug == tenantSlug && resolved.projectSlug == projectSlug {
+		return resolved.tenantID, resolved.projectID, nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	// Get slugs from URL params
-	tenantSlug := c.Params("tenantSlug")
-	projectSlug := c.Params("projectSlug")
-
-	if tenantSlug == "" {
-		return "", "", ErrTenantSlugMissing
-	}
-	if projectSlug == "" {
-		return "", "", ErrProjectSlugMissing
-	}
 
 	// Try to get from Redis cache first
 	cacheKey := slugMappingCacheKey(tenantSlug, projectSlug)
@@ -113,19 +114,13 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 					return "", "", activeErr
 				}
 
-				// Store in locals for downstream use
-				c.Locals("tenantID", tenantID)
-				c.Locals("projectID", projectID)
-				c.Locals("tenantSlug", tenantSlug)
-				c.Locals("projectSlug", projectSlug)
-
 				return tenantID, projectID, nil
 			}
 		}
 	}
 
 	// Cache miss: Query database
-	projectsCollection := configs.GetCollection("projects")
+	projectsCollection := globalCollectionProvider("projects")
 	var project struct {
 		ID       primitive.ObjectID `bson:"_id"`
 		TenantID primitive.ObjectID `bson:"tenantId"`
@@ -145,12 +140,13 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 
 	// Cache the result for 1 hour (3600 seconds)
 	cacheValue := tenantID + "|" + projectID
+	redisClient := configs.RedisClient
 	go func() {
 		if !configs.RedisCircuitAllow() {
 			return
 		}
 		// Cache in background to not block the request
-		if err := configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err(); err != nil {
+		if err := redisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err(); err != nil {
 			configs.RedisCircuitRecordResult(err)
 			// Log error but don't fail the request
 			return
@@ -158,12 +154,36 @@ func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err
 		configs.RedisCircuitRecordSuccess()
 	}()
 
-	// Store in locals for downstream use
+	return tenantID, projectID, nil
+}
+
+func setResolvedProjectContext(c *fiber.Ctx, tenantSlug, projectSlug, tenantID, projectID string) {
+	// Fiber parameter strings borrow the URI buffer, which can change on reroute.
+	c.Locals(resolvedProjectContextKey{}, resolvedProjectContext{
+		tenantSlug: strings.Clone(tenantSlug), projectSlug: strings.Clone(projectSlug),
+		tenantID: tenantID, projectID: projectID,
+	})
 	c.Locals("tenantID", tenantID)
 	c.Locals("projectID", projectID)
 	c.Locals("tenantSlug", tenantSlug)
 	c.Locals("projectSlug", projectSlug)
+}
 
+// GetTenantAndProjectFromSlugs extracts tenant and project IDs from URL slugs.
+// Callers remain responsible for checking their authenticated project scope.
+func GetTenantAndProjectFromSlugs(c *fiber.Ctx) (tenantID, projectID string, err error) {
+	tenantSlug, projectSlug := c.Params("tenantSlug"), c.Params("projectSlug")
+	if tenantSlug == "" {
+		return "", "", ErrTenantSlugMissing
+	}
+	if projectSlug == "" {
+		return "", "", ErrProjectSlugMissing
+	}
+	tenantID, projectID, err = resolveProjectFromSlugs(c, tenantSlug, projectSlug)
+	if err != nil {
+		return "", "", err
+	}
+	setResolvedProjectContext(c, tenantSlug, projectSlug, tenantID, projectID)
 	return tenantID, projectID, nil
 }
 
@@ -196,58 +216,11 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 	projectSlug := c.Params("projectSlug")
 
 	if tenantSlug != "" && projectSlug != "" {
-		// Get IDs from URL slugs (but DON'T overwrite locals yet)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		// Try cache first
-		cacheKey := slugMappingCacheKey(tenantSlug, projectSlug)
-		var urlTenantID, urlProjectID string
-
-		if configs.RedisCircuitAllow() {
-			cachedValue, cacheErr := configs.RedisClient.Get(ctx, cacheKey).Result()
-			configs.RedisCircuitRecordResult(cacheErr)
-			if cacheErr == nil && cachedValue != "" {
-				parts := splitCachedValue(cachedValue)
-				if len(parts) == 2 {
-					if activeErr := verifyCachedProjectActive(ctx, cacheKey, parts[0], parts[1]); activeErr != nil {
-						return "", "", activeErr
-					}
-					urlTenantID = parts[0]
-					urlProjectID = parts[1]
-				}
-			}
-		}
-
-		// If not in cache, query database
-		if urlProjectID == "" {
-			projectsCollection := configs.GetCollection("projects")
-			var project struct {
-				ID       primitive.ObjectID `bson:"_id"`
-				TenantID primitive.ObjectID `bson:"tenantId"`
-				IsActive bool               `bson:"isActive"`
-			}
-			err = projectsCollection.FindOne(ctx, bson.M{
-				"tenantSlug": tenantSlug,
-				"slug":       projectSlug,
-				"isActive":   true,
-			}).Decode(&project)
-			if err != nil {
-				return "", "", ErrProjectNotFound
-			}
-
-			urlProjectID = project.ID.Hex()
-			urlTenantID = project.TenantID.Hex()
-
-			// Cache the result
-			cacheValue := urlTenantID + "|" + urlProjectID
-			go func() {
-				if !configs.RedisCircuitAllow() {
-					return
-				}
-				err := configs.RedisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err()
-				configs.RedisCircuitRecordResult(err)
-			}()
+		// Resolve the URL independently of auth locals, then validate the current
+		// scope on every call, including after a later authentication middleware.
+		urlTenantID, urlProjectID, resolveErr := resolveProjectFromSlugs(c, tenantSlug, projectSlug)
+		if resolveErr != nil {
+			return "", "", resolveErr
 		}
 
 		// SECURITY CHECK: URL tenant must always match authenticated tenant context.
@@ -260,10 +233,7 @@ func GetTenantAndProjectContext(c *fiber.Ctx) (tenantID, projectID string, err e
 		}
 
 		// Only NOW update locals after validation passes
-		c.Locals("tenantID", urlTenantID)
-		c.Locals("projectID", urlProjectID)
-		c.Locals("tenantSlug", tenantSlug)
-		c.Locals("projectSlug", projectSlug)
+		setResolvedProjectContext(c, tenantSlug, projectSlug, urlTenantID, urlProjectID)
 
 		return urlTenantID, urlProjectID, nil
 	}
