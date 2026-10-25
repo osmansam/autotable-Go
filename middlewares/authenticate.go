@@ -126,6 +126,13 @@ func ProjectAuthentication(c *fiber.Ctx) error {
 
 func ConditionalAuthentication(routeName string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		if routeName == "ExecuteWorkflow" && conditionalSchemaName(c) != "" {
+			tenantID, projectID, container, err := utils.GetWorkflowRequestContext(c, conditionalSchemaName(c))
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to resolve workflow context"})
+			}
+			return conditionalAuthenticationForContainer(c, routeName, tenantID, projectID, container)
+		}
 		// Extract tenant and project context from URL slugs (falls back to query params or JWT for backward compatibility)
 		tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
 		if err != nil {

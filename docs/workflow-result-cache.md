@@ -49,3 +49,5 @@ The Next.js page-data cache is a separate layer with its own lifetime and invali
 ## Request overhead
 
 Middleware and handlers reuse a successfully resolved URL project within the same HTTP request. This avoids repeating its Redis slug lookup and live MongoDB activity check before a workflow cache hit. Every new request still verifies the project, and each context lookup still validates the current authenticated tenant/project scope. Nothing is shared across requests by this optimization; collection permissions and authentication remain ahead of workflow result lookup.
+
+When a workflow URL's slug mapping is already in Redis, its initial active-project check and collection-metadata read use one MongoDB aggregation. The lookup targets only that tenant/project's container collection. Both the project status and complete permission metadata are still read fresh from MongoDB on every request. Cold mappings and legacy query/local project contexts keep the ordinary resolution path. This reduces database round trips; network latency and response transfer remain part of total HTTP time.
