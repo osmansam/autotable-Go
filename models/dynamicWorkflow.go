@@ -88,6 +88,8 @@ type DynamicWorkflow struct {
 	Timezone         string                 `bson:"timezone,omitempty" json:"timezone,omitempty"`
 	Mode             string                 `bson:"mode" json:"mode"`
 	IsActive         bool                   `bson:"isActive" json:"isActive"`
+	IsRedisCached    bool                   `bson:"isRedisCached,omitempty" json:"isRedisCached,omitempty"`
+	CacheTime        int                    `bson:"cacheTime,omitempty" json:"cacheTime,omitempty"` // Minutes; zero uses the configured default.
 	IsAuthenticated  bool                   `bson:"isAuthenticated" json:"isAuthenticated"`
 	IsAuthorized     bool                   `bson:"isAuthorized" json:"isAuthorized"`
 	AuthorizeRole    []string               `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`

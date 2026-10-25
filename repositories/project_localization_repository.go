@@ -6,6 +6,7 @@ import (
 
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -44,6 +45,7 @@ func (r *ProjectLocalizationRepository) IncrementVersion(ctx context.Context, te
 	if result.MatchedCount == 0 {
 		return mongo.ErrNoDocuments
 	}
+	utils.InvalidateWorkflowResultsAfterWrite(ctx, tenantID.Hex(), projectID.Hex())
 	return nil
 }
 
@@ -66,6 +68,7 @@ func (r *ProjectLocalizationRepository) UpdateLocaleSettings(ctx context.Context
 		return nil, err
 	}
 	project.ApplyLocaleDefaults()
+	utils.InvalidateWorkflowResultsAfterWrite(ctx, tenantID.Hex(), projectID.Hex())
 	return &project, nil
 }
 

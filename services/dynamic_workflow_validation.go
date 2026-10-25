@@ -82,6 +82,9 @@ func ValidateWorkflow(workflow models.DynamicWorkflow) error {
 	if workflow.TimeoutSec < 0 || workflow.TimeoutSec > maxWorkflowTimeoutSec {
 		return fmt.Errorf("workflow %s timeoutSec must be between 0 and %d", workflow.Name, maxWorkflowTimeoutSec)
 	}
+	if workflow.CacheTime < 0 || uint64(workflow.CacheTime) > uint64((1<<63-1)/int64(time.Minute)) {
+		return fmt.Errorf("workflow %s cacheTime must be a non-negative number of minutes within the supported duration", workflow.Name)
+	}
 	if countWorkflowSteps(workflow.Steps) > maxWorkflowSteps {
 		return fmt.Errorf("workflow %s has too many steps: max %d", workflow.Name, maxWorkflowSteps)
 	}

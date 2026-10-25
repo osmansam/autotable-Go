@@ -59,6 +59,7 @@ type workflowExecutionPayload struct {
 	ReturnValue     interface{}
 	HasReturn       bool
 	Pagination      *workflowTableSourcePagination
+	CacheReadFailed *bool // Shared by branch/loop payloads; partial failures must not be cached.
 }
 
 type workflowTableSourcePagination struct {
@@ -437,6 +438,9 @@ func (s *DynamicService) runWorkflowStepList(ctx context.Context, payload *workf
 		}
 		if err != nil {
 			status = "error"
+			if payload.CacheReadFailed != nil {
+				*payload.CacheReadFailed = true
+			}
 		}
 		observability.EndSpan(stepSpan, status, err)
 		duration := time.Since(start)
