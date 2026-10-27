@@ -1,12 +1,49 @@
 """Black-box deployment checks; every Docker/curl invocation is a local fake."""
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class DeploymentEnvironmentTests(unittest.TestCase):
+    def render_environment(self, credential_key):
+        workflow = (ROOT / ".github/workflows/production.yml").read_text()
+        step = workflow.split("      - name: Create .env file\n", 1)[1].split("\n      - name:", 1)[0]
+        bindings, script = step.split("        run: |\n", 1)
+        secrets = {
+            "JWT_SECRET": "synthetic-admin-secret",
+            "TENANT_JWT_SECRET": "synthetic-tenant-secret",
+            "EXTERNAL_API_CREDENTIAL_KEY": credential_key,
+        }
+        environment = {"PATH": os.environ["PATH"]}
+        for variable, secret in re.findall(r"(DEPLOY_\w+): \$\{\{ secrets\.(\w+) \}\}", bindings):
+            environment[variable] = secrets.get(secret, "synthetic-value")
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                ["bash", "-e", "-c", textwrap.dedent(script)],
+                cwd=temporary, env=environment, capture_output=True, text=True,
+            )
+            path = Path(temporary) / ".env"
+            content = path.read_text() if path.exists() else ""
+            return result, content
+
+    def test_external_credential_key_reaches_deployed_environment(self):
+        key = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+        result, content = self.render_environment(key)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("EXTERNAL_API_CREDENTIAL_KEY=" + key + "\n", content)
+        self.assertNotIn(key, result.stdout + result.stderr)
+
+    def test_missing_external_credential_key_stops_environment_generation(self):
+        result, content = self.render_environment("")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(content, "")
 
 
 class DeploymentTests(unittest.TestCase):

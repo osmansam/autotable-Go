@@ -47,11 +47,16 @@ jobs:
           DEPLOY_BACKEND_BASE_URL: ${{ secrets.BACKEND_BASE_URL }}
           DEPLOY_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           DEPLOY_TENANT_JWT_SECRET: ${{ secrets.TENANT_JWT_SECRET }}
+          DEPLOY_EXTERNAL_API_CREDENTIAL_KEY: ${{ secrets.EXTERNAL_API_CREDENTIAL_KEY }}
         run: |
           umask 077
           test -n "$DEPLOY_JWT_SECRET"
           test -n "$DEPLOY_TENANT_JWT_SECRET"
           test "$DEPLOY_JWT_SECRET" != "$DEPLOY_TENANT_JWT_SECRET"
+          if [ -z "$DEPLOY_EXTERNAL_API_CREDENTIAL_KEY" ]; then
+            echo 'Missing EXTERNAL_API_CREDENTIAL_KEY repository secret for external API credential encryption.' >&2
+            exit 1
+          fi
           cat > .env << EOF
           PORT_NUMBER=$DEPLOY_PORT_NUMBER
           MONGO_URI_BASE=$DEPLOY_MONGO_URI_BASE
@@ -68,6 +73,7 @@ jobs:
           BACKEND_BASE_URL=$DEPLOY_BACKEND_BASE_URL
           FRONTEND_URL=$DEPLOY_FRONTEND_URL
           TENANT_JWT_SECRET=$DEPLOY_TENANT_JWT_SECRET
+          EXTERNAL_API_CREDENTIAL_KEY=$DEPLOY_EXTERNAL_API_CREDENTIAL_KEY
           NODE_ENV=production
           EOF
           chmod 600 .env

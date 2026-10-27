@@ -15,6 +15,35 @@ OPENAI_TRANSLATION_MODEL=gpt-6-luna
 either variable. Tenant Panel and Ozmishow send authenticated project requests
 to AutoTable; neither frontend should contain or forward an OpenAI key.
 
+## External API credential encryption
+
+Tenant Panel stores external API tokens through this Go service. Set
+`EXTERNAL_API_CREDENTIAL_KEY` in the backend environment to a base64-encoded
+32-byte key. To generate a new key for an environment with no existing key:
+
+```bash
+openssl rand -base64 32
+```
+
+For local development, put `EXTERNAL_API_CREDENTIAL_KEY=<generated-key>` in
+the backend `.env` and restart the Go service from this directory. Keep the
+key out of frontend environment variables and Git.
+
+For production, configure the `EXTERNAL_API_CREDENTIAL_KEY` GitHub Actions
+repository secret before deploying. The production workflow copies it into
+the server environment and stops if the secret is missing. Reuse the same
+key across deployments and replicas; replacing it prevents decryption of
+credentials already stored with the previous key.
+
+If Tenant Panel returns `External API credential encryption is not configured`,
+the running backend has a missing or invalid key. A valid local `.env` does
+not configure the deployed server. After updating a Docker environment,
+recreate the app container so it receives the new value:
+
+```bash
+docker compose up -d --no-deps --force-recreate app
+```
+
 ## Local Observability
 
 This project includes a simple local Prometheus + Grafana setup for the Go/Fiber API metrics exposed at `/metrics`, OpenTelemetry traces through the OpenTelemetry Collector and Grafana Tempo, and structured JSON logs shipped to Grafana Loki by Grafana Alloy.
