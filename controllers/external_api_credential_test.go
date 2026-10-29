@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -72,5 +73,33 @@ func TestValidateExternalAPICredentialInputRejectsInvalidValues(t *testing.T) {
 				t.Fatal("validateExternalAPICredentialInput() error = nil")
 			}
 		})
+	}
+}
+
+func TestExternalCredentialMetadataIncludesLegacyScopeAndEmptyGrants(t *testing.T) {
+	got := externalAPICredentialResponse(models.ExternalAPICredential{EncryptedSecret: "cipher"})
+	if got.Scope != "project" || got.GrantedProjectIDs == nil {
+		t.Fatalf("metadata lacks scope/grants: %#v", got)
+	}
+}
+
+func TestTenantExternalCredentialMetadataOmitsProjectAndZeroExpiry(t *testing.T) {
+	c := externalAPICredentialResponse(models.ExternalAPICredential{Scope: "tenant", EncryptedSecret: "ciphertext"})
+	raw, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]interface{}
+	if err = json.Unmarshal(raw, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := metadata["projectId"]; ok {
+		t.Fatalf("tenant key has owning project: %s", raw)
+	}
+	if _, ok := metadata["expiresAt"]; ok {
+		t.Fatalf("never-expiring key has expiry: %s", raw)
+	}
+	if _, ok := metadata["encryptedSecret"]; ok {
+		t.Fatal("secret exposed")
 	}
 }

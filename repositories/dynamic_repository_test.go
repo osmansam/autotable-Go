@@ -398,9 +398,18 @@ func TestDynamicRepositoryOutbox(t *testing.T) {
 		if !ok {
 			t.Fatalf("find command filter missing: %v", started.Command)
 		}
-		if filter.Lookup("_id").ObjectID() != credentialID || filter.Lookup("tenantId").ObjectID() != tenantID || filter.Lookup("projectId").ObjectID() != projectID {
-			t.Fatalf("GetExternalAPICredential filter = %v, want _id/tenantId/projectId", filter)
+		if filter.Lookup("_id").ObjectID() != credentialID || filter.Lookup("tenantId").ObjectID() != tenantID {
+			t.Fatalf("GetExternalAPICredential filter = %v, want _id/tenantId", filter)
 		}
+		clauses := filter.Lookup("$or").Array()
+		projectClause := clauses.Index(1).Value().Document()
+		if projectClause.Lookup("projectId").ObjectID() != projectID || projectClause.Lookup("scope").Type != bson.TypeEmbeddedDocument {
+			t.Fatalf("legacy branch is not exact-project scoped: %v", projectClause)
+		}
+		if clauses.Index(0).Value().Document().Lookup("scope").StringValue() != "tenant" {
+			t.Fatal("shared branch must require explicit tenant scope")
+		}
+
 	})
 }
 

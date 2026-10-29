@@ -51,6 +51,12 @@ func containerMetadataContract(path string) ManagementRouteContract {
 }
 
 var approvedManagementRouteContracts = []ManagementRouteContract{
+	contract("GET", "/api/v1/tenant/integrations/external-api-credentials", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsRead),
+	contract("POST", "/api/v1/tenant/integrations/external-api-credentials", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
+	contract("POST", "/api/v1/tenant/integrations/external-api-credentials/:id/revoke", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
+	contract("POST", "/api/v1/tenant/integrations/external-api-credentials/:id/promote", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
+	contract("PUT", "/api/v1/tenant/integrations/external-api-credentials/:id/projects/:projectId", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
+	contract("DELETE", "/api/v1/tenant/integrations/external-api-credentials/:id/projects/:projectId", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
 	contract("GET", "/api/v1/:tenantSlug/:projectSlug/dynamic/testPipeline", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/tenant-auth/refresh", IdentityPublicManagementAuth, ManagementScopeProject, ManagementPermissionNone),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/tenant-auth/logout", IdentityPublicManagementAuth, ManagementScopeProject, ManagementPermissionNone),
@@ -64,6 +70,7 @@ var approvedManagementRouteContracts = []ManagementRouteContract{
 
 	contract("POST", "/api/v1/tenant/projects/", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsCreate),
 	contract("GET", "/api/v1/tenant/projects/", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsRead),
+	contract("GET", "/api/v1/tenant/projects/templates/:id/external-api-requirements", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsRead),
 	contract("GET", "/api/v1/tenant/projects/templates", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsRead),
 	contract("PATCH", "/api/v1/tenant/projects/:id/locales", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectLocalizationManage),
 	contract("GET", "/api/v1/tenant/projects/:id/translations", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectLocalizationRead),
