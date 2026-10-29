@@ -23,10 +23,12 @@ import (
 
 // CreateProjectInput represents the project creation payload
 type CreateProjectInput struct {
-	Name                 string `json:"name" validate:"required,min=2,max=100"`
-	Slug                 string `json:"slug" validate:"required,min=2,max=50"`
-	TemplateProjectID    string `json:"templateProjectId,omitempty"`
-	IncludeTemplateItems *bool  `json:"includeTemplateItems,omitempty"`
+	ExternalAPICredentialIDs      []string          `json:"externalAPICredentialIds,omitempty"`
+	ExternalAPICredentialBindings map[string]string `json:"externalAPICredentialBindings,omitempty"`
+	Name                          string            `json:"name" validate:"required,min=2,max=100"`
+	Slug                          string            `json:"slug" validate:"required,min=2,max=50"`
+	TemplateProjectID             string            `json:"templateProjectId,omitempty"`
+	IncludeTemplateItems          *bool             `json:"includeTemplateItems,omitempty"`
 }
 
 // UpdateProjectInput represents the project update payload
@@ -319,13 +321,19 @@ func insertManyIfAny(ctx context.Context, collection *mongo.Collection, docs []i
 	return err
 }
 
-func cloneProjectContainers(ctx context.Context, source models.Project, target models.Project) ([]models.ContainerModel, error) {
+func cloneProjectContainers(ctx context.Context, source models.Project, target models.Project, prepared ...[]models.ContainerModel) ([]models.ContainerModel, error) {
 	sourceTenantID := source.TenantID.Hex()
 	sourceProjectID := source.ID.Hex()
 	targetTenantID := target.TenantID.Hex()
 	targetProjectID := target.ID.Hex()
 
-	containers, err := readProjectContainers(ctx, sourceTenantID, sourceProjectID)
+	var containers []models.ContainerModel
+	var err error
+	if len(prepared) > 0 {
+		containers = prepared[0]
+	} else {
+		containers, err = readProjectContainers(ctx, sourceTenantID, sourceProjectID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -473,8 +481,8 @@ func ensureDefaultRoleRecord(ctx context.Context, tenantID, projectID string) er
 	return err
 }
 
-func cloneProjectFromTemplate(ctx context.Context, source models.Project, target models.Project, includeItems bool) error {
-	containers, err := cloneProjectContainers(ctx, source, target)
+func cloneProjectFromTemplate(ctx context.Context, source models.Project, target models.Project, includeItems bool, prepared ...[]models.ContainerModel) error {
+	containers, err := cloneProjectContainers(ctx, source, target, prepared...)
 	if err != nil {
 		return err
 	}
@@ -495,31 +503,31 @@ func cloneProjectFromTemplate(ctx context.Context, source models.Project, target
 	return nil
 }
 
-func rollbackProjectCreate(ctx context.Context, tenantID string, projectID primitive.ObjectID, schemas []string) {
-	projectIDHex := projectID.Hex()
-	if _, err := projectMembershipsCollection().DeleteMany(ctx, bson.M{"projectId": projectID}); err != nil {
-		log.Printf("Failed to rollback project memberships for project %s: %v", projectIDHex, err)
+func rollbackProjectCreate(ctx context.Context, tenantID string, projectID primitive.ObjectID) {
+	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil {
+		return
 	}
-	if _, err := projectsCollection().DeleteOne(ctx, bson.M{"_id": projectID}); err != nil {
-		log.Printf("Failed to rollback project %s: %v", projectIDHex, err)
-	}
-	for _, resource := range append([]string{"containers", "pages", "role", "auth"}, schemas...) {
-		if err := configs.GetCollection(utils.GetProjectCollectionName(tenantID, projectIDHex, resource)).Drop(ctx); err != nil {
-			log.Printf("Failed to rollback project collection %s for project %s: %v", resource, projectIDHex, err)
-		}
+	if err = rollbackProjectCreateFromDatabase(ctx, projectsCollection().Database(), tenantOID, projectID); err != nil {
+		log.Printf("Project rollback requires retry for inactive project %s: %v", projectID.Hex(), err)
 	}
 }
-
-func templateProjectSchemas(ctx context.Context, project models.Project) []string {
-	containers, err := readProjectContainers(ctx, project.TenantID.Hex(), project.ID.Hex())
-	if err != nil {
-		return nil
+func rollbackProjectCreateFromDatabase(ctx context.Context, db *mongo.Database, tenantOID, projectID primitive.ObjectID) error {
+	filter := bson.M{"_id": projectID, "tenantId": tenantOID}
+	if _, err := db.Collection("projects").UpdateOne(ctx, filter, bson.M{"$set": bson.M{"isActive": false}}); err != nil {
+		return fmt.Errorf("deactivate rollback project: %w", err)
 	}
-	schemas := make([]string, 0, len(containers))
-	for _, container := range containers {
-		schemas = append(schemas, container.SchemaName)
+	_, cleanupErr := deleteProjectDataFromDatabase(ctx, db, tenantOID, projectID)
+	if cleanupErr != nil {
+		return cleanupErr
 	}
-	return schemas
+	if _, err := db.Collection("project_memberships").DeleteMany(ctx, bson.M{"tenantId": tenantOID, "projectId": projectID}); err != nil {
+		return err
+	}
+	if _, err := db.Collection("projects").DeleteOne(ctx, filter); err != nil {
+		return err
+	}
+	return nil
 }
 
 // CreateProject creates a new project within a tenant
@@ -647,6 +655,26 @@ func CreateProject(c *fiber.Ctx) error {
 		includeTemplateItems = resolveIncludeTemplateItems(foundTemplate, input.IncludeTemplateItems)
 	}
 
+	// Validate every selected connection before any target project is persisted.
+	var preparedContainers []models.ContainerModel
+	if templateProject != nil {
+		preparedContainers, err = readProjectContainers(ctx, templateProject.TenantID.Hex(), templateProject.ID.Hex())
+		if err != nil {
+			return tenantCredentialError(c, err)
+		}
+	}
+	credentialRepo := repositories.NewDynamicRepository()
+	selectedCredentialIDs, err := validateProjectExternalAPICredentials(ctx, credentialRepo, tenantID, input, templateExternalAPIRequirements(preparedContainers))
+	if err != nil {
+		return tenantCredentialError(c, err)
+	}
+	if templateProject != nil {
+		preparedContainers, err = bindTemplateExternalAPICredentials(preparedContainers, input.ExternalAPICredentialBindings)
+		if err != nil {
+			return tenantCredentialError(c, err)
+		}
+	}
+
 	// Create project
 	newProject := models.Project{
 		ID:         primitive.NewObjectID(),
@@ -670,6 +698,20 @@ func CreateProject(c *fiber.Ctx) error {
 		})
 	}
 
+	projectCreated := false
+	defer func() {
+		if !projectCreated {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cleanupCancel()
+			rollbackProjectCreate(cleanupCtx, tenantID, newProject.ID)
+		}
+	}()
+	for _, credentialID := range selectedCredentialIDs {
+		if err = credentialRepo.GrantExternalAPICredential(ctx, tenantID, credentialID, newProject.ID.Hex(), userOID); err != nil {
+			return tenantCredentialError(c, err)
+		}
+	}
+
 	// Create project membership for the creator (project admin)
 	projectMembership := models.ProjectMembership{
 		ID:        primitive.NewObjectID(),
@@ -685,10 +727,6 @@ func CreateProject(c *fiber.Ctx) error {
 
 	_, err = projectMembershipsCollection().InsertOne(ctx, projectMembership)
 	if err != nil {
-		// Rollback: delete the project
-		if _, rollbackErr := projectsCollection().DeleteOne(ctx, bson.M{"_id": newProject.ID}); rollbackErr != nil {
-			log.Printf("Failed to rollback project creation after membership error: %v", rollbackErr)
-		}
 		log.Printf("Failed to create project membership: %v", err)
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 			Status:  http.StatusInternalServerError,
@@ -721,10 +759,9 @@ func CreateProject(c *fiber.Ctx) error {
 	}
 
 	if templateProject != nil {
-		err = cloneProjectFromTemplate(ctx, *templateProject, newProject, includeTemplateItems)
+		err = cloneProjectFromTemplate(ctx, *templateProject, newProject, includeTemplateItems, preparedContainers)
 		if err != nil {
 			log.Printf("Failed to clone project from template: %v", err)
-			rollbackProjectCreate(ctx, tenantID, newProject.ID, templateProjectSchemas(ctx, *templateProject))
 			return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
 				Status:  http.StatusInternalServerError,
 				Message: "Failed to create project from template",
@@ -744,6 +781,7 @@ func CreateProject(c *fiber.Ctx) error {
 		}
 	}
 
+	projectCreated = true
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
 		Message: "Project created successfully",
@@ -1195,6 +1233,11 @@ func DeleteProject(c *fiber.Ctx) error {
 		})
 	}
 
+	// Deactivation serializes with transactional grants, preventing a grant from
+	// being inserted after cleanup has already removed this project's rows.
+	if _, err = projectsCollection().UpdateOne(ctx, bson.M{"_id": projectOID, "tenantId": tenantOID}, bson.M{"$set": bson.M{"isActive": false, "updatedAt": time.Now()}}); err != nil {
+		return c.Status(500).JSON(responses.GeneralResponse{Status: 500, Message: "Failed to deactivate project for deletion"})
+	}
 	// Drop all project collections and project-scoped shared rows first. This is
 	// idempotent, so if it fails the project still exists and deletion can be retried.
 	droppedCollections, err := deleteProjectData(ctx, tenantOID, projectOID)

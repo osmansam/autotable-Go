@@ -12,6 +12,8 @@ import (
 type ManagementPermission string
 
 const (
+	PermissionTenantIntegrationsRead    ManagementPermission = "tenant.integrations.read"
+	PermissionTenantIntegrationsManage  ManagementPermission = "tenant.integrations.manage"
 	PermissionTenantProjectsRead        ManagementPermission = "tenant.projects.read"
 	PermissionTenantProjectsCreate      ManagementPermission = "tenant.projects.create"
 	PermissionTenantProjectsUpdate      ManagementPermission = "tenant.projects.update"
@@ -62,6 +64,8 @@ func NewManagementAuthorizationService(repository ManagementMembershipRepository
 }
 
 var managementPermissionRoles = map[ManagementPermission][]string{
+	PermissionTenantIntegrationsRead:    {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantIntegrationsManage:  {models.TenantRoleOwner, models.TenantRoleAdmin},
 	PermissionTenantProjectsRead:        {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor},
 	PermissionTenantProjectsCreate:      {models.TenantRoleOwner, models.TenantRoleAdmin},
 	PermissionTenantProjectsUpdate:      {models.TenantRoleOwner, models.TenantRoleAdmin},

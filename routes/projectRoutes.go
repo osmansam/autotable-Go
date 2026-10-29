@@ -9,6 +9,7 @@ import (
 // ProjectRoutes sets up all project management routes
 func ProjectRoutes(app *fiber.App) {
 	const base = "/api/v1/tenant/projects"
+	tenantExternalAPICredentialRoutes(app)
 
 	app.Post(base+"/", strictManagementRouteHandlers("POST", base+"/",
 		middlewares.GeneralRateLimit(),
@@ -18,6 +19,8 @@ func ProjectRoutes(app *fiber.App) {
 	)...)
 
 	app.Get(base+"/", strictManagementRouteHandlers("GET", base+"/", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetAllProjects)...)
+
+	app.Get(base+"/templates/:id/external-api-requirements", strictManagementRouteHandlers("GET", base+"/templates/:id/external-api-requirements", middlewares.GeneralRateLimit(), controllers.GetTemplateExternalAPIRequirements)...)
 
 	app.Get(base+"/templates", strictManagementRouteHandlers("GET", base+"/templates", middlewares.GeneralRateLimit(), middlewares.SearchRateLimit(), controllers.GetProjectTemplates)...)
 

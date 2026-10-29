@@ -61,4 +61,4 @@ done
 if [[ "$workflow_mongo_ready" != true ]]; then cat "$workflow_mongo_dir/mongod.log" >&2; exit 1; fi
 "$workflow_mongod_bin" --version | head -1
 export AUTOTABLE_WORKFLOW_MONGO_URI="mongodb://127.0.0.1:$workflow_mongo_port/?replicaSet=workflow-integration"
-go test -tags=integration ./services -run '^TestWorkflowMongo' -count=1 -v "$@"
+go test -tags=integration ./services ./controllers -run '^TestWorkflowMongo' -count=1 -v "$@"

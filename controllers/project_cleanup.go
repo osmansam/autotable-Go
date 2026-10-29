@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -20,6 +21,7 @@ var projectScopedSharedCollections = []string{
 	"project_locale_preferences",
 	"integration_credentials",
 	"external_api_credentials",
+	"external_api_credential_grants",
 	"workflow_cron_schedules",
 	"dynamic_outbox",
 }
@@ -41,18 +43,22 @@ func listProjectCollections(ctx context.Context, db *mongo.Database, tenantID, p
 // project's rows from shared collections. It is idempotent, so a failed
 // deletion can be safely retried.
 func deleteProjectData(ctx context.Context, tenantOID, projectOID primitive.ObjectID) (int, error) {
-	tenantID := tenantOID.Hex()
-	projectID := projectOID.Hex()
 	db := configs.GetCollection("projects").Database()
+	return deleteProjectDataFromDatabase(ctx, db, tenantOID, projectOID)
+}
 
+func deleteProjectDataFromDatabase(ctx context.Context, db *mongo.Database, tenantOID, projectOID primitive.ObjectID) (int, error) {
+	tenantID, projectID := tenantOID.Hex(), projectOID.Hex()
 	names, err := listProjectCollections(ctx, db, tenantID, projectID)
+	var cleanupErrors []error
 	if err != nil {
-		return 0, fmt.Errorf("list project collections: %w", err)
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("list project collections: %w", err))
 	}
 	dropped := 0
 	for _, name := range names {
 		if err := db.Collection(name).Drop(ctx); err != nil {
-			return dropped, fmt.Errorf("drop collection %s: %w", name, err)
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("drop collection %s: %w", name, err))
+			continue
 		}
 		dropped++
 	}
@@ -60,9 +66,13 @@ func deleteProjectData(ctx context.Context, tenantOID, projectOID primitive.Obje
 	// projectId is stored as an ObjectID in some collections and as a hex string in others.
 	filter := bson.M{"projectId": bson.M{"$in": bson.A{projectOID, projectID}}}
 	for _, name := range projectScopedSharedCollections {
-		if _, err := db.Collection(name).DeleteMany(ctx, filter); err != nil {
-			return dropped, fmt.Errorf("delete project rows from %s: %w", name, err)
+		collectionFilter := filter
+		if name == "external_api_credentials" {
+			collectionFilter = bson.M{"projectId": filter["projectId"], "scope": bson.M{"$in": bson.A{nil, "", "project"}}}
+		}
+		if _, err := db.Collection(name).DeleteMany(ctx, collectionFilter); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete project rows from %s: %w", name, err))
 		}
 	}
-	return dropped, nil
+	return dropped, errors.Join(cleanupErrors...)
 }

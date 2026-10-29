@@ -34,12 +34,21 @@ type externalAPICredentialValidation struct {
 	ExpiresAt      time.Time
 }
 
-func CreateExternalAPICredential(c *fiber.Ctx) error {
+func CreateExternalAPICredential(c *fiber.Ctx) error { return createExternalAPICredential(c, false) }
+func CreateTenantExternalAPICredential(c *fiber.Ctx) error {
+	return createExternalAPICredential(c, true)
+}
+func createExternalAPICredential(c *fiber.Ctx, tenantScope bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	tenantID, projectID, err := utils.GetTenantAndProjectContext(c)
-	if err != nil || tenantID == "" || projectID == "" {
+	if tenantScope {
+		tenantID, _ = c.Locals("tenantID").(string)
+		projectID = ""
+		err = nil
+	}
+	if err != nil || tenantID == "" || (!tenantScope && projectID == "") {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Missing tenant or project context",
@@ -83,14 +92,22 @@ func CreateExternalAPICredential(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Invalid tenant ID"})
 	}
-	projectObjID, err := primitive.ObjectIDFromHex(projectID)
+	projectObjID := primitive.NilObjectID
+	if !tenantScope {
+		projectObjID, err = primitive.ObjectIDFromHex(projectID)
+	}
 	if err != nil {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{Status: http.StatusBadRequest, Message: "Invalid project ID"})
 	}
 
+	scope := models.ExternalAPICredentialScopeProject
+	if tenantScope {
+		scope = models.ExternalAPICredentialScopeTenant
+	}
 	now := time.Now()
 	credential := models.ExternalAPICredential{
 		ID:              primitive.NewObjectID(),
+		Scope:           scope,
 		TenantID:        tenantObjID,
 		ProjectID:       projectObjID,
 		Name:            normalized.Name,
@@ -238,6 +255,10 @@ func validateExternalAPICredentialInput(input CreateExternalAPICredentialInput, 
 
 func externalAPICredentialResponse(credential models.ExternalAPICredential) models.ExternalAPICredential {
 	credential.EncryptedSecret = ""
+	credential.Scope = credential.EffectiveScope()
+	if credential.GrantedProjectIDs == nil {
+		credential.GrantedProjectIDs = []primitive.ObjectID{}
+	}
 	return credential
 }
 
