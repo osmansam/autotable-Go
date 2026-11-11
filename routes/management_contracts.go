@@ -107,6 +107,9 @@ var approvedManagementRouteContracts = []ManagementRouteContract{
 	contract("DELETE", "/api/v1/:tenantSlug/:projectSlug/container/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaDelete),
 	contract("PATCH", "/api/v1/:tenantSlug/:projectSlug/container/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectSchemaWrite),
 
+	contract("GET", "/api/v1/:tenantSlug/:projectSlug/admin/visual-components", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
+	contract("POST", "/api/v1/:tenantSlug/:projectSlug/admin/visual-components", IdentityManagement, ManagementScopeProject, services.PermissionProjectPageWrite),
+	contract("PUT", "/api/v1/:tenantSlug/:projectSlug/admin/visual-components/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectPageWrite),
 	contract("POST", "/api/v1/:tenantSlug/:projectSlug/admin/page/", IdentityManagement, ManagementScopeProject, services.PermissionProjectPageWrite),
 	contract("GET", "/api/v1/:tenantSlug/:projectSlug/admin/page/", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
 	contract("GET", "/api/v1/:tenantSlug/:projectSlug/admin/page/:id", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
@@ -166,7 +169,7 @@ func isManagementRoute(path string) bool {
 		strings.HasPrefix(path, "/api/v1/tenant/projects") ||
 		strings.HasPrefix(path, "/api/v1/tenant/branding") ||
 		strings.Contains(path, "/tenant-auth/") || strings.Contains(path, "/container") ||
-		strings.Contains(path, "/dynamic/testPipeline") || strings.Contains(path, "/admin/page") || strings.Contains(path, "/admin/auth/") || strings.Contains(path, "/roles") ||
+		strings.Contains(path, "/dynamic/testPipeline") || strings.Contains(path, "/admin/visual-components") || strings.Contains(path, "/admin/page") || strings.Contains(path, "/admin/auth/") || strings.Contains(path, "/roles") ||
 		strings.Contains(path, "/excel/") || strings.Contains(path, "/integrations/") ||
 		strings.Contains(path, "/admin/audit-logs")
 }

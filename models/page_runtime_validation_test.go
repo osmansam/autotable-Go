@@ -428,3 +428,26 @@ func TestValidatePageRuntimeConfigRejectsDeletionOfReferencedDefinition(t *testi
 	page.Sections[0].Component.Outputs = page.Sections[0].Component.Outputs[1:]
 	requireRuntimeValidationError(t, page, "referenced output")
 }
+
+func TestSelectedRecordOutputAndBinding(t *testing.T) {
+	page := validRuntimePage()
+	page.Sections[0].Component.Outputs = []ComponentOutputDefinition{{ID: "record", Key: "selectedRecord", Type: RuntimeValueType("record"), Source: ComponentOutputSource{Kind: "tableSelectedRecord"}}}
+	page.Sections[1].Component.Type = ComponentTypeCustom
+	page.Sections[1].Component.DataBinding.Parameters = map[string]ParameterBinding{"item": {Source: ParameterBindingSourceComponentOutput, ComponentID: "cmp_orders", OutputID: "record"}}
+	if err := ValidatePageRuntimeConfig(&page); err != nil {
+		t.Fatal(err)
+	}
+	page.Sections[0].Component.Outputs[0].Type = RuntimeValueTypeString
+	requireRuntimeValidationError(t, page, "does not match")
+	page.Sections[0].Component.Outputs[0].Type = RuntimeValueType("record")
+	page.Sections[0].Component.Type = ComponentTypeCustom
+	requireRuntimeValidationError(t, page, "requires table")
+}
+func TestRecordTypeIsOutputOnly(t *testing.T) {
+	page := validRuntimePage()
+	page.Variables[0].Type = RuntimeValueType("record")
+	requireRuntimeValidationError(t, page, "unsupported")
+	page = validRuntimePage()
+	page.Filters = []PageFilterDefinition{{ID: "recordFilter", Key: "recordFilter", Type: RuntimeValueType("record"), Placement: PageFilterPlacement{Kind: PageFilterPlacementNavbar}}}
+	requireRuntimeValidationError(t, page, "unsupported")
+}

@@ -55,6 +55,9 @@ func pageUpdateDocument(page models.PageModel, body []byte) (bson.M, error) {
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err == nil {
+		if _, ok := raw["requests"]; ok {
+			updateSet["requests"] = page.Requests
+		}
 		if _, ok := raw["filters"]; ok {
 			updateSet["filters"] = page.Filters
 		}

@@ -1,0 +1,25 @@
+[     174ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://127.0.0.1:4183/src/pageRequestsQA.tsx:0
+[     180ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4183/favicon.ico:0
+[   31678ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[   34205ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[   84344ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[  151119ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[  164012ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[  346617ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[  527983ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4183/src/pageRequestsQA.tsx?t=1793986278399:0
+[  527985ms] [ERROR] [hmr] Failed to reload /src/pageRequestsQA.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://127.0.0.1:4183/@vite/client:175
+[  528249ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[  528266ms] [LOG] i18next: languageChanged en-US @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528266ms] [LOG] i18next: initialized {debug: true, initImmediate: true, ns: Array(1), defaultNS: Array(1), fallbackLng: Array(1)} @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation Page not found Page not found @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation This page may have moved, or the address may be incorrect. You can return to your workspace and continue from there. This page may have moved, or the address may be incorrect. You can return to your workspace and continue from there. @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation Go to sign in Go to sign in @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation Page not found Page not found @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation This page may have moved, or the address may be incorrect. You can return to your workspace and continue from there. This page may have moved, or the address may be incorrect. You can return to your workspace and continue from there. @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528274ms] [LOG] i18next::translator: missingKey en-US translation Go to sign in Go to sign in @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528278ms] [LOG] i18next::translator: missingKey en-US translation Tenant Panel Tenant Panel @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528279ms] [WARNING] WebSocket connection to 'ws://localhost:3002/ws' failed: WebSocket is closed before the connection is established. @ http://127.0.0.1:4183/src/hooks/useWebSocket.ts:84
+[  528279ms] [LOG] i18next::translator: missingKey en-US translation Tenant Panel Tenant Panel @ http://127.0.0.1:4183/node_modules/.vite/deps/i18next.js?v=958a5a8f:203
+[  528280ms] [LOG] WS disconnected. Reconnecting... @ http://127.0.0.1:4183/src/hooks/useWebSocket.ts:73
+[  528292ms] [ERROR] WebSocket connection to 'ws://localhost:3002/ws' failed: Error during WebSocket handshake: Unexpected response code: 404 @ http://127.0.0.1:4183/src/hooks/useWebSocket.ts:26
+[  528292ms] [LOG] WS disconnected. Reconnecting... @ http://127.0.0.1:4183/src/hooks/useWebSocket.ts:73

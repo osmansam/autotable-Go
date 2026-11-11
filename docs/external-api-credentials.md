@@ -6,7 +6,7 @@ The same provider account/key is used for every connected project. Provider quot
 
 ## Manage keys in Tenant Panel
 
-Tenant owners and tenant admins can open **External APIs** in tenant context, without selecting a project:
+Tenant owners and tenant admins can open **Integrations** in tenant context, without selecting a project. This displays the shared **External APIs** view; `/external-apis` remains a direct-link alias:
 
 1. Create a credential with its name, authentication type, provider token, allowed destination domains and optional expiry.
 2. Connect the projects that should be allowed to use it.

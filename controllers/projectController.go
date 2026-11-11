@@ -489,6 +489,9 @@ func cloneProjectFromTemplate(ctx context.Context, source models.Project, target
 	if err := cloneProjectPages(ctx, source, target); err != nil {
 		return err
 	}
+	if err := repositories.NewVisualComponentRepository().Clone(ctx, source.TenantID.Hex(), source.ID.Hex(), target.TenantID.Hex(), target.ID.Hex()); err != nil {
+		return err
+	}
 	if includeItems {
 		if err := cloneProjectDynamicItems(ctx, source, target, containers); err != nil {
 			return err

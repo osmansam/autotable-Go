@@ -82,3 +82,31 @@ func TestFailedCreateRollbackPreservesInactiveProjectWhenCleanupFails(t *testing
 		}
 	})
 }
+
+func TestProjectCleanupRemovesStandaloneVisualDesigns(t *testing.T) {
+	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
+	mt.Run("library ownership", func(mt *mtest.T) {
+		tenant, project := primitive.NewObjectID(), primitive.NewObjectID()
+		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.DB.Name()+".$cmd.listCollections", mtest.FirstBatch))
+		for range projectScopedSharedCollections {
+			mt.AddMockResponses(mtest.CreateSuccessResponse(bson.E{Key: "n", Value: 1}))
+		}
+		if _, err := deleteProjectDataFromDatabase(context.Background(), mt.DB, tenant, project); err != nil {
+			mt.Fatal(err)
+		}
+		found := false
+		for _, event := range mt.GetAllStartedEvents() {
+			if event.CommandName == "delete" && event.Command.Lookup("delete").StringValue() == "project_visual_components" {
+				found = true
+				deletes, _ := event.Command.Lookup("deletes").Array().Values()
+				filter := deletes[0].Document().Lookup("q").Document()
+				if filter.Lookup("tenantId").StringValue() != tenant.Hex() || filter.Lookup("projectId").StringValue() != project.Hex() {
+					mt.Fatal(filter)
+				}
+			}
+		}
+		if !found {
+			mt.Fatal("standalone visual designs were not cleaned up")
+		}
+	})
+}

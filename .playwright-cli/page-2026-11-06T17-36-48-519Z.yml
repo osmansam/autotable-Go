@@ -1,0 +1,114 @@
+- main [ref=f13e3]:
+  - heading "Page request authoring QA" [level=1] [ref=f13e4]
+  - generic [ref=f13e5]:
+    - generic [ref=f13e6]:
+      - generic [ref=f13e7]:
+        - heading "Page Requests" [level=2] [ref=f13e8]
+        - paragraph [ref=f13e9]: Define data once and connect components below. Matching filters, sorting and pages share one request.
+      - button "Add request" [ref=f13e10] [cursor=pointer]
+    - generic [ref=f13e11]:
+      - navigation "Page requests" [ref=f13e12]:
+        - button "Product list" [ref=f13e13] [cursor=pointer]
+      - group [ref=f13e14]:
+        - generic [ref=f13e15]:
+          - generic [ref=f13e16]:
+            - text: Request name
+            - textbox "Request name" [ref=f13e17]: Product list
+          - button "Delete request" [disabled] [ref=f13e18]
+        - generic [ref=f13e19]:
+          - generic [ref=f13e20]:
+            - text: Data source
+            - combobox "Data source" [ref=f13e21]:
+              - option "Table data" [selected]
+              - option "All schema records"
+              - option "Schema record page"
+              - option "Pipeline result"
+              - option "Workflow data"
+              - option "Dropdown options"
+          - generic [ref=f13e22]:
+            - text: Schema
+            - textbox "Schema" [ref=f13e23]: products
+          - generic [ref=f13e24]:
+            - text: Table source
+            - combobox "Table source" [ref=f13e25]:
+              - option "Schema" [selected]
+              - option "Pipeline"
+              - option "Workflow data"
+        - generic [ref=f13e26]:
+          - group "Filter" [ref=f13e27]:
+            - button "Add filter" [ref=f13e29] [cursor=pointer]
+          - group "Parameter" [ref=f13e30]:
+            - button "Add parameter" [ref=f13e32] [cursor=pointer]
+          - generic [ref=f13e33]:
+            - generic [ref=f13e34]:
+              - text: Page
+              - spinbutton "Defaults page" [ref=f13e35]: "1"
+            - generic [ref=f13e36]:
+              - text: Page size
+              - spinbutton "Defaults limit" [ref=f13e37]: "20"
+            - generic [ref=f13e38]:
+              - text: Sort field
+              - textbox "Defaults sort" [ref=f13e39]:
+                - /placeholder: Inherit
+                - text: name
+            - generic [ref=f13e40]:
+              - text: Sort direction
+              - combobox "Defaults sort direction" [ref=f13e41]:
+                - option "Inherit" [selected]
+                - option "Ascending"
+                - option "Descending"
+            - generic [ref=f13e42]:
+              - text: Search
+              - textbox "Defaults search" [ref=f13e43]:
+                - /placeholder: Inherit
+          - generic [ref=f13e44]:
+            - text: Returned fields
+            - textbox "Defaults returned fields" [ref=f13e45]:
+              - /placeholder: All fields, or comma-separated field names
+        - generic [ref=f13e46]:
+          - text: Result
+          - combobox "Request result" [ref=f13e47]:
+            - option "Records" [selected]
+            - option "Value / summary"
+        - generic [ref=f13e48]:
+          - generic [ref=f13e49]:
+            - text: Result field path
+            - textbox "Result field path" [ref=f13e50]:
+              - /placeholder: Whole response, or items / data.items
+          - generic [ref=f13e51]:
+            - text: Total field path
+            - textbox "Total field path" [ref=f13e52]:
+              - /placeholder: Automatic total
+        - group [ref=f13e53]:
+          - generic "Bind to page filters or component outputs" [ref=f13e54] [cursor=pointer]
+        - paragraph [ref=f13e55]: 2 connected inputs.
+    - generic [ref=f13e56]:
+      - heading "Component connections" [level=2] [ref=f13e57]
+      - generic [ref=f13e58]:
+        - heading "Products table" [level=3] [ref=f13e59]
+        - group [ref=f13e61]:
+          - generic [ref=f13e62]:
+            - text: Data
+            - combobox "Products table · Data request" [ref=f13e63]:
+              - option "Use component source"
+              - option "Product list" [selected]
+          - group [ref=f13e64]:
+            - generic "Local overrides" [ref=f13e65] [cursor=pointer]
+            - option "Inherit" [selected]
+            - option "Ascending"
+            - option "Descending"
+      - generic [ref=f13e66]:
+        - heading "Product cards" [level=3] [ref=f13e67]
+        - group [ref=f13e69]:
+          - generic [ref=f13e70]:
+            - text: Collection products
+            - combobox "Product cards · Collection products request" [ref=f13e71]:
+              - option "Use component source"
+              - option "Product list" [selected]
+          - group [ref=f13e72]:
+            - generic "Local overrides" [ref=f13e73] [cursor=pointer]
+            - option "Inherit" [selected]
+            - option "Ascending"
+            - option "Descending"
+  - button "Save fixture" [ref=f13e74] [cursor=pointer]
+  - paragraph

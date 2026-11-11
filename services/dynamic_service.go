@@ -1124,10 +1124,15 @@ func (s *DynamicService) GetAllDynamicItems(ctx context.Context, input GetAllDyn
 func validateSelectionFields(container *models.ContainerModel, fieldNames []string, userRole string) error {
 	requestedFields := map[string]struct{}{}
 	for _, fieldName := range fieldNames {
-		if fieldName == "" || fieldName == "_id" {
+		trimmed := strings.TrimSpace(fieldName)
+		if trimmed == "" || trimmed == "_id" {
 			continue
 		}
-		requestedFields[fieldName] = struct{}{}
+		root := strings.SplitN(trimmed, ".", 2)[0]
+		if root == "" || root == "_id" {
+			continue
+		}
+		requestedFields[root] = struct{}{}
 	}
 
 	for _, field := range container.Fields {

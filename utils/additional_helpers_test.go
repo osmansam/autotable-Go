@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
@@ -76,6 +78,7 @@ func TestBuildFilterFromQuery(t *testing.T) {
 		{Name: "age", Type: "int"},
 		{Name: "radius_km", Type: "float"},
 		{Name: "email", Type: "string"},
+		{Name: "created", Type: "date"},
 		{Name: "password", Type: "string", IsHashed: true},
 	}}
 	tests := []struct {
@@ -86,10 +89,25 @@ func TestBuildFilterFromQuery(t *testing.T) {
 	}{
 		{name: "single value", path: "/?age=42&email=a%40example.com&password=hidden", want: bson.M{"age": 42, "email": "a@example.com"}},
 		{name: "multiple simple values", path: "/?age=1&age=2", want: bson.M{"age": bson.M{"$in": []interface{}{1, 2}}}},
+		{name: "explicit date equality", path: "/?created=eq-2026-11-01", want: bson.M{"created": time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}},
+		{name: "paired date bounds", path: "/?created=gte-2026-11-01&created=lt-2026-11-02", want: bson.M{"created": bson.M{"$gte": time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), "$lt": time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)}}},
+		{name: "additional weaker strict bound preserves AND", path: "/?age=gte-10&age=gt-9&age=lte-10", want: bson.M{"age": bson.M{"$gte": 10, "$gt": 9, "$lte": 10}}},
 		{name: "range", path: "/?age=gte-10&age=lt-20", want: bson.M{"age": bson.M{"$gte": 10, "$lt": 20}}},
 		{name: "float range", path: "/?radius_km=gte-3.5&radius_km=lte-10", want: bson.M{"radius_km": bson.M{"$gte": 3.5, "$lte": float64(10)}}},
+		{name: "strict narrow float range stays AND", path: "/?radius_km=gt-1&radius_km=lt-1.00001", want: bson.M{"radius_km": bson.M{"$gt": float64(1), "$lt": 1.00001}}},
+		{name: "negative strict float", path: "/?radius_km=gt--0.5", want: bson.M{"radius_km": bson.M{"$gt": -0.5}}},
 		{name: "wraparound range becomes or", path: "/?age=gte-20&age=lte-10", want: bson.M{"$or": []bson.M{{"age": bson.M{"$lte": 10}}, {"age": bson.M{"$gte": 20}}}}},
 		{name: "invalid int", path: "/?age=bad", wantErr: true},
+	}
+	if strconv.IntSize == 64 {
+		lower, _ := strconv.Atoi("9007199254740992")
+		upper, _ := strconv.Atoi("9007199254740993")
+		tests = append(tests, struct {
+			name    string
+			path    string
+			want    bson.M
+			wantErr bool
+		}{name: "distinct large integer bounds remain AND", path: "/?age=gt-9007199254740992&age=lte-9007199254740993", want: bson.M{"age": bson.M{"$gt": lower, "$lte": upper}}})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,25 +130,64 @@ func TestBuildFilterFromQuery(t *testing.T) {
 }
 
 func TestBuildSelectionFilterFromQuery(t *testing.T) {
-	app := fiber.New()
-	c := app.AcquireCtx(&fasthttp.RequestCtx{})
-	defer app.ReleaseCtx(c)
-
-	c.Request().URI().SetQueryString("schemaName=products&fieldName=name&filter.active=true&filter.category=featured")
+	oid1, _ := primitive.ObjectIDFromHex("507f1f77bcf86cd799439011")
+	oid2, _ := primitive.ObjectIDFromHex("507f1f77bcf86cd799439012")
 	container := &models.ContainerModel{Fields: []models.Field{
 		{Name: "schemaName", Type: "string"},
 		{Name: "active", Type: "boolean"},
 		{Name: "category", Type: "string"},
+		{Name: "location", Type: "objectId"},
+		{Name: "count", Type: "int"},
+		{Name: "secret", Type: "string", IsHashed: true},
 	}}
 
-	got, err := BuildSelectionFilterFromQuery(c, container)
-	if err != nil {
-		t.Fatalf("BuildSelectionFilterFromQuery() error = %v", err)
+	tests := []struct {
+		name    string
+		query   string
+		want    bson.M
+		wantErr bool
+	}{
+		{
+			name:  "one-element equality and hashed-field omission",
+			query: "schemaName=products&fieldName=name&filter.active=true&filter.category=featured&filter.location=507f1f77bcf86cd799439011&filter.secret=hidden",
+			want:  bson.M{"active": true, "category": "featured", "location": oid1},
+		},
+		{
+			name:  "repeated ObjectID number and string selection filters",
+			query: "filter.location=507f1f77bcf86cd799439011&filter.location=507f1f77bcf86cd799439012&filter.count=10&filter.count=20&filter.category=A%201&filter.category=B",
+			want: bson.M{
+				"location": bson.M{"$in": []interface{}{oid1, oid2}},
+				"count":    bson.M{"$in": []interface{}{10, 20}},
+				"category": bson.M{"$in": []interface{}{"A 1", "B"}},
+			},
+		},
+		{
+			name:    "malformed ObjectID in repeated selection filter",
+			query:   "filter.location=507f1f77bcf86cd799439011&filter.location=not-an-oid",
+			wantErr: true,
+		},
+		{
+			name:    "malformed integer in selection filter",
+			query:   "filter.count=bad",
+			wantErr: true,
+		},
 	}
 
-	want := bson.M{"active": true, "category": "featured"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("BuildSelectionFilterFromQuery() = %#v, want %#v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := fiber.New()
+			c := app.AcquireCtx(&fasthttp.RequestCtx{})
+			defer app.ReleaseCtx(c)
+
+			c.Request().URI().SetQueryString(tt.query)
+			got, err := BuildSelectionFilterFromQuery(c, container)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("BuildSelectionFilterFromQuery() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("BuildSelectionFilterFromQuery() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
 

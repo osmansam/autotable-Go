@@ -104,7 +104,7 @@ func ValidatePageRuntimeConfig(page *PageModel) error {
 			if outputKeys[output.Key] {
 				return fmt.Errorf("component %q has duplicate output key %q", component.ID, output.Key)
 			}
-			if err := validateRuntimeValueType(output.Type); err != nil {
+			if err := validateRuntimeValueType(output.Type); err != nil && output.Type != RuntimeValueTypeRecord {
 				return fmt.Errorf("component %q output %q: %w", component.ID, output.ID, err)
 			}
 			outputIDs[output.ID] = output
@@ -136,7 +136,7 @@ func ValidatePageRuntimeConfig(page *PageModel) error {
 		}
 	}
 
-	return nil
+	return validatePageRequests(page, graph)
 }
 
 func NormalizePageRuntimeConfig(page *PageModel) {
@@ -173,12 +173,12 @@ func normalizePageFilter(filter *PageFilterDefinition, cellIDs map[string]struct
 
 func hasPageRuntimeConfig(page *PageModel) bool {
 	for currentPage := page; currentPage != nil; currentPage = currentPage.SubPage {
-		if len(currentPage.Variables) > 0 || len(currentPage.Filters) > 0 {
+		if len(currentPage.Requests) > 0 || len(currentPage.Variables) > 0 || len(currentPage.Filters) > 0 {
 			return true
 		}
 	}
 	for _, component := range collectPageComponents(page) {
-		if len(component.Outputs) > 0 ||
+		if len(component.RequestBindings) > 0 || len(component.Outputs) > 0 ||
 			(component.DataBinding != nil && len(component.DataBinding.Parameters) > 0) {
 			return true
 		}
@@ -404,6 +404,11 @@ func validateComponentOutputs(component *ComponentBlock, filters map[string]Acti
 				return fmt.Errorf("component %q output %q: referenced filter %q does not exist", component.ID, output.ID, output.Source.FilterID)
 			}
 			expectedType = runtimeTypeForFilter(filter)
+		case ComponentOutputSourceTableSelectedRecord:
+			if component.Type != ComponentTypeTable {
+				return fmt.Errorf("component %q output %q: tableSelectedRecord source requires table component", component.ID, output.ID)
+			}
+			expectedType = RuntimeValueTypeRecord
 		case ComponentOutputSourceTableSelectedIDs:
 			if component.Type != ComponentTypeTable {
 				return fmt.Errorf("component %q output %q: tableSelectedIds source requires table component", component.ID, output.ID)
@@ -415,6 +420,9 @@ func validateComponentOutputs(component *ComponentBlock, filters map[string]Acti
 			}
 			expectedType = RuntimeValueTypeString
 		case ComponentOutputSourceInfoBlockSelection:
+			if output.Type == RuntimeValueTypeRecord {
+				return fmt.Errorf("record output requires tableSelectedRecord source")
+			}
 			if component.Type != ComponentTypeInfoBlocks {
 				return fmt.Errorf("component %q output %q: infoBlockSelection source requires infoBlocks component", component.ID, output.ID)
 			}

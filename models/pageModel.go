@@ -24,6 +24,7 @@ const (
 	RuntimeValueTypeDateRange   RuntimeValueType = "dateRange"
 	RuntimeValueTypeStringArray RuntimeValueType = "stringArray"
 	RuntimeValueTypeNumberArray RuntimeValueType = "numberArray"
+	RuntimeValueTypeRecord      RuntimeValueType = "record"
 )
 
 type PageVariableDefinition struct {
@@ -86,10 +87,11 @@ type ComponentOutputSource struct {
 }
 
 const (
-	ComponentOutputSourceTableFilter        = "tableFilter"
-	ComponentOutputSourceTableSelectedIDs   = "tableSelectedIds"
-	ComponentOutputSourceTableSearch        = "tableSearch"
-	ComponentOutputSourceInfoBlockSelection = "infoBlockSelection"
+	ComponentOutputSourceTableFilter         = "tableFilter"
+	ComponentOutputSourceTableSelectedIDs    = "tableSelectedIds"
+	ComponentOutputSourceTableSelectedRecord = "tableSelectedRecord"
+	ComponentOutputSourceTableSearch         = "tableSearch"
+	ComponentOutputSourceInfoBlockSelection  = "infoBlockSelection"
 )
 
 type ComponentOutputDefinition struct {
@@ -588,21 +590,22 @@ type TabPanelTab struct {
 
 // ComponentBlock represents a single component with its data binding and configuration
 type ComponentBlock struct {
-	ID             string                      `bson:"id" json:"id"`
-	StateKey       string                      `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
-	Type           ComponentType               `bson:"type" json:"type"`
-	Title          string                      `bson:"title,omitempty" json:"title,omitempty"`
-	Order          int                         `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
-	DataBinding    *DataBinding                `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
-	Outputs        []ComponentOutputDefinition `bson:"outputs,omitempty" json:"outputs,omitempty"`
-	GroupBy        *GroupBy                    `bson:"groupBy,omitempty" json:"groupBy,omitempty"`               // Grouping configuration for table components
-	Table          *TableComponentConfig       `bson:"table,omitempty" json:"table,omitempty"`                   // Table-specific display, row, link, and cache config
-	RelationMatrix *RelationMatrixConfig       `bson:"relationMatrix,omitempty" json:"relationMatrix,omitempty"` // Inverse array-membership matrix config
-	Form           *FormComponentConfig        `bson:"form,omitempty" json:"form,omitempty"`                     // Form-specific field layout, actions, and embedded object lists
-	IsAuthorized   bool                        `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`     // Component-level auth (optional)
-	AuthorizeRole  []string                    `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`   // Component-level roles
-	Props          map[string]interface{}      `bson:"props,omitempty" json:"props,omitempty"`                   // Free-form config (columns, chart type, etc.)
-	Tabs           []TabPanelTab               `bson:"tabs,omitempty" json:"tabs,omitempty"`                     // For tabPanel type components
+	RequestBindings map[string]PageRequestConnection `bson:"requestBindings,omitempty" json:"requestBindings,omitempty"`
+	ID              string                           `bson:"id" json:"id"`
+	StateKey        string                           `bson:"stateKey,omitempty" json:"stateKey,omitempty"`
+	Type            ComponentType                    `bson:"type" json:"type"`
+	Title           string                           `bson:"title,omitempty" json:"title,omitempty"`
+	Order           int                              `bson:"order,omitempty" json:"order,omitempty"` // order inside grid cell or section
+	DataBinding     *DataBinding                     `bson:"dataBinding,omitempty" json:"dataBinding,omitempty"`
+	Outputs         []ComponentOutputDefinition      `bson:"outputs,omitempty" json:"outputs,omitempty"`
+	GroupBy         *GroupBy                         `bson:"groupBy,omitempty" json:"groupBy,omitempty"`               // Grouping configuration for table components
+	Table           *TableComponentConfig            `bson:"table,omitempty" json:"table,omitempty"`                   // Table-specific display, row, link, and cache config
+	RelationMatrix  *RelationMatrixConfig            `bson:"relationMatrix,omitempty" json:"relationMatrix,omitempty"` // Inverse array-membership matrix config
+	Form            *FormComponentConfig             `bson:"form,omitempty" json:"form,omitempty"`                     // Form-specific field layout, actions, and embedded object lists
+	IsAuthorized    bool                             `bson:"isAuthorized,omitempty" json:"isAuthorized,omitempty"`     // Component-level auth (optional)
+	AuthorizeRole   []string                         `bson:"authorizeRole,omitempty" json:"authorizeRole,omitempty"`   // Component-level roles
+	Props           map[string]interface{}           `bson:"props,omitempty" json:"props,omitempty"`                   // Free-form config (columns, chart type, etc.)
+	Tabs            []TabPanelTab                    `bson:"tabs,omitempty" json:"tabs,omitempty"`                     // For tabPanel type components
 }
 
 // GridCell represents a cell in a grid layout
@@ -707,6 +710,7 @@ type PageNavigatorConfig struct {
 
 // PageModel represents a page with hierarchical structure, auth, and layout
 type PageModel struct {
+	Requests        []PageRequestDefinition  `bson:"requests,omitempty" json:"requests,omitempty"`
 	ID              primitive.ObjectID       `bson:"_id,omitempty" json:"id,omitempty"`
 	Name            string                   `bson:"name" json:"name" validate:"required"`
 	Icon            string                   `bson:"icon,omitempty" json:"icon,omitempty"`
