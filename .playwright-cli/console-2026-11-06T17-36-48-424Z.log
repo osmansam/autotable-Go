@@ -1,0 +1,5 @@
+[      67ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[   43506ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[   43639ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550
+[ 3488961ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:4183/@vite/client:559
+[ 3489050ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4183/node_modules/.vite/deps/chunk-VIH5R34Q.js?v=958a5a8f:21550

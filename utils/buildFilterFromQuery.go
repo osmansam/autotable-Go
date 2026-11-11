@@ -106,25 +106,22 @@ func BuildFilterFromQuery(c *fiber.Ctx, container *models.ContainerModel) (bson.
 			if f.Type == "int" || f.Type == "float" || f.Type == "decimal" {
 				// Compare numeric values to detect contradictions
 				if (hasGte || hasGt) && (hasLte || hasLt) {
-					var minVal, maxVal float64
-
-					// Get minimum value
+					lower, upper := gtVal, ltVal
 					if hasGte {
-						minVal = toFloat64(gteVal)
-					} else if hasGt {
-						minVal = toFloat64(gtVal) + 0.0001 // gt is exclusive
+						lower = gteVal
 					}
-
-					// Get maximum value
 					if hasLte {
-						maxVal = toFloat64(lteVal)
-					} else if hasLt {
-						maxVal = toFloat64(ltVal) - 0.0001 // lt is exclusive
+						upper = lteVal
 					}
-
-					// If min > max, conditions are contradictory (no overlap)
-					if minVal > maxVal {
-						needsOr = true
+					exclusive := (!hasGte && hasGt) || (!hasLte && hasLt)
+					if f.Type == "int" {
+						// Atoi returns native ints; retain precision beyond float64's exact range.
+						minVal, maxVal := lower.(int), upper.(int)
+						needsOr = minVal > maxVal || (minVal == maxVal && exclusive)
+					} else {
+						// Compare exact bounds: an epsilon misclassifies narrow decimal ranges.
+						minVal, maxVal := toFloat64(lower), toFloat64(upper)
+						needsOr = minVal > maxVal || (minVal == maxVal && exclusive)
 					}
 				}
 			}
@@ -174,23 +171,65 @@ func BuildFilterFromQuery(c *fiber.Ctx, container *models.ContainerModel) (bson.
 
 func BuildSelectionFilterFromQuery(c *fiber.Ctx, container *models.ContainerModel) (bson.M, error) {
 	filter := bson.M{}
+	queryString := string(c.Request().URI().QueryString())
 
+	fields := make([]models.Field, 0, len(container.Fields)+1)
+	hasID := false
 	for _, f := range container.Fields {
+		if f.Name == "_id" {
+			hasID = true
+		}
+		fields = append(fields, f)
+	}
+	if !hasID {
+		fields = append(fields, models.Field{Name: "_id", Type: "objectId"})
+	}
+
+	for _, f := range fields {
 		if f.IsHashed {
 			continue
 		}
 
 		queryKey := "filter." + f.Name
-		rawValue := c.Query(queryKey)
-		if rawValue == "" {
+		allValues := []string{}
+		for _, param := range splitQuery(queryString) {
+			if len(param) > len(queryKey) && param[:len(queryKey)] == queryKey && param[len(queryKey)] == '=' {
+				value := param[len(queryKey)+1:]
+				if decodedValue, err := url.QueryUnescape(value); err == nil {
+					value = decodedValue
+				}
+				if value != "" {
+					allValues = append(allValues, value)
+				}
+			}
+		}
+		if len(allValues) == 0 {
+			if rawValue := c.Query(queryKey); rawValue != "" {
+				allValues = []string{rawValue}
+			}
+		}
+		if len(allValues) == 0 {
 			continue
 		}
 
-		converted, err := ConvertQueryValueToFieldType(f.Name, f.Type, rawValue)
-		if err != nil {
-			return nil, err
+		if len(allValues) == 1 {
+			converted, err := ConvertQueryValueToFieldType(f.Name, f.Type, allValues[0])
+			if err != nil {
+				return nil, err
+			}
+			filter[f.Name] = converted
+			continue
 		}
-		filter[f.Name] = converted
+
+		values := make([]interface{}, 0, len(allValues))
+		for _, rawValue := range allValues {
+			converted, err := ConvertQueryValueToFieldType(f.Name, f.Type, rawValue)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, converted)
+		}
+		filter[f.Name] = bson.M{"$in": values}
 	}
 
 	return filter, nil

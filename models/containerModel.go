@@ -41,6 +41,20 @@ type SelectOptionDisplayConfig struct {
 	RightTemplate string `bson:"rightTemplate,omitempty" json:"rightTemplate,omitempty"`
 }
 
+type SelectFilterValue struct {
+	Source   string      `bson:"source" json:"source"`
+	Value    interface{} `bson:"value,omitempty" json:"value,omitempty"`
+	FieldKey string      `bson:"fieldKey,omitempty" json:"fieldKey,omitempty"`
+	Path     []string    `bson:"path,omitempty" json:"path,omitempty"`
+}
+
+type SelectFilterBinding struct {
+	ID       string            `bson:"id" json:"id"`
+	Field    string            `bson:"field" json:"field"`
+	Operator string            `bson:"operator" json:"operator"`
+	Value    SelectFilterValue `bson:"value" json:"value"`
+}
+
 type ActionFormFieldConfig struct {
 	ID                    string                     `bson:"id,omitempty" json:"id,omitempty"`
 	FormKey               string                     `bson:"formKey" json:"formKey"`
@@ -63,6 +77,7 @@ type ActionFormFieldConfig struct {
 	SourceDataFields      []string                   `bson:"sourceDataFields,omitempty" json:"sourceDataFields,omitempty"`
 	OptionDisplay         *SelectOptionDisplayConfig `bson:"optionDisplay,omitempty" json:"optionDisplay,omitempty"`
 	SourceRequestFilters  map[string]interface{}     `bson:"sourceRequestFilters,omitempty" json:"sourceRequestFilters,omitempty"`
+	SourceFilterBindings  []SelectFilterBinding      `bson:"sourceFilterBindings,omitempty" json:"sourceFilterBindings,omitempty"`
 	SourceFilterCondition string                     `bson:"sourceFilterCondition,omitempty" json:"sourceFilterCondition,omitempty"`
 	InvalidateKeys        []string                   `bson:"invalidateKeys,omitempty" json:"invalidateKeys,omitempty"`
 	DefaultValue          interface{}                `bson:"defaultValue,omitempty" json:"defaultValue,omitempty"`

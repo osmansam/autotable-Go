@@ -1,12 +1,27 @@
 package controllers
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson"
 )
+
+func TestPageUpdateDocumentIncludesEmptyRequests(t *testing.T) {
+	var page models.PageModel
+	if err := json.Unmarshal([]byte(`{"name":"P","requests":[]}`), &page); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := pageUpdateDocument(page, []byte(`{"name":"P","requests":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc["$set"].(bson.M)["requests"]; !ok {
+		t.Fatal("empty requests omitted; old definitions would remain")
+	}
+}
 
 func TestPageUpdateDocumentIncludesEmptyFiltersWhenRequestContainsFilters(t *testing.T) {
 	doc, err := pageUpdateDocument(models.PageModel{

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/osmansam/autotableGo/configs"
@@ -352,6 +353,13 @@ func (r *DynamicRepository) FindForSelection(ctx context.Context, tenantID, proj
 	for _, extraField := range extraFields {
 		if extraField == "" || extraField == "_id" {
 			continue
+		}
+		if strings.HasSuffix(extraField, "._id") {
+			root := strings.TrimSuffix(extraField, "._id")
+			if root != "" && root != "_id" {
+				projection[root] = 1
+				continue
+			}
 		}
 		projection[extraField] = 1
 	}

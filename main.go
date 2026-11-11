@@ -96,6 +96,10 @@ func main() {
 		cancelIndexes()
 		log.Fatalf("Auth session indexes could not be initialized: %v", err)
 	}
+	if err := repositories.NewVisualComponentRepository().EnsureIndexes(indexCtx); err != nil {
+		cancelIndexes()
+		log.Fatalf("Visual component indexes could not be initialized: %v", err)
+	}
 	if err := repositories.NewLocalizationRepository().EnsureIndexes(indexCtx); err != nil {
 		cancelIndexes()
 		log.Fatalf("Localization indexes could not be initialized: %v", err)
@@ -168,6 +172,7 @@ func main() {
 	routes.LocalizationRoutes(app)
 	routes.AuthRoutes("api/v1/:tenantSlug/:projectSlug/auth", app) // Dynamic auth (project-scoped end-users)
 	routes.PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
+	routes.VisualComponentRoutes(app)
 	routes.AuditRoutes("api/v1/:tenantSlug/:projectSlug/audit-logs", app)
 	routes.SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app) // Schema info routes with role-based auth
 	routes.SetupExcelRoutes(app, "api/v1")                          // Excel upload routes

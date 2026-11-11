@@ -1,0 +1,514 @@
+[    1780ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:21550
+[    1880ms] [WARNING] react-i18next:: You will need to pass in an i18next instance by using initReactI18next @ http://127.0.0.1:4182/node_modules/.vite/deps/react-i18next.js?v=d5afc4e7:106
+[    1880ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:335
+[    1897ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[    1898ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[    1899ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[    1919ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:4182/favicon.ico:0
+[    1920ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:335
+[    1923ms] [ERROR] Warning: validateDOMNesting(...): %s cannot appear as a child of <%s>.%s%s%s <th> div   
+    at th
+    at div
+    at div
+    at th
+    at tr
+    at thead
+    at table
+    at div
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[    1928ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx:335
+[   25884ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985434655:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   25885ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985434655:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   25886ms] [ERROR] The above error occurred in the <GenericPaginatedPage> component:
+
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985434655:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14031
+[   25887ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985434655:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19753:22)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+    at renderRootSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19116:15)
+    at recoverFromConcurrentError (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18736:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18879:28)
+[   35574ms] [ERROR] Warning: You are calling ReactDOMClient.createRoot() on a container that has already been passed to createRoot() before. Instead, call root.render() on the existing root instead if you want to update it. @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[   35589ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   35592ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   35592ms] [ERROR] The above error occurred in the <GenericPaginatedPage> component:
+
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14031
+[   35593ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19753:22)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+    at renderRootSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19116:15)
+    at recoverFromConcurrentError (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18736:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18879:28)
+[   44308ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:21550
+[   44383ms] [WARNING] react-i18next:: You will need to pass in an i18next instance by using initReactI18next @ http://127.0.0.1:4182/node_modules/.vite/deps/react-i18next.js?v=d5afc4e7:106
+[   44383ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   44385ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at HTMLUnknownElement.callCallback2 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3674:22)
+    at Object.invokeGuardedCallbackDev (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3699:24)
+    at invokeGuardedCallback (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:3733:39)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19765:15)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+[   44386ms] [ERROR] The above error occurred in the <GenericPaginatedPage> component:
+
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14031
+[   44386ms] ReferenceError: useRef is not defined
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985443744:322:31)
+    at renderWithHooks (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:11548:26)
+    at mountIndeterminateComponent (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:14926:21)
+    at beginWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:15914:22)
+    at beginWork$1 (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19753:22)
+    at performUnitOfWork (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19198:20)
+    at workLoopSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19137:13)
+    at renderRootSync (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:19116:15)
+    at recoverFromConcurrentError (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18736:28)
+    at performSyncWorkOnRoot (http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:18879:28)
+[   79983ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[   79988ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[   79988ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[   79989ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[   79997ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[   79999ms] [ERROR] Warning: validateDOMNesting(...): %s cannot appear as a child of <%s>.%s%s%s <th> div   
+    at th
+    at div
+    at div
+    at th
+    at tr
+    at thead
+    at table
+    at div
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985443744:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985443744:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[   80005ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[  100504ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:21550
+[  100537ms] [WARNING] react-i18next:: You will need to pass in an i18next instance by using initReactI18next @ http://127.0.0.1:4182/node_modules/.vite/deps/react-i18next.js?v=d5afc4e7:106
+[  100537ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[  100542ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985488740:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[  100542ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985488740:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[  100542ms] [ERROR] Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?%s%s 
+
+Check the render method of `MaterialTailwind.Tooltip`. 
+    at IconButton (http://127.0.0.1:4182/src/components/panelComponents/Tables/IconButton.tsx:18:3)
+    at http://127.0.0.1:4182/node_modules/.vite/deps/@material-tailwind_react.js?v=d5afc4e7:24988:25
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985488740:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[  100551ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[  100553ms] [ERROR] Warning: validateDOMNesting(...): %s cannot appear as a child of <%s>.%s%s%s <th> div   
+    at th
+    at div
+    at div
+    at th
+    at tr
+    at thead
+    at table
+    at div
+    at div
+    at div
+    at div
+    at div
+    at div
+    at GenericTable (http://127.0.0.1:4182/src/components/panelComponents/Tables/GenericTable.tsx?t=1793985488740:57:3)
+    at div
+    at GenericPaginatedPage (http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:304:3)
+    at http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:122:5
+    at ReadyComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:225:3)
+    at ComponentRequestBoundary (http://127.0.0.1:4182/src/pageRuntime/ComponentRequestBoundary.tsx:244:3)
+    at _c12 (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:612:50)
+    at PageRequestConsumerProvider (http://127.0.0.1:4182/src/pageRuntime/requests/ConsumerProvider.tsx:89:47)
+    at RenderComponent (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:655:107)
+    at PageSectionView (http://127.0.0.1:4182/src/components/DynamicPageSections.tsx?t=1793985488740:786:35)
+    at PageRuntimeProvider (http://127.0.0.1:4182/src/pageRuntime/PageRuntimeProvider.tsx:34:39)
+    at App (http://127.0.0.1:4182/src/pageRequestsQA.tsx?t=1793985488740:54:27)
+    at GeneralContextProvider (http://127.0.0.1:4182/src/context/General.context.tsx:79:42)
+    at UserContextProvider (http://127.0.0.1:4182/src/context/User.context.tsx:26:39)
+    at Router (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7091:13)
+    at MemoryRouter (http://127.0.0.1:4182/node_modules/.vite/deps/react-router-dom.js?v=d5afc4e7:7007:3)
+    at QueryClientProvider (http://127.0.0.1:4182/node_modules/.vite/deps/@tanstack_react-query.js?v=d5afc4e7:3168:3) @ http://127.0.0.1:4182/node_modules/.vite/deps/chunk-WYASGW57.js?v=d5afc4e7:520
+[  100557ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[  126055ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336
+[  130547ms] [LOG] {dataFields: Array(3), columns: Array(2), bulkActions: undefined} @ http://127.0.0.1:4182/src/components/panelComponents/FormElements/GenericPaginatedPage.tsx?t=1793985488740:336

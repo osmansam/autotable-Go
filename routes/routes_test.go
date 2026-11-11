@@ -18,6 +18,7 @@ func TestRouteRegistration(t *testing.T) {
 	DynamicRoutes("/dynamic", app)
 	SetupExcelRoutes(app, "api/v1")
 	PageRoutes("api/v1/:tenantSlug/:projectSlug/page", app)
+	VisualComponentRoutes(app)
 	ProjectRoutes(app)
 	SchemaInfoRoutes("api/v1/:tenantSlug/:projectSlug", app)
 	SwaggerRoutes(app, false)

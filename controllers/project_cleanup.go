@@ -16,6 +16,7 @@ import (
 // with a projectId. Rows belonging to a deleted project are removed from them.
 // Audit logs are intentionally excluded so the audit trail survives deletion.
 var projectScopedSharedCollections = []string{
+	"project_visual_components",
 	"project_translations",
 	"translation_jobs",
 	"project_locale_preferences",
@@ -67,6 +68,9 @@ func deleteProjectDataFromDatabase(ctx context.Context, db *mongo.Database, tena
 	filter := bson.M{"projectId": bson.M{"$in": bson.A{projectOID, projectID}}}
 	for _, name := range projectScopedSharedCollections {
 		collectionFilter := filter
+		if name == "project_visual_components" {
+			collectionFilter = bson.M{"tenantId": tenantID, "projectId": projectID}
+		}
 		if name == "external_api_credentials" {
 			collectionFilter = bson.M{"projectId": filter["projectId"], "scope": bson.M{"$in": bson.A{nil, "", "project"}}}
 		}
