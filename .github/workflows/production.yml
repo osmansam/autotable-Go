@@ -48,6 +48,9 @@ jobs:
           DEPLOY_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           DEPLOY_TENANT_JWT_SECRET: ${{ secrets.TENANT_JWT_SECRET }}
           DEPLOY_EXTERNAL_API_CREDENTIAL_KEY: ${{ secrets.EXTERNAL_API_CREDENTIAL_KEY }}
+          DEPLOY_OZMISHOW_SERVICE_SECRET: ${{ secrets.OZMISHOW_RATE_LIMIT_SERVICE_SECRET }}
+          DEPLOY_OZMISHOW_PREVIOUS_SECRET: ${{ secrets.OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET }}
+          DEPLOY_OZMISHOW_REDIS_PASSWORD: ${{ secrets.OZMISHOW_RATE_LIMIT_REDIS_PASSWORD }}
         run: |
           umask 077
           test -n "$DEPLOY_JWT_SECRET"
@@ -56,6 +59,20 @@ jobs:
           if [ -z "$DEPLOY_EXTERNAL_API_CREDENTIAL_KEY" ]; then
             echo 'Missing EXTERNAL_API_CREDENTIAL_KEY repository secret for external API credential encryption.' >&2
             exit 1
+          fi
+          DEPLOY_COMPOSE_FILE=docker-compose.yml
+          for deployed_secret in "$DEPLOY_OZMISHOW_SERVICE_SECRET" "$DEPLOY_OZMISHOW_PREVIOUS_SECRET" "$DEPLOY_OZMISHOW_REDIS_PASSWORD"; do
+            if [[ -n "$deployed_secret" && ( ${#deployed_secret} -lt 32 || ${#deployed_secret} -gt 512 || ! "$deployed_secret" =~ ^[a-zA-Z0-9_+/=-]+$ ) ]]; then
+              echo 'Ozmishow credentials must be 32-512 environment-file-safe characters; generated hex is recommended.' >&2
+              exit 1
+            fi
+          done
+          if [ -n "$DEPLOY_OZMISHOW_SERVICE_SECRET" ]; then
+            if [ "${#DEPLOY_OZMISHOW_SERVICE_SECRET}" -lt 32 ] || [ "${#DEPLOY_OZMISHOW_REDIS_PASSWORD}" -lt 32 ] || [ "$DEPLOY_OZMISHOW_SERVICE_SECRET" = "$DEPLOY_OZMISHOW_REDIS_PASSWORD" ]; then
+              echo 'Ozmishow requires separate service and Redis secrets of at least 32 characters.' >&2
+              exit 1
+            fi
+            DEPLOY_COMPOSE_FILE=docker-compose.yml:docker-compose.ozmishow.yml
           fi
           cat > .env << EOF
           PORT_NUMBER=$DEPLOY_PORT_NUMBER
@@ -75,6 +92,10 @@ jobs:
           TENANT_JWT_SECRET=$DEPLOY_TENANT_JWT_SECRET
           EXTERNAL_API_CREDENTIAL_KEY=$DEPLOY_EXTERNAL_API_CREDENTIAL_KEY
           NODE_ENV=production
+          COMPOSE_FILE=$DEPLOY_COMPOSE_FILE
+          OZMISHOW_RATE_LIMIT_SERVICE_SECRET=$DEPLOY_OZMISHOW_SERVICE_SECRET
+          OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET=$DEPLOY_OZMISHOW_PREVIOUS_SECRET
+          OZMISHOW_RATE_LIMIT_REDIS_PASSWORD=$DEPLOY_OZMISHOW_REDIS_PASSWORD
           EOF
           chmod 600 .env
 

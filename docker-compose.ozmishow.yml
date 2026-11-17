@@ -1,0 +1,53 @@
+# Opt in with COMPOSE_FILE=docker-compose.yml:docker-compose.ozmishow.yml in .env.
+# Trial resource values: validate available Droplet capacity before deployment.
+services:
+  app:
+    environment:
+      OZMISHOW_RATE_LIMIT_REDIS_ADDR: ozmishow-redis:6379
+    networks:
+      - default
+      - ozmishow-limiter
+    depends_on:
+      ozmishow-redis:
+        condition: service_healthy
+
+  ozmishow-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    user: redis
+    networks:
+      - ozmishow-limiter
+    # No host ports and no shared AutoTable Redis volume or client.
+    environment:
+      REDISCLI_AUTH: ${OZMISHOW_RATE_LIMIT_REDIS_PASSWORD:?Configure a separate Ozmishow Redis password}
+      OZMISHOW_REDIS_MAXMEMORY: ${OZMISHOW_REDIS_MAXMEMORY:-64mb}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        exec redis-server --requirepass "$$REDISCLI_AUTH" \
+          --maxmemory "$$OZMISHOW_REDIS_MAXMEMORY" --maxmemory-policy noeviction \
+          --maxclients 64 --appendonly yes --appendfsync everysec --save ""
+    volumes:
+      - ozmishow-redis-data:/data
+    mem_limit: ${OZMISHOW_REDIS_CONTAINER_MEMORY:-128m}
+    memswap_limit: ${OZMISHOW_REDIS_CONTAINER_MEMORY:-128m}
+    cpus: ${OZMISHOW_REDIS_CPUS:-0.25}
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, redis-cli, --no-auth-warning, ping]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+
+networks:
+  ozmishow-limiter:
+    internal: true
+
+volumes:
+  ozmishow-redis-data:

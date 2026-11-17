@@ -1965,6 +1965,7 @@ func TestValidateSelectionFieldsRejectsUnsafeDependencies(t *testing.T) {
 	container := &models.ContainerModel{SchemaName: "product", Fields: []models.Field{
 		{Name: "name"},
 		{Name: "price"},
+		{Name: "profile", Type: "object", Children: []models.Field{{Name: "label", Type: "string"}}},
 		{Name: "secret", AuthorizeRole: []string{"admin"}},
 		{Name: "password", IsHashed: true},
 	}}
@@ -1976,6 +1977,9 @@ func TestValidateSelectionFieldsRejectsUnsafeDependencies(t *testing.T) {
 		wantCode int
 	}{
 		{name: "known fields", fields: []string{"name", "price"}},
+		{name: "trimmed fields", fields: []string{" name ", " price "}},
+		{name: "nested field uses schema root", fields: []string{" profile.label "}},
+		{name: "empty and ID fields", fields: []string{"", " ", "_id", " _id ", "name"}},
 		{name: "unknown field", fields: []string{"name", "missing"}, wantCode: http.StatusBadRequest},
 		{name: "restricted field", fields: []string{"secret"}, role: "viewer", wantCode: http.StatusForbidden},
 		{name: "hashed field", fields: []string{"password"}, role: "admin", wantCode: http.StatusForbidden},
