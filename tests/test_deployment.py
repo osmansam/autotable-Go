@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DeploymentEnvironmentTests(unittest.TestCase):
-    def render_environment(self, credential_key):
+    def render_environment(self, credential_key, limiter_secret="", limiter_password="", previous_secret=""):
         workflow = (ROOT / ".github/workflows/production.yml").read_text()
         step = workflow.split("      - name: Create .env file\n", 1)[1].split("\n      - name:", 1)[0]
         bindings, script = step.split("        run: |\n", 1)
@@ -20,6 +20,9 @@ class DeploymentEnvironmentTests(unittest.TestCase):
             "JWT_SECRET": "synthetic-admin-secret",
             "TENANT_JWT_SECRET": "synthetic-tenant-secret",
             "EXTERNAL_API_CREDENTIAL_KEY": credential_key,
+            "OZMISHOW_RATE_LIMIT_SERVICE_SECRET": limiter_secret,
+            "OZMISHOW_RATE_LIMIT_REDIS_PASSWORD": limiter_password,
+            "OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET": previous_secret,
         }
         environment = {"PATH": os.environ["PATH"]}
         for variable, secret in re.findall(r"(DEPLOY_\w+): \$\{\{ secrets\.(\w+) \}\}", bindings):
@@ -40,6 +43,24 @@ class DeploymentEnvironmentTests(unittest.TestCase):
         self.assertIn("EXTERNAL_API_CREDENTIAL_KEY=" + key + "\n", content)
         self.assertNotIn(key, result.stdout + result.stderr)
 
+    def test_limiter_activation_requires_its_own_redis_password(self):
+        result, _ = self.render_environment("key", "s" * 40, "")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_limiter_credentials_and_optional_compose_reach_environment(self):
+        result, content = self.render_environment("key", "s" * 40, "r" * 40, "p" * 40)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("OZMISHOW_RATE_LIMIT_SERVICE_SECRET=" + "s" * 40 + "\n", content)
+        self.assertIn("OZMISHOW_RATE_LIMIT_REDIS_PASSWORD=" + "r" * 40 + "\n", content)
+        self.assertIn("OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET=" + "p" * 40 + "\n", content)
+        self.assertIn("COMPOSE_FILE=docker-compose.yml:docker-compose.ozmishow.yml\n", content)
+        self.assertNotIn("s" * 40, result.stdout + result.stderr)
+
+    def test_unconfigured_limiter_keeps_base_compose_only(self):
+        result, content = self.render_environment("key")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("COMPOSE_FILE=docker-compose.yml\n", content)
+
     def test_missing_external_credential_key_stops_environment_generation(self):
         result, content = self.render_environment("")
         self.assertNotEqual(result.returncode, 0)
@@ -47,11 +68,11 @@ class DeploymentEnvironmentTests(unittest.TestCase):
 
 
 class DeploymentTests(unittest.TestCase):
-    def deploy(self, fail_build=False, fail_readiness=False, fail_security=False, previous_has_ready=False, ipv4_only=False, fail_rollback=False):
+    def deploy(self, fail_build=False, fail_readiness=False, fail_security=False, previous_has_ready=False, ipv4_only=False, fail_rollback=False, limiter=False, previous_limiter=False, fail_limiter_probe=False, fail_prune=False, cleanup="1", keep_storage=""):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / ".env").write_text("VALUE=old\n")
-            (root / ".env.next").write_text("VALUE=new\n")
+            (root / ".env").write_text("VALUE=old\n" + ("COMPOSE_FILE=docker-compose.yml:docker-compose.ozmishow.yml\n" if previous_limiter else ""))
+            (root / ".env.next").write_text("VALUE=new\n" + ("COMPOSE_FILE=docker-compose.yml:docker-compose.ozmishow.yml\n" if limiter else ""))
             if previous_has_ready:
                 (root / ".deploy").mkdir()
                 (root / ".deploy/ready-image").write_text("sha256:previous\n")
@@ -63,6 +84,12 @@ import os,sys
 from pathlib import Path
 args=sys.argv[1:]
 with open(os.environ['MOCK_LOG'],'a') as log: log.write(os.environ.get('AUTOTABLE_IMAGE','')+' '+ ' '.join(args)+'\\n')
+if args[:3]==['compose','config','--services']:
+    print('app\\nredis\\nnginx'+('\\nozmishow-redis' if 'docker-compose.ozmishow.yml' in Path('.env').read_text() else ''));sys.exit(0)
+if args[:2]==['builder','prune']:
+    if os.environ.get('FAIL_PRUNE')=='1':
+        print('SYNTHETIC_PRIVATE_CACHE_ERROR',file=sys.stderr);sys.exit(1)
+    print('Total reclaimed space: 42GB');sys.exit(0)
 if args[:1]==['inspect']:
     if '.State.Status' in args[2]:
         print('state=running exit=0 oom=false restarts=0');sys.exit(0)
@@ -73,6 +100,9 @@ if 'build' in args and os.environ.get('FAIL_BUILD')=='1':sys.exit(1)
 if 'up' in args and 'app' in args:
     expected='health' if os.environ.get('AUTOTABLE_IMAGE')=='sha256:previous' and os.environ.get('PREVIOUS_HAS_READY')!='1' else 'ready'
     if os.environ.get('AUTOTABLE_READINESS_PATH')!=expected:sys.exit(1)
+if args[:6]==['compose','exec','-T','app','sh','-ec'] and '/internal/ozmishow/rate-limit' in args[-1]:
+    if os.environ.get('FAIL_LIMITER_PROBE')=='1' and os.environ.get('AUTOTABLE_IMAGE')!='sha256:previous':sys.exit(1)
+    print('{"allowed":true,"retryAfterSeconds":0}');sys.exit(0)
 if 'wget' in args:
     # BusyBox may resolve localhost to ::1; Fiber's default listener is IPv4.
     if os.environ.get('IPV4_ONLY')=='1' and not args[-1].startswith('http://127.0.0.1:'):sys.exit(1)
@@ -86,20 +116,87 @@ if 'wget' in args:
 import os,sys
 url=sys.argv[-1]
 if '/api/swagger' in url or '/api/schemas' in url: print('200' if os.environ.get('FAIL_SECURITY')=='1' else '404',end='')
+elif '/internal/ozmishow/rate-limit' in url: print('401',end='')
 elif '/container/create-multiple' in url: print('401',end='')
 """)
             curl.chmod(0o755)
             sleep = binaries / "sleep"
             sleep.write_text("#!/bin/sh\nexit 0\n")
             sleep.chmod(0o755)
-            environment = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"], "AUTOTABLE_RELEASE_TAG": "test-release", "AUTOTABLE_DEPLOY_DIRECTORY": str(root), "MOCK_LOG": str(root / "commands.log"), "FAIL_BUILD": str(int(fail_build)), "FAIL_READINESS": str(int(fail_readiness)), "FAIL_SECURITY":str(int(fail_security)), "PREVIOUS_HAS_READY":str(int(previous_has_ready)), "IPV4_ONLY":str(int(ipv4_only)), "FAIL_ROLLBACK":str(int(fail_rollback))}
+            environment = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"], "AUTOTABLE_RELEASE_TAG": "test-release", "AUTOTABLE_DEPLOY_DIRECTORY": str(root), "MOCK_LOG": str(root / "commands.log"), "FAIL_BUILD": str(int(fail_build)), "FAIL_READINESS": str(int(fail_readiness)), "FAIL_SECURITY":str(int(fail_security)), "PREVIOUS_HAS_READY":str(int(previous_has_ready)), "IPV4_ONLY":str(int(ipv4_only)), "FAIL_ROLLBACK":str(int(fail_rollback)), "FAIL_LIMITER_PROBE":str(int(fail_limiter_probe)), "FAIL_PRUNE":str(int(fail_prune)), "AUTOTABLE_BUILD_CACHE_CLEANUP":cleanup, "AUTOTABLE_BUILD_CACHE_KEEP_STORAGE":keep_storage}
             result = subprocess.run(["bash", str(ROOT / "scripts/deploy-production.sh")], env=environment, capture_output=True, text=True)
             commands = (root / "commands.log").read_text() if (root / "commands.log").exists() else ""
             diagnostics = {
                 path.name: (path.read_text(), stat.S_IMODE(path.stat().st_mode))
-                for path in (root / ".deploy").glob("*.log")
+                for path in (root / ".deploy").glob("test-release.*.log")
             }
+            cache_log = root / ".deploy/build-cache-cleanup.log"
+            result.cache_cleanup = (cache_log.read_text(), stat.S_IMODE(cache_log.stat().st_mode)) if cache_log.exists() else None
             return result, commands, (root / ".env").read_text(), diagnostics
+
+    def test_success_prunes_only_unused_build_cache_after_release_checks(self):
+        result, commands, _, _ = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("builder prune --all --force --keep-storage 5GB", commands)
+        self.assertGreater(commands.index("builder prune"), commands.index("nginx nginx -s reload"))
+        self.assertGreater(commands.index("builder prune"), commands.rindex("inspect --format {{.Image}}"))
+        for forbidden in ["system prune", "image prune", "volume prune", "container prune"]:
+            self.assertNotIn(forbidden, commands)
+        self.assertIn("Total reclaimed space: 42GB", result.stdout)
+
+    def test_cache_cleanup_failure_keeps_healthy_release_successful(self):
+        result, commands, environment, _ = self.deploy(fail_prune=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("builder prune", commands)
+        self.assertIn("cache cleanup failed", result.stderr.lower())
+        self.assertNotIn("Previous release restored", result.stderr)
+        self.assertNotIn("SYNTHETIC_PRIVATE_CACHE_ERROR", result.stdout + result.stderr)
+        self.assertEqual(environment, "VALUE=new\n")
+        self.assertIsNotNone(result.cache_cleanup)
+        self.assertIn("SYNTHETIC_PRIVATE_CACHE_ERROR", result.cache_cleanup[0])
+        self.assertEqual(result.cache_cleanup[1], 0o600)
+
+    def test_cache_cleanup_can_be_disabled(self):
+        result, commands, _, _ = self.deploy(cleanup="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("builder prune", commands)
+
+    def test_cache_retention_budget_can_be_overridden(self):
+        result, commands, _, _ = self.deploy(keep_storage="10GB")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("builder prune --all --force --keep-storage 10GB", commands)
+
+    def test_invalid_cache_budget_skips_cleanup_without_failing_release(self):
+        result, commands, _, _ = self.deploy(keep_storage="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("builder prune", commands)
+        self.assertIn("invalid build-cache retention", result.stderr.lower())
+
+    def test_failed_release_does_not_prune_cache(self):
+        for failure in ["fail_build", "fail_security", "fail_readiness"]:
+            with self.subTest(failure=failure):
+                result, commands, _, _ = self.deploy(**{failure: True})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("builder prune", commands)
+
+    def test_opt_in_limiter_starts_and_waits_before_app_replacement(self):
+        result, commands, _, _ = self.deploy(limiter=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("compose up -d --wait --wait-timeout 30 ozmishow-redis", commands)
+        self.assertLess(commands.index("--wait-timeout 30 ozmishow-redis"), commands.index("--force-recreate app"))
+
+    def test_rollback_reconfigures_private_redis_before_previous_app(self):
+        result, commands, _, _ = self.deploy(fail_readiness=True, limiter=True, previous_limiter=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sha256:previous compose up -d --wait --wait-timeout 30 ozmishow-redis", commands)
+        self.assertLess(commands.index("sha256:previous compose up -d --wait"), commands.index("sha256:previous compose up -d --no-deps --force-recreate app"))
+
+    def test_authenticated_limiter_failure_rolls_back(self):
+        result, commands, _, _ = self.deploy(limiter=True, previous_limiter=True, fail_limiter_probe=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Previous release restored.", result.stderr)
+        self.assertIn("/internal/ozmishow/rate-limit", commands)
+        self.assertIn("$OZMISHOW_RATE_LIMIT_SERVICE_SECRET", commands)
 
     def test_build_failure_keeps_running_release_and_environment(self):
         result, commands, environment, diagnostics = self.deploy(fail_build=True)

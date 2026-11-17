@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/controllers"
+	"github.com/osmansam/autotableGo/internal/ozmishowratelimit"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/observability"
 	"github.com/osmansam/autotableGo/repositories"
@@ -69,6 +70,8 @@ func main() {
 	app.Use(observability.TracingMiddleware())
 	app.Use(middlewares.PrometheusMetrics())
 	app.Use(middlewares.RequestLogger())
+	closeOzmishowLimiter := ozmishowratelimit.Mount(app)
+	defer closeOzmishowLimiter()
 	app.Get("/metrics", middlewares.PrometheusHandler())
 	configurePprof(app, portNumber)
 
