@@ -27,6 +27,10 @@ func NewManagementMembershipRepository() *ManagementMembershipRepository {
 	}
 }
 
+func NewManagementMembershipRepositoryWithDatabase(db *mongo.Database) *ManagementMembershipRepository {
+	return &ManagementMembershipRepository{users: db.Collection("users"), tenants: db.Collection("tenants"), projects: db.Collection("projects"), tenantMemberships: db.Collection("tenant_memberships"), projectMemberships: db.Collection("project_memberships")}
+}
+
 type managementMembershipIDs struct {
 	userID, tenantID primitive.ObjectID
 	projectID        *primitive.ObjectID
@@ -104,7 +108,7 @@ func (r *ManagementMembershipRepository) LoadManagementMembership(ctx context.Co
 	if err := decodeOptional(r.projects.FindOne(ctx, filters.project), &project); err != nil {
 		return snapshot, err
 	}
-	snapshot.ProjectActive = !project.ID.IsZero() && project.IsActive
+	snapshot.ProjectActive = !project.ID.IsZero() && project.IsActive && !project.Initializing
 	var projectMembership models.ProjectMembership
 	if err := decodeOptional(r.projectMemberships.FindOne(ctx, filters.projectMembership), &projectMembership); err != nil {
 		return snapshot, err

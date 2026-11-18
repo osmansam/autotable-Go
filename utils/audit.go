@@ -61,13 +61,18 @@ func applyAuditUser(auditLog *models.AuditLog, user *models.AuditUser) {
 
 // LogAudit writes an AuditLog to the audit_logs collection.
 func LogAudit(ctx context.Context, auditLog models.AuditLog) error {
+	return LogAuditToCollection(ctx, projectCollectionProvider(auditLog.TenantID, auditLog.ProjectID, "audit_logs"), auditLog)
+}
+
+// LogAuditToCollection keeps idempotent audit delivery scoped to the worker's
+// explicit database, including isolated integration test databases.
+func LogAuditToCollection(ctx context.Context, collection *mongo.Collection, auditLog models.AuditLog) error {
 	// Ensure timestamp is set
 	if auditLog.Timestamp == 0 {
 		auditLog.Timestamp = primitive.NewDateTimeFromTime(time.Now())
 	}
 
 	// Use project-specific audit_logs collection
-	collection := projectCollectionProvider(auditLog.TenantID, auditLog.ProjectID, "audit_logs")
 	if err := ensureAuditLogIndexesForCollection(ctx, collection); err != nil {
 		log.Printf("Failed to ensure audit log indexes: %v", err)
 		return err

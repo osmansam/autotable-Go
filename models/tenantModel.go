@@ -38,6 +38,7 @@ const (
 	TenantRoleAdmin   = "tenant_admin"
 	TenantRoleBilling = "tenant_billing"
 	TenantRoleAuditor = "tenant_auditor"
+	TenantRoleMember  = "tenant_member"
 )
 
 // Project roles
@@ -53,32 +54,39 @@ const (
 USER (global)
 */
 type User struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Email     string             `bson:"email" json:"email"`
-	Name      string             `bson:"name,omitempty" json:"name,omitempty"`
-	IsActive  bool               `bson:"isActive" json:"isActive"`
-	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt time.Time          `bson:"updatedAt" json:"updatedAt"`
+	NormalizedEmail      string             `bson:"normalizedEmail,omitempty" json:"-"`
+	EmailVerifiedAt      *time.Time         `bson:"emailVerifiedAt,omitempty" json:"-"`
+	AuthorizationVersion int64              `bson:"authorizationVersion,omitempty" json:"-"`
+	AccountVersion       int64              `bson:"accountVersion,omitempty" json:"-"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	Email                string             `bson:"email" json:"email"`
+	Name                 string             `bson:"name,omitempty" json:"name,omitempty"`
+	IsActive             bool               `bson:"isActive" json:"isActive"`
+	CreatedAt            time.Time          `bson:"createdAt" json:"createdAt"`
+	UpdatedAt            time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 /*
 TENANT (organization)
 */
 type Tenant struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	Name        string             `bson:"name" json:"name"`
-	Slug        string             `bson:"slug" json:"slug"`
-	OwnerUserID primitive.ObjectID `bson:"ownerUserId" json:"ownerUserId"`
-	IsActive    bool               `bson:"isActive" json:"isActive"`
-	Branding    *Branding          `bson:"branding,omitempty" json:"branding,omitempty"`
-	CreatedAt   time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt   time.Time          `bson:"updatedAt" json:"updatedAt"`
+	AuthorizationVersion int64              `bson:"authorizationVersion,omitempty" json:"-"`
+	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
+	Name                 string             `bson:"name" json:"name"`
+	Slug                 string             `bson:"slug" json:"slug"`
+	OwnerUserID          primitive.ObjectID `bson:"ownerUserId" json:"ownerUserId"`
+	IsActive             bool               `bson:"isActive" json:"isActive"`
+	Branding             *Branding          `bson:"branding,omitempty" json:"branding,omitempty"`
+	CreatedAt            time.Time          `bson:"createdAt" json:"createdAt"`
+	UpdatedAt            time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 /*
 PROJECT (belongs to a tenant)
 */
 type Project struct {
+	CollaborationVersion int64              `bson:"collaborationVersion,omitempty" json:"-"`
+	Initializing         bool               `bson:"initializing,omitempty" json:"-"`
 	ID                   primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	TenantID             primitive.ObjectID `bson:"tenantId" json:"tenantId"`
 	TenantSlug           string             `bson:"tenantSlug" json:"tenantSlug"` // Denormalized for fast lookup
@@ -150,6 +158,7 @@ type TenantMembership struct {
 PROJECT MEMBERSHIP (user <-> project)
 */
 type ProjectMembership struct {
+	Version   int64              `bson:"version,omitempty" json:"version"`
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	TenantID  primitive.ObjectID `bson:"tenantId" json:"tenantId"`
 	ProjectID primitive.ObjectID `bson:"projectId" json:"projectId"`

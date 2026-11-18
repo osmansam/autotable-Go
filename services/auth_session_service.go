@@ -22,6 +22,7 @@ type AuthSessionStore interface {
 }
 
 type AuthSessionStart struct {
+	Identity       string
 	FamilyID       string
 	RefreshTokenID string
 	Scope          string
@@ -43,6 +44,7 @@ func NewAuthSessionService(store AuthSessionStore) *AuthSessionService {
 func (s *AuthSessionService) Start(ctx context.Context, input AuthSessionStart) error {
 	now := s.now()
 	return s.store.Create(ctx, models.AuthSession{
+		Identity:       input.Identity,
 		FamilyID:       input.FamilyID,
 		CurrentJTIHash: hashTokenIdentifier(input.RefreshTokenID),
 		Scope:          input.Scope,
@@ -61,13 +63,31 @@ func (s *AuthSessionService) Rotate(ctx context.Context, familyID, presentedJTI,
 	if err != nil {
 		return err
 	}
+	return s.rotationResult(ctx, familyID, state)
+}
+
+func (s *AuthSessionService) RotateManagement(ctx context.Context, familyID, presentedJTI, newJTI string, expiresAt time.Time) error {
+	store, ok := s.store.(interface {
+		RotateManagement(context.Context, string, string, string, time.Time, time.Time) (models.RefreshRotationState, error)
+	})
+	if !ok {
+		return errors.New("management session rotation unsupported")
+	}
+	state, err := store.RotateManagement(ctx, familyID, hashTokenIdentifier(presentedJTI), hashTokenIdentifier(newJTI), s.now(), expiresAt)
+	if err != nil {
+		return err
+	}
+	return s.rotationResult(ctx, familyID, state)
+}
+
+func (s *AuthSessionService) rotationResult(ctx context.Context, familyID string, state models.RefreshRotationState) error {
 	switch state {
 	case models.RefreshRotationSucceeded:
 		return nil
 	case models.RefreshRotationPreviousConflict:
 		return ErrRefreshConflict
 	default:
-		if err := s.store.RevokeFamily(ctx, familyID, now); err != nil {
+		if err := s.store.RevokeFamily(ctx, familyID, s.now()); err != nil {
 			return err
 		}
 		return ErrRefreshReuse

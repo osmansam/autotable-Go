@@ -37,6 +37,11 @@ func main() {
 	}
 
 	appConfig := configs.GetAppConfig()
+	if features := configs.GetCollaborationConfig(); features.InvitationsEnabled || features.RecoveryEnabled {
+		if _, _, err := services.ValidateInvitationConfiguration(); err != nil {
+			log.Fatal("Invitation configuration is incomplete or invalid")
+		}
+	}
 	portNumber := ":" + os.Getenv("PORT_NUMBER")
 	if key := os.Getenv("EXTERNAL_API_CREDENTIAL_KEY"); key != "" {
 		if err := utils.ValidateExternalAPIEncryptionKey(key); err != nil {
@@ -114,6 +119,8 @@ func main() {
 	cancelIndexes()
 	hostname, _ := os.Hostname()
 	go services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	go services.StartManagementCollaborationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	go services.StartInvitationDeliveryWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
 
 	//websocket wiring
 	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {

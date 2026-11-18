@@ -9,6 +9,7 @@ import (
 )
 
 func TestTenantExternalCredentialRoutesRejectAnonymousAndProjectScopedTokens(t *testing.T) {
+	allowManagementSessions(t)
 	t.Setenv("TENANT_JWT_SECRET", "test-tenant-secret")
 	tokens, err := utils.GenerateTenantTokens("user", "manager@example.com", "507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012", []string{models.ProjectRoleAdmin}, string(models.RoleScopeProject))
 	if err != nil {

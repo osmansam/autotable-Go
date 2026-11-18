@@ -11,6 +11,7 @@ import (
 )
 
 func TestContainerReadSelectsApplicationMetadataWithoutGrantingManagementAccess(t *testing.T) {
+	allowManagementSessions(t)
 	t.Setenv("JWT_SECRET", "container-runtime-test-secret")
 	t.Setenv("TENANT_JWT_SECRET", "container-management-test-secret")
 	t.Setenv("NODE_ENV", "development")

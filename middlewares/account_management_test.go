@@ -65,6 +65,7 @@ func TestAccountExecutionPreservesActivationChecks(t *testing.T) {
 }
 
 func TestAccountManagementBoundary(t *testing.T) {
+	t.Cleanup(OverrideManagementSessionValidator(func(context.Context, models.ManagementPrincipal) error { return nil }))
 	t.Setenv("JWT_SECRET", "project-test-secret")
 	t.Setenv("TENANT_JWT_SECRET", "management-test-secret")
 	management, err := utils.GenerateTenantTokens("operator", "a@b.com", "tenant", "project", []string{models.ProjectRoleAdmin}, string(models.RoleScopeProject))

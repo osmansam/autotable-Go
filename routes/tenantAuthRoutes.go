@@ -8,7 +8,9 @@ import (
 
 // TenantAuthRoutes sets up all tenant authentication routes
 func TenantAuthRoutes(app *fiber.App) {
+	ManagementInvitationRoutes(app)
 	projectManagementAuth := app.Group("/api/v1/:tenantSlug/:projectSlug/tenant-auth")
+	app.Get("/api/v1/:tenantSlug/:projectSlug/tenant-auth/session", strictManagementRouteHandlers("GET", "/api/v1/:tenantSlug/:projectSlug/tenant-auth/session", controllers.ManagementProjectSession)...)
 	projectManagementAuth.Post("/refresh", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.ManagementProjectRefresh)
 	projectManagementAuth.Post("/logout", middlewares.DefaultBodySizeLimit(), middlewares.PublicRateLimit(), controllers.ManagementProjectLogout)
 

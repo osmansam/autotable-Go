@@ -20,7 +20,7 @@ var rotateProjectAuthSession = func(ctx context.Context, familyID, presentedID, 
 }
 
 var rotateManagementAuthSession = func(ctx context.Context, familyID, presentedID, nextID string, expiresAt time.Time) error {
-	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Rotate(ctx, familyID, presentedID, nextID, expiresAt)
+	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).RotateManagement(ctx, familyID, presentedID, nextID, expiresAt)
 }
 
 var revokeManagementAuthSession = func(ctx context.Context, familyID string) error {
@@ -64,7 +64,8 @@ func startProjectAuthSession(ctx context.Context, tokens *utils.TokenDetails) er
 	}
 	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Start(ctx, services.AuthSessionStart{
 		FamilyID: claims.FamilyID, RefreshTokenID: claims.ID, Scope: utils.TokenScopeProject,
-		UserID: claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
+		Identity: "application",
+		UserID:   claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
 		ExpiresAt: time.Unix(tokens.RTExpires, 0),
 	})
 }
@@ -76,7 +77,8 @@ func startTenantAuthSession(ctx context.Context, tokens *utils.TenantTokenDetail
 	}
 	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Start(ctx, services.AuthSessionStart{
 		FamilyID: claims.FamilyID, RefreshTokenID: claims.Id, Scope: claims.Scope,
-		UserID: claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
+		Identity: "management",
+		UserID:   claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
 		ExpiresAt: time.Unix(tokens.RTExpires, 0),
 	})
 }
@@ -122,7 +124,7 @@ func rotateTenantCookieSession(c *fiber.Ctx, ctx context.Context) (*utils.Tenant
 }
 
 var loadManagementMembership = func(ctx context.Context, subject models.ManagementAuthorizationSubject, target models.ManagementAuthorizationTarget) (models.ManagementMembershipSnapshot, error) {
-	return repositories.NewManagementMembershipRepository().LoadManagementMembership(ctx, subject, target)
+	return repositories.NewManagementMembershipRepositoryWithDatabase(collaborationDatabase()).LoadManagementMembership(ctx, subject, target)
 }
 
 var resolveManagementProjectForRefresh = utils.GetTenantAndProjectFromSlugs
