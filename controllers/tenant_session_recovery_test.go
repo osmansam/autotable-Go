@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,12 @@ func TestTenantSessionRequestsRecoveryOnlyForTenantRefreshCookie(t *testing.T) {
 }
 
 func TestTenantSessionAcceptsOnlyTenantManagementAccessIdentity(t *testing.T) {
+	allowManagementSessions(t)
+	previous := loadManagementMembership
+	t.Cleanup(func() { loadManagementMembership = previous })
+	loadManagementMembership = func(context.Context, models.ManagementAuthorizationSubject, models.ManagementAuthorizationTarget) (models.ManagementMembershipSnapshot, error) {
+		return models.ManagementMembershipSnapshot{UserActive: true, TenantActive: true, TenantMembership: &models.TenantMembership{Status: models.MembershipStatusActive, Roles: []string{models.TenantRoleOwner}}}, nil
+	}
 	t.Setenv("NODE_ENV", "development")
 	t.Setenv("TENANT_JWT_SECRET", "tenant-session-test-secret")
 	t.Setenv("JWT_SECRET", "application-session-test-secret")

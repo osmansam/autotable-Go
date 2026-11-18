@@ -12,30 +12,37 @@ import (
 type ManagementPermission string
 
 const (
-	PermissionTenantIntegrationsRead    ManagementPermission = "tenant.integrations.read"
-	PermissionTenantIntegrationsManage  ManagementPermission = "tenant.integrations.manage"
-	PermissionTenantProjectsRead        ManagementPermission = "tenant.projects.read"
-	PermissionTenantProjectsCreate      ManagementPermission = "tenant.projects.create"
-	PermissionTenantProjectsUpdate      ManagementPermission = "tenant.projects.update"
-	PermissionTenantProjectsDelete      ManagementPermission = "tenant.projects.delete"
-	PermissionTenantBrandingRead        ManagementPermission = "tenant.branding.read"
-	PermissionTenantBrandingManage      ManagementPermission = "tenant.branding.manage"
-	PermissionProjectConfigRead         ManagementPermission = "project.config.read"
-	PermissionProjectSchemaWrite        ManagementPermission = "project.schema.write"
-	PermissionProjectSchemaDelete       ManagementPermission = "project.schema.delete"
-	PermissionProjectCacheReset         ManagementPermission = "project.cache.reset"
-	PermissionProjectPageWrite          ManagementPermission = "project.page.write"
-	PermissionProjectPageDelete         ManagementPermission = "project.page.delete"
-	PermissionProjectRolesRead          ManagementPermission = "project.roles.read"
-	PermissionProjectImport             ManagementPermission = "project.import"
-	PermissionProjectIntegrationsRead   ManagementPermission = "project.integrations.read"
-	PermissionProjectIntegrationsManage ManagementPermission = "project.integrations.manage"
-	PermissionProjectLocalizationRead   ManagementPermission = "project.localization.read"
-	PermissionProjectLocalizationManage ManagementPermission = "project.localization.manage"
-	PermissionProjectBrandingRead       ManagementPermission = "project.branding.read"
-	PermissionProjectBrandingManage     ManagementPermission = "project.branding.manage"
-	PermissionProjectAuditRead          ManagementPermission = "project.audit.read"
-	PermissionProjectAuditConfigure     ManagementPermission = "project.audit.configure"
+	PermissionTenantAccountRead          ManagementPermission = "tenant.account.read"
+	PermissionTenantProjectsDiscover     ManagementPermission = "tenant.projects.discover"
+	PermissionTenantProjectRead          ManagementPermission = "tenant.project.read"
+	PermissionTenantProjectMembersRead   ManagementPermission = "tenant.project.members.read"
+	PermissionTenantProjectMembersManage ManagementPermission = "tenant.project.members.manage"
+	PermissionProjectMembersRead         ManagementPermission = "project.members.read"
+	PermissionProjectMembersManage       ManagementPermission = "project.members.manage"
+	PermissionTenantIntegrationsRead     ManagementPermission = "tenant.integrations.read"
+	PermissionTenantIntegrationsManage   ManagementPermission = "tenant.integrations.manage"
+	PermissionTenantProjectsRead         ManagementPermission = "tenant.projects.read"
+	PermissionTenantProjectsCreate       ManagementPermission = "tenant.projects.create"
+	PermissionTenantProjectsUpdate       ManagementPermission = "tenant.projects.update"
+	PermissionTenantProjectsDelete       ManagementPermission = "tenant.projects.delete"
+	PermissionTenantBrandingRead         ManagementPermission = "tenant.branding.read"
+	PermissionTenantBrandingManage       ManagementPermission = "tenant.branding.manage"
+	PermissionProjectConfigRead          ManagementPermission = "project.config.read"
+	PermissionProjectSchemaWrite         ManagementPermission = "project.schema.write"
+	PermissionProjectSchemaDelete        ManagementPermission = "project.schema.delete"
+	PermissionProjectCacheReset          ManagementPermission = "project.cache.reset"
+	PermissionProjectPageWrite           ManagementPermission = "project.page.write"
+	PermissionProjectPageDelete          ManagementPermission = "project.page.delete"
+	PermissionProjectRolesRead           ManagementPermission = "project.roles.read"
+	PermissionProjectImport              ManagementPermission = "project.import"
+	PermissionProjectIntegrationsRead    ManagementPermission = "project.integrations.read"
+	PermissionProjectIntegrationsManage  ManagementPermission = "project.integrations.manage"
+	PermissionProjectLocalizationRead    ManagementPermission = "project.localization.read"
+	PermissionProjectLocalizationManage  ManagementPermission = "project.localization.manage"
+	PermissionProjectBrandingRead        ManagementPermission = "project.branding.read"
+	PermissionProjectBrandingManage      ManagementPermission = "project.branding.manage"
+	PermissionProjectAuditRead           ManagementPermission = "project.audit.read"
+	PermissionProjectAuditConfigure      ManagementPermission = "project.audit.configure"
 )
 
 type ManagementAuthorizationSubject = models.ManagementAuthorizationSubject
@@ -64,30 +71,37 @@ func NewManagementAuthorizationService(repository ManagementMembershipRepository
 }
 
 var managementPermissionRoles = map[ManagementPermission][]string{
-	PermissionTenantIntegrationsRead:    {models.TenantRoleOwner, models.TenantRoleAdmin},
-	PermissionTenantIntegrationsManage:  {models.TenantRoleOwner, models.TenantRoleAdmin},
-	PermissionTenantProjectsRead:        {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor},
-	PermissionTenantProjectsCreate:      {models.TenantRoleOwner, models.TenantRoleAdmin},
-	PermissionTenantProjectsUpdate:      {models.TenantRoleOwner, models.TenantRoleAdmin},
-	PermissionTenantProjectsDelete:      {models.TenantRoleOwner},
-	PermissionTenantBrandingRead:        {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor},
-	PermissionTenantBrandingManage:      {models.TenantRoleOwner, models.TenantRoleAdmin},
-	PermissionProjectConfigRead:         {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
-	PermissionProjectSchemaWrite:        {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
-	PermissionProjectSchemaDelete:       {models.ProjectRoleAdmin},
-	PermissionProjectCacheReset:         {models.ProjectRoleAdmin},
-	PermissionProjectPageWrite:          {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor},
-	PermissionProjectPageDelete:         {models.ProjectRoleAdmin},
-	PermissionProjectRolesRead:          {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
-	PermissionProjectImport:             {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
-	PermissionProjectIntegrationsRead:   {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
-	PermissionProjectIntegrationsManage: {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
-	PermissionProjectLocalizationRead:   {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
-	PermissionProjectLocalizationManage: {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor},
-	PermissionProjectBrandingRead:       {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
-	PermissionProjectBrandingManage:     {models.ProjectRoleAdmin},
-	PermissionProjectAuditRead:          {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleSupport},
-	PermissionProjectAuditConfigure:     {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionTenantAccountRead:          {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor, models.TenantRoleMember},
+	PermissionTenantProjectsDiscover:     {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor, models.TenantRoleMember},
+	PermissionTenantProjectRead:          {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor, models.TenantRoleMember},
+	PermissionTenantProjectMembersRead:   {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantProjectMembersManage: {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionProjectMembersRead:         {models.ProjectRoleAdmin},
+	PermissionProjectMembersManage:       {models.ProjectRoleAdmin},
+	PermissionTenantIntegrationsRead:     {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantIntegrationsManage:   {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantProjectsRead:         {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor},
+	PermissionTenantProjectsCreate:       {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantProjectsUpdate:       {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionTenantProjectsDelete:       {models.TenantRoleOwner},
+	PermissionTenantBrandingRead:         {models.TenantRoleOwner, models.TenantRoleAdmin, models.TenantRoleBilling, models.TenantRoleAuditor},
+	PermissionTenantBrandingManage:       {models.TenantRoleOwner, models.TenantRoleAdmin},
+	PermissionProjectConfigRead:          {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
+	PermissionProjectSchemaWrite:         {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionProjectSchemaDelete:        {models.ProjectRoleAdmin},
+	PermissionProjectCacheReset:          {models.ProjectRoleAdmin},
+	PermissionProjectPageWrite:           {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor},
+	PermissionProjectPageDelete:          {models.ProjectRoleAdmin},
+	PermissionProjectRolesRead:           {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionProjectImport:              {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionProjectIntegrationsRead:    {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionProjectIntegrationsManage:  {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
+	PermissionProjectLocalizationRead:    {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
+	PermissionProjectLocalizationManage:  {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor},
+	PermissionProjectBrandingRead:        {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleEditor, models.ProjectRoleViewer, models.ProjectRoleSupport},
+	PermissionProjectBrandingManage:      {models.ProjectRoleAdmin},
+	PermissionProjectAuditRead:           {models.ProjectRoleAdmin, models.ProjectRoleDeveloper, models.ProjectRoleSupport},
+	PermissionProjectAuditConfigure:      {models.ProjectRoleAdmin, models.ProjectRoleDeveloper},
 }
 
 func AllProjectPermissions() []ManagementPermission {
@@ -105,7 +119,7 @@ func IsProjectPermission(permission ManagementPermission) bool {
 }
 
 func (s *ManagementAuthorizationService) Authorize(ctx context.Context, subject ManagementAuthorizationSubject, target ManagementAuthorizationTarget, permission ManagementPermission) error {
-	roles, known := managementPermissionRoles[permission]
+	_, known := managementPermissionRoles[permission]
 	if !known || s == nil || s.repository == nil || subject.UserID == "" || subject.TenantID == "" || target.TenantID == "" || subject.TenantID != target.TenantID {
 		return ErrManagementForbidden
 	}
@@ -116,7 +130,20 @@ func (s *ManagementAuthorizationService) Authorize(ctx context.Context, subject 
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrManagementAuthorizationUnavailable, err)
 	}
+	return AuthorizeManagementSnapshot(subject, target, permission, snapshot)
+}
+
+// AuthorizeManagementSnapshot is shared by HTTP checks and transaction-local
+// membership mutations. Tenant and project roles never form a combined role set.
+func AuthorizeManagementSnapshot(subject ManagementAuthorizationSubject, target ManagementAuthorizationTarget, permission ManagementPermission, snapshot ManagementMembershipSnapshot) error {
+	roles, known := managementPermissionRoles[permission]
+	if !known || subject.UserID == "" || subject.TenantID == "" || target.TenantID != subject.TenantID {
+		return ErrManagementForbidden
+	}
 	if !snapshot.UserActive || !snapshot.TenantActive || snapshot.TenantMembership == nil || snapshot.TenantMembership.Status != models.MembershipStatusActive {
+		return ErrManagementForbidden
+	}
+	if RequiresManagementProjectTarget(permission) && (target.ProjectID == "" || !snapshot.ProjectActive) {
 		return ErrManagementForbidden
 	}
 	actualRoles := snapshot.TenantMembership.Roles
@@ -126,10 +153,23 @@ func (s *ManagementAuthorizationService) Authorize(ctx context.Context, subject 
 		}
 		actualRoles = snapshot.ProjectMembership.Roles
 	}
+	if permission == PermissionTenantProjectRead && !CanReadAllTenantProjects(actualRoles) {
+		if !containsAnyRole(actualRoles, []string{models.TenantRoleMember}) || snapshot.ProjectMembership == nil || snapshot.ProjectMembership.Status != models.MembershipStatusActive || !containsAnyRole(snapshot.ProjectMembership.Roles, managementPermissionRoles[PermissionProjectConfigRead]) {
+			return ErrManagementForbidden
+		}
+	}
 	if !containsAnyRole(actualRoles, roles) {
 		return ErrManagementForbidden
 	}
 	return nil
+}
+
+func RequiresManagementProjectTarget(permission ManagementPermission) bool {
+	return IsProjectPermission(permission) || permission == PermissionTenantProjectRead || permission == PermissionTenantProjectMembersRead || permission == PermissionTenantProjectMembersManage
+}
+
+func CanReadAllTenantProjects(roles []string) bool {
+	return containsAnyRole(roles, managementPermissionRoles[PermissionTenantProjectsRead])
 }
 
 func containsAnyRole(actual, allowed []string) bool {
@@ -150,9 +190,15 @@ func CurrentManagementSessionRoles(snapshot ManagementMembershipSnapshot, projec
 		return nil, ErrManagementForbidden
 	}
 	if !projectScoped {
+		if !containsAnyRole(snapshot.TenantMembership.Roles, managementPermissionRoles[PermissionTenantAccountRead]) {
+			return nil, ErrManagementForbidden
+		}
 		return append([]string(nil), snapshot.TenantMembership.Roles...), nil
 	}
 	if !snapshot.ProjectActive || snapshot.ProjectMembership == nil || snapshot.ProjectMembership.Status != models.MembershipStatusActive {
+		return nil, ErrManagementForbidden
+	}
+	if !containsAnyRole(snapshot.TenantMembership.Roles, managementPermissionRoles[PermissionTenantAccountRead]) || !containsAnyRole(snapshot.ProjectMembership.Roles, managementPermissionRoles[PermissionProjectConfigRead]) {
 		return nil, ErrManagementForbidden
 	}
 	return append([]string(nil), snapshot.ProjectMembership.Roles...), nil

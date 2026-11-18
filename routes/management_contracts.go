@@ -19,12 +19,13 @@ const (
 	IdentityManagement           ManagementRouteIdentity = "management"
 	IdentityPublicManagementAuth ManagementRouteIdentity = "public-management-auth"
 
-	ManagementScopeNone            ManagementRouteScope = "none"
-	ManagementScopeTenant          ManagementRouteScope = "tenant"
-	ManagementScopeProject         ManagementRouteScope = "project"
-	ManagementScopeTargetProject   ManagementRouteScope = "target-project"
-	ManagementScopeTenantToProject ManagementRouteScope = "tenant-to-project"
-	ManagementScopeAny             ManagementRouteScope = "tenant-or-project"
+	ManagementScopeNone                ManagementRouteScope = "none"
+	ManagementScopeTenant              ManagementRouteScope = "tenant"
+	ManagementScopeTenantTargetProject ManagementRouteScope = "tenant-target-project"
+	ManagementScopeProject             ManagementRouteScope = "project"
+	ManagementScopeTargetProject       ManagementRouteScope = "target-project"
+	ManagementScopeTenantToProject     ManagementRouteScope = "tenant-to-project"
+	ManagementScopeAny                 ManagementRouteScope = "tenant-or-project"
 
 	ManagementPermissionNone services.ManagementPermission = "none"
 )
@@ -51,6 +52,7 @@ func containerMetadataContract(path string) ManagementRouteContract {
 }
 
 var approvedManagementRouteContracts = []ManagementRouteContract{
+	contract("GET", "/api/v1/:tenantSlug/:projectSlug/tenant-auth/session", IdentityManagement, ManagementScopeProject, services.PermissionProjectConfigRead),
 	contract("GET", "/api/v1/tenant/integrations/external-api-credentials", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsRead),
 	contract("POST", "/api/v1/tenant/integrations/external-api-credentials", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
 	contract("POST", "/api/v1/tenant/integrations/external-api-credentials/:id/revoke", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsManage),
@@ -65,11 +67,11 @@ var approvedManagementRouteContracts = []ManagementRouteContract{
 	contract("GET", "/api/v1/tenant/auth/session", IdentityPublicManagementAuth, ManagementScopeNone, ManagementPermissionNone),
 	contract("POST", "/api/v1/tenant/auth/refresh", IdentityPublicManagementAuth, ManagementScopeTenant, ManagementPermissionNone),
 	contract("POST", "/api/v1/tenant/auth/logout", IdentityPublicManagementAuth, ManagementScopeTenant, ManagementPermissionNone),
-	contract("GET", "/api/v1/tenant/auth/me", IdentityManagement, ManagementScopeAny, services.PermissionTenantProjectsRead),
+	contract("GET", "/api/v1/tenant/auth/me", IdentityManagement, ManagementScopeAny, services.PermissionTenantAccountRead),
 	contract("POST", "/api/v1/tenant/auth/switch-project", IdentityManagement, ManagementScopeTenantToProject, services.PermissionProjectConfigRead),
 
 	contract("POST", "/api/v1/tenant/projects/", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsCreate),
-	contract("GET", "/api/v1/tenant/projects/", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsRead),
+	contract("GET", "/api/v1/tenant/projects/", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsDiscover),
 	contract("GET", "/api/v1/tenant/projects/templates/:id/external-api-requirements", IdentityManagement, ManagementScopeTenant, services.PermissionTenantIntegrationsRead),
 	contract("GET", "/api/v1/tenant/projects/templates", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsRead),
 	contract("PATCH", "/api/v1/tenant/projects/:id/locales", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectLocalizationManage),
@@ -78,7 +80,7 @@ var approvedManagementRouteContracts = []ManagementRouteContract{
 	contract("GET", "/api/v1/tenant/projects/:id/translation-jobs/:jobId", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectLocalizationRead),
 	contract("PATCH", "/api/v1/tenant/projects/:id/translations/:locale/:key", IdentityManagement, ManagementScopeTargetProject, services.PermissionProjectLocalizationManage),
 	contract("PATCH", "/api/v1/tenant/projects/:id/template", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsUpdate),
-	contract("GET", "/api/v1/tenant/projects/:id", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsRead),
+	contract("GET", "/api/v1/tenant/projects/:id", IdentityManagement, ManagementScopeTargetProject, services.PermissionTenantProjectRead),
 	contract("PATCH", "/api/v1/tenant/projects/:id", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsUpdate),
 	contract("DELETE", "/api/v1/tenant/projects/:id", IdentityManagement, ManagementScopeTenant, services.PermissionTenantProjectsDelete),
 
@@ -240,6 +242,9 @@ func strictManagementHandlers(c ManagementRouteContract) ([]fiber.Handler, error
 	handlers := []fiber.Handler{middlewares.ManagementAuthenticate}
 	var resolver middlewares.ManagementTargetResolver
 	switch c.Scope {
+	case ManagementScopeTenantTargetProject:
+		handlers = append(handlers, middlewares.RequireManagementTenantScope)
+		resolver = parameterProjectTarget(false)
 	case ManagementScopeTenant:
 		handlers = append(handlers, middlewares.RequireManagementTenantScope)
 		resolver = principalTenantTarget

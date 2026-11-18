@@ -2,12 +2,12 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/responses"
@@ -20,23 +20,23 @@ import (
 )
 
 func usersCollection() *mongo.Collection {
-	return configs.GetCollection("users")
+	return collaborationDatabase().Collection("users")
 }
 
 func tenantsCollection() *mongo.Collection {
-	return configs.GetCollection("tenants")
+	return collaborationDatabase().Collection("tenants")
 }
 
 func tenantMembershipsCollection() *mongo.Collection {
-	return configs.GetCollection("tenant_memberships")
+	return collaborationDatabase().Collection("tenant_memberships")
 }
 
 func projectMembershipsCollection() *mongo.Collection {
-	return configs.GetCollection("project_memberships")
+	return collaborationDatabase().Collection("project_memberships")
 }
 
 func projectsCollection() *mongo.Collection {
-	return configs.GetCollection("projects")
+	return collaborationDatabase().Collection("projects")
 }
 
 // TenantRegisterInput represents the registration payload
@@ -74,6 +74,7 @@ func TenantRegister(c *fiber.Ctx) error {
 		})
 	}
 
+	input.Email = models.NormalizeManagementEmail(input.Email)
 	// Validate input
 	if err := utils.ValidateStruct(input); err != nil {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
@@ -85,7 +86,7 @@ func TenantRegister(c *fiber.Ctx) error {
 
 	// Check if user already exists
 	var existingUser models.User
-	err := usersCollection().FindOne(ctx, bson.M{"email": input.Email}).Decode(&existingUser)
+	err := usersCollection().FindOne(ctx, managementEmailFilter(input.Email)).Decode(&existingUser)
 	if err == nil {
 		return c.Status(http.StatusConflict).JSON(responses.GeneralResponse{
 			Status:  http.StatusConflict,
@@ -127,13 +128,14 @@ func TenantRegister(c *fiber.Ctx) error {
 
 	// Store user with hashed password (we'll add password field to the document)
 	userDoc := bson.M{
-		"_id":       newUser.ID,
-		"email":     newUser.Email,
-		"name":      newUser.Name,
-		"password":  string(hashedPassword),
-		"isActive":  newUser.IsActive,
-		"createdAt": newUser.CreatedAt,
-		"updatedAt": newUser.UpdatedAt,
+		"_id":             newUser.ID,
+		"email":           newUser.Email,
+		"normalizedEmail": models.NormalizeManagementEmail(newUser.Email),
+		"name":            newUser.Name,
+		"password":        string(hashedPassword),
+		"isActive":        newUser.IsActive,
+		"createdAt":       newUser.CreatedAt,
+		"updatedAt":       newUser.UpdatedAt,
 	}
 
 	_, err = usersCollection().InsertOne(ctx, userDoc)
@@ -232,40 +234,16 @@ func TenantLogin(c *fiber.Ctx) error {
 		})
 	}
 
-	// Find user by email
-	var userDoc bson.M
-	err := usersCollection().FindOne(ctx, bson.M{"email": input.Email}).Decode(&userDoc)
+	input.Email = models.NormalizeManagementEmail(input.Email)
+	account, err := repositories.NewManagementAccountRepository(usersCollection().Database()).AuthenticatePassword(ctx, input.Email, []byte(input.Password))
 	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(responses.GeneralResponse{
-			Status:  http.StatusUnauthorized,
-			Message: "Invalid credentials",
-			Data:    nil,
-		})
+		if errors.Is(err, repositories.ErrManagementAccountDisabled) {
+			return c.Status(403).JSON(responses.GeneralResponse{Status: 403, Message: "User account is disabled"})
+		}
+		return c.Status(401).JSON(responses.GeneralResponse{Status: 401, Message: "Invalid credentials"})
 	}
-
-	// Check if user is active
-	isActive, _ := userDoc["isActive"].(bool)
-	if !isActive {
-		return c.Status(http.StatusForbidden).JSON(responses.GeneralResponse{
-			Status:  http.StatusForbidden,
-			Message: "User account is disabled",
-			Data:    nil,
-		})
-	}
-
-	// Verify password
-	hashedPassword, _ := userDoc["password"].(string)
-	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(input.Password))
-	if err != nil {
-		return c.Status(http.StatusUnauthorized).JSON(responses.GeneralResponse{
-			Status:  http.StatusUnauthorized,
-			Message: "Invalid credentials",
-			Data:    nil,
-		})
-	}
-
-	userID := userDoc["_id"].(primitive.ObjectID)
-	email := userDoc["email"].(string)
+	userID, email := account.ID, account.Email
+	userDoc := bson.M{"name": account.Name}
 
 	// Find user's tenant memberships
 	cursor, err := tenantMembershipsCollection().Find(ctx, bson.M{
@@ -569,6 +547,18 @@ func GetCurrentUser(c *fiber.Ctx) error {
 		})
 	}
 
+	tenantID, _ := c.Locals("tenantID").(string)
+	projectID, _ := c.Locals("projectID").(string)
+	snapshot, loadErr := loadManagementMembership(ctx, models.ManagementAuthorizationSubject{UserID: userID, TenantID: tenantID}, models.ManagementAuthorizationTarget{TenantID: tenantID, ProjectID: projectID})
+	if loadErr != nil {
+		return c.Status(503).JSON(responses.GeneralResponse{Status: 503, Message: "Management authorization is temporarily unavailable"})
+	}
+	roles, roleErr := services.CurrentManagementSessionRoles(snapshot, projectID != "")
+	if roleErr != nil {
+		return c.SendStatus(403)
+	}
+	c.Locals("roles", roles)
+
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
 		Status:  http.StatusOK,
 		Message: "User retrieved successfully",
@@ -581,3 +571,5 @@ func GetCurrentUser(c *fiber.Ctx) error {
 		},
 	})
 }
+
+func managementEmailFilter(email string) bson.M { return repositories.ManagementEmailLookup(email) }

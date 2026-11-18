@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -10,7 +11,9 @@ import (
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/middlewares"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/responses"
+	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 )
 
@@ -65,7 +68,38 @@ func TenantSession(c *fiber.Ctx) error {
 		}
 		return sendAnonymousSession(c)
 	}
-	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": claims.UserID, "email": claims.Email}, "tenantId": claims.TenantID, "roles": claims.Roles})
+	if err := middlewares.ValidateManagementSession(c.UserContext(), models.ManagementPrincipal{UserID: claims.UserID, TenantID: claims.TenantID, FamilyID: claims.FamilyID, Scope: claims.Scope}); err != nil {
+		if errors.Is(err, repositories.ErrManagementSessionInvalid) {
+			return c.Status(401).JSON(fiber.Map{"error": "Management session expired or revoked"})
+		}
+		return c.Status(503).JSON(fiber.Map{"error": "Management session is temporarily unavailable"})
+	}
+	snapshot, err := loadManagementMembership(c.UserContext(), models.ManagementAuthorizationSubject{UserID: claims.UserID, TenantID: claims.TenantID}, models.ManagementAuthorizationTarget{TenantID: claims.TenantID})
+	if err != nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Management authorization is temporarily unavailable"})
+	}
+	roles, err := services.CurrentManagementSessionRoles(snapshot, false)
+	if err != nil {
+		return sendAnonymousSession(c)
+	}
+	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": claims.UserID, "email": claims.Email}, "tenantId": claims.TenantID, "roles": roles})
+}
+
+func ManagementProjectSession(c *fiber.Ctx) error {
+	setAuthNoStoreHeaders(c)
+	principal, ok := middlewares.ManagementPrincipalFromContext(c)
+	if !ok {
+		return c.SendStatus(401)
+	}
+	snapshot, err := loadManagementMembership(c.UserContext(), models.ManagementAuthorizationSubject{UserID: principal.UserID, TenantID: principal.TenantID}, models.ManagementAuthorizationTarget{TenantID: principal.TenantID, ProjectID: principal.ProjectID})
+	if err != nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Management authorization is temporarily unavailable"})
+	}
+	roles, err := services.CurrentManagementSessionRoles(snapshot, true)
+	if err != nil {
+		return c.SendStatus(403)
+	}
+	return c.JSON(fiber.Map{"authenticated": true, "user": fiber.Map{"id": principal.UserID, "email": principal.Email}, "tenantId": principal.TenantID, "projectId": principal.ProjectID, "roles": roles})
 }
 
 func ManagementProjectRefresh(c *fiber.Ctx) error {

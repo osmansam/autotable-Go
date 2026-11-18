@@ -37,6 +37,7 @@ func TestBrandingRuntimeRouteIsPublic(t *testing.T) {
 }
 
 func TestBrandingUploadAcceptsImageWithinTwoMegabyteContract(t *testing.T) {
+	allowManagementSessions(t)
 	t.Setenv("TENANT_JWT_SECRET", "test-secret")
 	tokens, err := utils.GenerateTenantTokens("user", "manager@example.com", "507f1f77bcf86cd799439011", "", []string{models.TenantRoleAdmin}, string(models.RoleScopeTenant))
 	if err != nil {

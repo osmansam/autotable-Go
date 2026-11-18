@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -680,15 +681,16 @@ func CreateProject(c *fiber.Ctx) error {
 
 	// Create project
 	newProject := models.Project{
-		ID:         primitive.NewObjectID(),
-		TenantID:   tenantOID,
-		TenantSlug: tenant.Slug,
-		Name:       input.Name,
-		Slug:       input.Slug,
-		IsActive:   true,
-		Branding:   projectBrandingForCreate(templateProject),
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Initializing: true,
+		ID:           primitive.NewObjectID(),
+		TenantID:     tenantOID,
+		TenantSlug:   tenant.Slug,
+		Name:         input.Name,
+		Slug:         input.Slug,
+		IsActive:     true,
+		Branding:     projectBrandingForCreate(templateProject),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	_, err = projectsCollection().InsertOne(ctx, newProject)
@@ -784,6 +786,10 @@ func CreateProject(c *fiber.Ctx) error {
 		}
 	}
 
+	if _, err = projectsCollection().UpdateOne(ctx, bson.M{"_id": newProject.ID, "tenantId": tenantOID, "isActive": true}, bson.M{"$unset": bson.M{"initializing": ""}, "$inc": bson.M{"collaborationVersion": int64(1)}}); err != nil {
+		return c.Status(503).JSON(responses.GeneralResponse{Status: 503, Message: "Failed to finalize project"})
+	}
+	newProject.Initializing = false
 	projectCreated = true
 	return c.Status(http.StatusCreated).JSON(responses.GeneralResponse{
 		Status:  http.StatusCreated,
@@ -803,8 +809,7 @@ func GetAllProjects(c *fiber.Ctx) error {
 
 	// Get tenant from context
 	tenantID := c.Locals("tenantID").(string)
-	tenantOID, err := primitive.ObjectIDFromHex(tenantID)
-	if err != nil {
+	if _, err := primitive.ObjectIDFromHex(tenantID); err != nil {
 		return c.Status(http.StatusBadRequest).JSON(responses.GeneralResponse{
 			Status:  http.StatusBadRequest,
 			Message: "Invalid tenant ID",
@@ -812,26 +817,10 @@ func GetAllProjects(c *fiber.Ctx) error {
 		})
 	}
 
-	// Find all projects for this tenant
-	cursor, err := projectsCollection().Find(ctx, bson.M{
-		"tenantId": tenantOID,
-	})
+	userID, _ := c.Locals("tenantUserID").(string)
+	projects, err := repositories.NewManagementProjectAccessRepository(projectsCollection().Database()).ListVisibleProjects(ctx, models.ManagementAuthorizationSubject{UserID: userID, TenantID: tenantID})
 	if err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to fetch projects",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
-	}
-	defer cursor.Close(ctx)
-
-	var projects []models.Project
-	if err = cursor.All(ctx, &projects); err != nil {
-		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{
-			Status:  http.StatusInternalServerError,
-			Message: "Failed to decode projects",
-			Data:    &fiber.Map{"error": err.Error()},
-		})
+		return c.Status(503).JSON(responses.GeneralResponse{Status: 503, Message: "Project access is temporarily unavailable"})
 	}
 
 	return c.Status(http.StatusOK).JSON(responses.GeneralResponse{
@@ -977,10 +966,12 @@ func GetProject(c *fiber.Ctx) error {
 
 	// Find project and verify it belongs to the tenant
 	var project models.Project
-	err = projectsCollection().FindOne(ctx, bson.M{
-		"_id":      projectOID,
-		"tenantId": tenantOID,
-	}).Decode(&project)
+	userID, _ := c.Locals("tenantUserID").(string)
+	visible, lookupErr := repositories.NewManagementProjectAccessRepository(projectsCollection().Database()).GetVisibleProject(ctx, models.ManagementAuthorizationSubject{UserID: userID, TenantID: tenantID}, projectID)
+	err = lookupErr
+	if visible != nil {
+		project = *visible
+	}
 
 	if err == mongo.ErrNoDocuments {
 		return c.Status(http.StatusNotFound).JSON(responses.GeneralResponse{
@@ -1001,6 +992,7 @@ func GetProject(c *fiber.Ctx) error {
 	// Get project members count
 	memberCount, err := projectMembershipsCollection().CountDocuments(ctx, bson.M{
 		"projectId": projectOID,
+		"tenantId":  tenantOID,
 		"status":    models.MembershipStatusActive,
 	})
 	if err != nil {
@@ -1138,15 +1130,21 @@ func UpdateProject(c *fiber.Ctx) error {
 		updateDoc["isActive"] = *input.IsActive
 	}
 
-	// Update project
-	result, err := projectsCollection().UpdateOne(
-		ctx,
-		bson.M{
-			"_id":      projectOID,
-			"tenantId": tenantOID,
-		},
-		bson.M{"$set": updateDoc},
-	)
+	// Reassert the invariant whenever active=true is requested, even when a
+	// concurrent deactivation happened after the initial project read.
+	var result *mongo.UpdateResult
+	if input.IsActive != nil && *input.IsActive {
+		actorID, _ := c.Locals("tenantUserID").(string)
+		result, err = services.NewProjectCollaborationService(projectsCollection().Database()).ReactivateProject(ctx, models.ManagementAuthorizationSubject{UserID: actorID, TenantID: tenantID}, models.ManagementAuthorizationTarget{TenantID: tenantID, ProjectID: projectID}, updateDoc)
+		if errors.Is(err, services.ErrCollaborationRecoveryRequired) {
+			return c.Status(409).JSON(responses.GeneralResponse{Status: 409, Message: "This project has no usable administrator. Restore administrator access through recovery or authorized maintenance before reactivating it.", Data: &fiber.Map{"code": "collaboration_recovery_required"}})
+		}
+		if errors.Is(err, services.ErrManagementForbidden) || errors.Is(err, repositories.ErrCollaborationInactive) || errors.Is(err, mongo.ErrNoDocuments) {
+			return collaborationError(c, err)
+		}
+	} else {
+		result, err = projectsCollection().UpdateOne(ctx, bson.M{"_id": projectOID, "tenantId": tenantOID}, bson.M{"$set": updateDoc})
+	}
 
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(responses.GeneralResponse{

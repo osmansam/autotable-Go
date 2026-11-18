@@ -15,6 +15,7 @@ import (
 )
 
 func TestTenantRefreshRestoresOnlyTenantSession(t *testing.T) {
+	allowManagementSessions(t)
 	t.Setenv("NODE_ENV", "production")
 	t.Setenv("TENANT_JWT_SECRET", "tenant-refresh-roundtrip-secret")
 	config := configs.GetAppConfig()

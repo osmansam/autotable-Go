@@ -11,6 +11,8 @@ const (
 )
 
 type AuthSession struct {
+	ProjectMembershipVersion int64  `bson:"projectMembershipVersion" json:"-"`
+	Identity                 string `bson:"identity,omitempty" json:"-"`
 	// SessionKey is present only on sessions issued under the unique-family protocol.
 	SessionKey         string     `bson:"sessionKey,omitempty" json:"-"`
 	FamilyID           string     `bson:"familyId" json:"familyId"`

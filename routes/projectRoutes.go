@@ -8,6 +8,7 @@ import (
 
 // ProjectRoutes sets up all project management routes
 func ProjectRoutes(app *fiber.App) {
+	ProjectCollaborationRoutes(app)
 	const base = "/api/v1/tenant/projects"
 	tenantExternalAPICredentialRoutes(app)
 

@@ -1,16 +1,35 @@
 package middlewares
 
 import (
+	"context"
 	"errors"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/models"
+	"github.com/osmansam/autotableGo/repositories"
 	"github.com/osmansam/autotableGo/services"
 	"github.com/osmansam/autotableGo/utils"
 )
 
 const ManagementPrincipalLocalKey = "managementPrincipal"
+
+var managementSessionValidator = func(ctx context.Context, p models.ManagementPrincipal) error {
+	return repositories.NewAuthSessionRepository().ValidateManagementFamily(ctx, p, time.Now())
+}
+
+func ValidateManagementSession(ctx context.Context, p models.ManagementPrincipal) error {
+	return managementSessionValidator(ctx, p)
+}
+
+// OverrideManagementSessionValidator supplies an isolated session store to HTTP
+// contract tests. It never changes production identity or permission policy.
+func OverrideManagementSessionValidator(validate func(context.Context, models.ManagementPrincipal) error) func() {
+	previous := managementSessionValidator
+	managementSessionValidator = validate
+	return func() { managementSessionValidator = previous }
+}
 
 type ManagementPrincipal = models.ManagementPrincipal
 
@@ -74,6 +93,15 @@ func authenticateManagementPrincipal(c *fiber.Ctx) error {
 		UserID: claims.UserID, Email: claims.Email, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
 		Scope: claims.Scope, RoleScope: claims.RoleScope, TokenRoles: append([]string(nil), claims.Roles...),
 		TokenID: claims.Id, FamilyID: claims.FamilyID,
+	}
+	ctx, cancel := context.WithTimeout(c.UserContext(), 3*time.Second)
+	err = ValidateManagementSession(ctx, principal)
+	cancel()
+	if errors.Is(err, repositories.ErrManagementSessionInvalid) {
+		return c.Status(401).JSON(fiber.Map{"error": "Management session expired or revoked"})
+	}
+	if err != nil {
+		return c.Status(503).JSON(fiber.Map{"error": "Management session is temporarily unavailable"})
 	}
 	c.Locals(ManagementPrincipalLocalKey, principal)
 	// Temporary controller adapter; authorization must use ManagementPrincipal and live membership.
