@@ -48,6 +48,18 @@ jobs:
           DEPLOY_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           DEPLOY_TENANT_JWT_SECRET: ${{ secrets.TENANT_JWT_SECRET }}
           DEPLOY_EXTERNAL_API_CREDENTIAL_KEY: ${{ secrets.EXTERNAL_API_CREDENTIAL_KEY }}
+          DEPLOY_COLLABORATION_MEMBERS_ENABLED: ${{ secrets.COLLABORATION_MEMBERS_ENABLED }}
+          DEPLOY_COLLABORATION_INVITATIONS_ENABLED: ${{ secrets.COLLABORATION_INVITATIONS_ENABLED }}
+          DEPLOY_COLLABORATION_RECOVERY_ENABLED: ${{ secrets.COLLABORATION_RECOVERY_ENABLED }}
+          DEPLOY_INVITATION_SMTP_HOST: ${{ secrets.INVITATION_SMTP_HOST }}
+          DEPLOY_INVITATION_SMTP_PORT: ${{ secrets.INVITATION_SMTP_PORT }}
+          DEPLOY_INVITATION_SMTP_TLS_MODE: ${{ secrets.INVITATION_SMTP_TLS_MODE }}
+          DEPLOY_INVITATION_SMTP_FROM: ${{ secrets.INVITATION_SMTP_FROM }}
+          DEPLOY_INVITATION_SMTP_USERNAME: ${{ secrets.INVITATION_SMTP_USERNAME }}
+          DEPLOY_INVITATION_SMTP_PASSWORD: ${{ secrets.INVITATION_SMTP_PASSWORD }}
+          DEPLOY_INVITATION_PANEL_URL: ${{ secrets.INVITATION_PANEL_URL }}
+          DEPLOY_INVITATION_DELIVERY_KEYS_JSON: ${{ secrets.INVITATION_DELIVERY_KEYS_JSON }}
+          DEPLOY_INVITATION_DELIVERY_ACTIVE_KEY_ID: ${{ secrets.INVITATION_DELIVERY_ACTIVE_KEY_ID }}
           DEPLOY_OZMISHOW_SERVICE_SECRET: ${{ secrets.OZMISHOW_RATE_LIMIT_SERVICE_SECRET }}
           DEPLOY_OZMISHOW_PREVIOUS_SECRET: ${{ secrets.OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET }}
           DEPLOY_OZMISHOW_REDIS_PASSWORD: ${{ secrets.OZMISHOW_RATE_LIMIT_REDIS_PASSWORD }}
@@ -97,6 +109,31 @@ jobs:
           OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET=$DEPLOY_OZMISHOW_PREVIOUS_SECRET
           OZMISHOW_RATE_LIMIT_REDIS_PASSWORD=$DEPLOY_OZMISHOW_REDIS_PASSWORD
           EOF
+          # Quote collaboration values for Compose; retain JSON, passwords and
+          # literal dollar signs without expanding them in the shell or Compose.
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          keys = (
+              "COLLABORATION_MEMBERS_ENABLED", "COLLABORATION_INVITATIONS_ENABLED", "COLLABORATION_RECOVERY_ENABLED",
+              "INVITATION_SMTP_HOST", "INVITATION_SMTP_PORT", "INVITATION_SMTP_TLS_MODE", "INVITATION_SMTP_FROM",
+              "INVITATION_SMTP_USERNAME", "INVITATION_SMTP_PASSWORD", "INVITATION_PANEL_URL",
+              "INVITATION_DELIVERY_KEYS_JSON", "INVITATION_DELIVERY_ACTIVE_KEY_ID",
+          )
+          lines = []
+          for key in keys:
+              value = os.environ.get("DEPLOY_" + key, "")
+              if key.startswith("COLLABORATION_") and not value:
+                  value = "false"
+              if "\n" in value or "\r" in value:
+                  sys.exit(key + " must be a single-line repository secret")
+              quoted = json.dumps(value, ensure_ascii=False).replace("$", "$$")
+              lines.append(key + "=" + quoted + "\n")
+          with open(".env", "a", encoding="utf-8") as target:
+              target.writelines(lines)
+          PY
           chmod 600 .env
 
       - name: Deploy to Digital Ocean
