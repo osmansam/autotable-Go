@@ -14,6 +14,20 @@ COLLABORATION_INVITATIONS_ENABLED=false
 COLLABORATION_RECOVERY_ENABLED=false
 ```
 
+For the DigitalOcean GitHub Actions deployment, configure these names as repository
+**Actions secrets** in the `autotable-Go` repository. The production workflow
+explicitly copies them, together with the `INVITATION_*` secrets below, into the
+staged server environment. Missing collaboration flags default to `false`.
+Repository variables and changes to a local `.env` are not copied by this workflow.
+Re-run deployment after updating secrets; the running container keeps its old
+environment until it is recreated.
+
+If the panel reports that collaboration is not enabled, check both conditions:
+the running API process must receive `COLLABORATION_MEMBERS_ENABLED=true`, and its
+**management database** must have the successful migration readiness marker
+described below. SMTP configuration does not enable member administration. Do not
+manually insert a readiness marker: it is written only after migration succeeds.
+
 Build the explicit management migration CLI with `go build ./cmd/autotable-collaboration`. Run its read-only preflight against an explicitly selected database:
 
 ```

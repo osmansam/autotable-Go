@@ -1,7 +1,9 @@
-"""Black-box deployment checks; every Docker/curl invocation is a local fake."""
+"""Black-box deployment checks; lifecycle commands are fakes, Compose parsing is read-only."""
+import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -12,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DeploymentEnvironmentTests(unittest.TestCase):
-    def render_environment(self, credential_key, limiter_secret="", limiter_password="", previous_secret=""):
+    def render_environment(self, credential_key, limiter_secret="", limiter_password="", previous_secret="", collaboration=None):
         workflow = (ROOT / ".github/workflows/production.yml").read_text()
         step = workflow.split("      - name: Create .env file\n", 1)[1].split("\n      - name:", 1)[0]
         bindings, script = step.split("        run: |\n", 1)
@@ -24,6 +26,13 @@ class DeploymentEnvironmentTests(unittest.TestCase):
             "OZMISHOW_RATE_LIMIT_REDIS_PASSWORD": limiter_password,
             "OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET": previous_secret,
         }
+        secrets.update({key: "" for key in (
+            "COLLABORATION_MEMBERS_ENABLED", "COLLABORATION_INVITATIONS_ENABLED", "COLLABORATION_RECOVERY_ENABLED",
+            "INVITATION_SMTP_HOST", "INVITATION_SMTP_PORT", "INVITATION_SMTP_TLS_MODE", "INVITATION_SMTP_FROM",
+            "INVITATION_SMTP_USERNAME", "INVITATION_SMTP_PASSWORD", "INVITATION_PANEL_URL",
+            "INVITATION_DELIVERY_KEYS_JSON", "INVITATION_DELIVERY_ACTIVE_KEY_ID",
+        )})
+        secrets.update(collaboration or {})
         environment = {"PATH": os.environ["PATH"]}
         for variable, secret in re.findall(r"(DEPLOY_\w+): \$\{\{ secrets\.(\w+) \}\}", bindings):
             environment[variable] = secrets.get(secret, "synthetic-value")
@@ -65,6 +74,61 @@ class DeploymentEnvironmentTests(unittest.TestCase):
         result, content = self.render_environment("")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(content, "")
+
+    def test_collaboration_secrets_reach_the_container_environment_without_shell_expansion(self):
+        settings = {
+            "COLLABORATION_MEMBERS_ENABLED": "true", "COLLABORATION_INVITATIONS_ENABLED": "true",
+            "COLLABORATION_RECOVERY_ENABLED": "false", "INVITATION_SMTP_HOST": "smtp.example.test",
+            "INVITATION_SMTP_PORT": "587", "INVITATION_SMTP_TLS_MODE": "starttls",
+            "INVITATION_SMTP_FROM": "AutoTable <invite@example.test>", "INVITATION_SMTP_USERNAME": "sender",
+            "INVITATION_SMTP_PASSWORD": "synthetic$PASSWORD # 'quoted' \\\" `echo secret` $(echo secret)",
+            "INVITATION_PANEL_URL": "https://tenant.autoapi.org",
+            "INVITATION_DELIVERY_KEYS_JSON": '{"test":"MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="}',
+            "INVITATION_DELIVERY_ACTIVE_KEY_ID": "test",
+        }
+        result, content = self.render_environment("key", collaboration=settings)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Compose's double-quoted env-file syntax: JSON escapes, literal dollars as $$.
+        rendered = dict(line.split("=", 1) for line in content.splitlines())
+        for key, expected in settings.items():
+            self.assertIn(key, rendered)
+            self.assertEqual(json.loads(rendered[key]).replace("$$", "$"), expected)
+            self.assertNotIn(expected, result.stdout + result.stderr)
+        self.assertIn("$$PASSWORD", rendered["INVITATION_SMTP_PASSWORD"])
+
+    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
+    def test_compose_preserves_invitation_credentials_and_json(self):
+        probe = subprocess.run(["docker", "compose", "version"], capture_output=True)
+        if probe.returncode:
+            self.skipTest("Docker Compose plugin is not installed")
+        result, content = self.render_environment("key", collaboration={
+            "COLLABORATION_MEMBERS_ENABLED": "true",
+            "INVITATION_SMTP_PASSWORD": "synthetic$PASSWORD # 'quoted' \\",
+            "INVITATION_DELIVERY_KEYS_JSON": '{"test":"synthetic-key="}',
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / ".env").write_text(content)
+            (root / "compose.yml").write_text("services:\n  app:\n    image: scratch\n    env_file: .env\n")
+            parsed = subprocess.run(["docker", "compose", "-f", "compose.yml", "config", "--format", "json"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(parsed.returncode, 0, parsed.stderr)
+            environment = json.loads(parsed.stdout)["services"]["app"]["environment"]
+            self.assertEqual(environment["COLLABORATION_MEMBERS_ENABLED"], "true")
+            self.assertEqual(environment["INVITATION_DELIVERY_KEYS_JSON"], '{"test":"synthetic-key="}')
+            # Compose serializes literal dollar signs as $$ in its resolved model.
+            self.assertEqual(environment["INVITATION_SMTP_PASSWORD"], "synthetic$$PASSWORD # 'quoted' \\")
+
+    def test_unconfigured_collaboration_flags_default_to_disabled(self):
+        result, content = self.render_environment("key")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("MEMBERS", "INVITATIONS", "RECOVERY"):
+            self.assertIn(f'COLLABORATION_{name}_ENABLED="false"\n', content)
+
+    def test_collaboration_secret_cannot_inject_environment_lines(self):
+        result, _ = self.render_environment("key", collaboration={"INVITATION_SMTP_PASSWORD": "private\nCOLLABORATION_MEMBERS_ENABLED=true"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("private", result.stdout + result.stderr)
 
 
 class DeploymentTests(unittest.TestCase):
