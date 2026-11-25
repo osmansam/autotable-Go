@@ -72,7 +72,7 @@ if args[0]=='run':
         self.assertFalse(any(self.root.glob("reports/image-archive.*")))
 
     def test_os_report_requires_real_package_inventory_and_no_high_findings(self):
-        report = {"Metadata": {"OS": {"Family": "alpine", "Name": "3.24.1"}}, "Results": [{"Class": "os-pkgs", "Vulnerabilities": []}]}
+        report = {"Metadata": {"OS": {"Family": "alpine", "Name": "3.24.1"}}, "Results": [{"Class": "os-pkgs", "Type": "alpine", "Packages": [{"Name": "musl", "Version": "1.2.5-r0"}], "Vulnerabilities": []}]}
         result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT=json.dumps(report))
         self.assertEqual(result.returncode, 0, result.stderr)
         report["Results"][0]["Vulnerabilities"] = [{"Severity": "HIGH"}]
@@ -80,6 +80,40 @@ if args[0]=='run':
         self.assertNotEqual(result.returncode, 0)
         result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT="{}")
         self.assertNotEqual(result.returncode, 0)
+
+    def test_empty_or_unversioned_os_inventory_fails(self):
+        for packages in ([], [{"Name": "musl"}], [{"Version": "1.2.5"}]):
+            report={"Metadata":{"OS":{"Family":"alpine","Name":"3.24.1"}},"Results":[{"Class":"os-pkgs","Type":"alpine","Packages":packages}]}
+            result,_=self.run_gate("scan",DOCKER_TEST_OS_REPORT=json.dumps(report))
+            self.assertNotEqual(result.returncode,0)
+
+    def test_blank_vulnerability_severity_fails(self):
+        report={"Metadata":{"OS":{"Family":"alpine","Name":"3.24.1"}},"Results":[{"Class":"os-pkgs","Type":"alpine","Packages":[{"Name":"musl","Version":"1.2.5-r0"}],"Vulnerabilities":[{"Severity":""}]}]}
+        result,_=self.run_gate("scan",DOCKER_TEST_OS_REPORT=json.dumps(report))
+        self.assertNotEqual(result.returncode,0)
+
+    def test_actual_probe_shell_fails_each_mandatory_predicate(self):
+        prefix = r"""
+id() { if [ "$1" = "-u" ]; then printf '%s\n' "${PROBE_UID:-10001}"; else printf '%s\n' "${PROBE_GID:-10001}"; fi; }
+test() {
+ if [ "$*" = "${PROBE_FAIL:-__none__}" ]; then return 1; fi
+ case "$1" in -w|-x|-r|'!') return 0;; esac
+ command test "$@"
+}
+touch() { :; }
+"""
+        for name in ("uploads","logs"):(self.root/name).mkdir()
+        for mode in ("image","mounts"):
+            _,calls=self.run_gate(mode,STAGING_TEMP_DIR=str(self.root/"uploads"),STAGING_LOG_DIR=str(self.root/"logs"))
+            body=next(call[-1] for call in reversed(calls) if call[0]=="run")
+            predicates=["-w /app/temp","-x /app/temp","-w /app/logs","-x /app/logs"]
+            if mode=="image":predicates += ["-x /app/server","! -w /app/server","-r /app/configs/production.json","! -w /app/configs/production.json"]
+            good=subprocess.run(["/bin/sh","-ec",prefix+body],capture_output=True,text=True)
+            self.assertEqual(good.returncode,0,good.stderr)
+            for settings in [{"PROBE_FAIL":value} for value in predicates]+[{"PROBE_UID":"10002"},{"PROBE_GID":"10002"}]:
+                with self.subTest(mode=mode,settings=settings):
+                    result=subprocess.run(["/bin/sh","-ec",prefix+body],env=dict(os.environ,**settings),capture_output=True,text=True)
+                    self.assertNotEqual(result.returncode,0,"actual probe ignored a failed prerequisite")
 
     def test_success_without_fresh_os_report_fails_closed(self):
         result, _ = self.run_gate("scan")

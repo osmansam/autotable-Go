@@ -80,4 +80,6 @@ ingress-check:
 	$(PYTHON) scripts/check-ingress.py --api-url "$${STAGING_API_URL:?set STAGING_API_URL to an HTTPS staging origin}" --frontend-url "$${STAGING_FRONTEND_URL:?set STAGING_FRONTEND_URL to its HTTPS frontend}"
 
 # Verification only. No target deploys, rotates credentials or changes mount ownership.
-release-check: check integration config-check image-scan staging-mounts ingress-check
+release-check: check integration config-check image-scan
+	$(MAKE) staging-mounts
+	$(MAKE) ingress-check

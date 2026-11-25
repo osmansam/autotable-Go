@@ -30,10 +30,14 @@ case "$check_mode" in
     docker run --rm --network none --entrypoint /bin/sh "$check_image" -ec '
       test "$(id -u)" = "10001"
       test "$(id -g)" = "10001"
-      test -w /app/temp && test -x /app/temp
-      test -w /app/logs && test -x /app/logs
-      test -x /app/server && test ! -w /app/server
-      test -r /app/configs/production.json && test ! -w /app/configs/production.json
+      test -w /app/temp
+      test -x /app/temp
+      test -w /app/logs
+      test -x /app/logs
+      test -x /app/server
+      test ! -w /app/server
+      test -r /app/configs/production.json
+      test ! -w /app/configs/production.json
       touch /app/temp/ci-probe /app/logs/ci-probe
     '
     echo 'Image built and isolated non-root runtime permissions passed.'
@@ -61,11 +65,22 @@ case "$check_mode" in
 import json,sys
 with open(sys.argv[1]) as source:
     report=json.load(source)
-if not report.get('Metadata', {}).get('OS', {}).get('Family'):
+os_info=report.get('Metadata', {}).get('OS', {})
+if not os_info.get('Family') or not os_info.get('Name'):
     sys.exit('OS scan report lacks distribution metadata; gate has NOT passed')
 results=[row for row in report.get('Results', []) if row.get('Class')=='os-pkgs']
 if not results:
     sys.exit('OS scan report contains no OS package result; gate has NOT passed')
+if os_info.get('EOSL'):
+    sys.exit('OS distribution is end-of-life; gate has NOT passed')
+for row in results:
+    packages=row.get('Packages')
+    if row.get('Type')!=os_info['Family'] or not isinstance(packages,list) or not packages:
+        sys.exit('OS scan report lacks a matching nonempty package inventory; gate has NOT passed')
+    if any(not isinstance(p,dict) or not isinstance(p.get('Name'),str) or not p['Name'].strip() or not isinstance(p.get('Version'),str) or not p['Version'].strip() for p in packages):
+        sys.exit('OS package inventory lacks valid names/versions; gate has NOT passed')
+    if any(v.get('Severity') not in ('UNKNOWN','LOW','MEDIUM','HIGH','CRITICAL') for v in row.get('Vulnerabilities') or []):
+        sys.exit('OS finding has missing/invalid severity; gate has NOT passed')
 if any(v.get('Severity') in ('HIGH','CRITICAL') for row in results for v in row.get('Vulnerabilities') or []):
     sys.exit('OS scan report contains HIGH/CRITICAL findings; gate has NOT passed')
 PYREPORT
@@ -76,9 +91,12 @@ PYREPORT
     docker run --rm --network none --entrypoint /bin/sh \
       --mount "type=bind,src=$STAGING_TEMP_DIR,dst=/app/temp" --mount "type=bind,src=$STAGING_LOG_DIR,dst=/app/logs" \
       "$check_image" -ec '
-        test "$(id -u)" = "10001" && test "$(id -g)" = "10001"
-        test -w /app/temp && test -x /app/temp
-        test -w /app/logs && test -x /app/logs
+        test "$(id -u)" = "10001"
+        test "$(id -g)" = "10001"
+        test -w /app/temp
+        test -x /app/temp
+        test -w /app/logs
+        test -x /app/logs
       '
     echo 'Staging mount access passed for UID/GID 10001; real upload/log acceptance is still required.'
     ;;
