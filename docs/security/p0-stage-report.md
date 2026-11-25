@@ -85,3 +85,12 @@ No production deployment, data operation, license addition, or history rewrite i
 - Local Docker runtime/build validation is pending: installed engine reports stopped. It was not started because its start command resumes unrelated machines. CI image validation is added in the next stage.
 - Remaining: zero known Go dependency findings; OS package vulnerabilities are not covered by govulncheck or digest pinning and require an image scan before release. No claim of a clean OS scan.
 - Compatibility/deployment risk: staging/production bind mounts must permit UID/GID 10001 writes; image ownership cannot override host volume permissions. Operator action and staging smoke test required. No host volume ownership/data was changed.
+
+## Stage 11 — vulnerability CI and manual production release
+
+- CI installs pinned official govulncheck v1.10.0 and runs both source reachability and strict module scans. Pin Go 1.26.11 in CI to avoid using the unpatched minimum 1.26.0 from go.mod.
+- Add image build and non-root runtime permission smoke checks in an isolated CI container, without starting the app or connecting databases. Local container check remains pending while Docker is stopped.
+- Production push events now verify only; deploy job requires explicit workflow_dispatch. No workflow was dispatched, pushed or deployed by this task.
+- Local `go vet ./...`, `go test -race ./... -count=1`, deployment regression tests (27 tests), shell syntax and full govulncheck source scan PASS. Source scan reports zero known vulnerabilities.
+- Compatibility: CI requires module/DB network access and Docker on runner. An old Go dispatcher on the developer PATH caused scanner parsing errors; using the actual Go 1.26.11 bin on PATH resolves it. GitHub setup-go installs that exact toolchain directly.
+- Remaining: OS image scan, local container execution, staging bind mounts and customer acceptance checks are release gates; no known Go dependency vulnerabilities remain.

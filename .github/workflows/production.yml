@@ -16,6 +16,8 @@ jobs:
   verify:
     uses: ./.github/workflows/ci.yml
   deploy:
+    # Pushes verify only; production releases require an explicit manual dispatch.
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
 
