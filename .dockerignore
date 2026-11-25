@@ -19,3 +19,5 @@ server
 output
 **/.DS_Store
 observability/secrets
+temp_*.so
+**/__pycache__

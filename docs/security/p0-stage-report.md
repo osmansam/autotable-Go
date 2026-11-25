@@ -127,3 +127,9 @@ No production deployment, data operation, license addition, or history rewrite i
 - Capture underlying transport while registry owns the wrapper, expire net.Conn read/write deadlines, and signal teardown completion. Concurrent unregister callers wait for completion; the handler also waits for its writer before adapter pool reuse. No wrapper access occurs after teardown releases it.
 - Real connection eviction regression PASS; authenticated subscription and eviction tests PASS for 10 race-enabled repetitions; complete suite PASS. No change to valid websocket messages or routes.
 - Deployment risk: evicted/failed clients are disconnected promptly as intended and may reconnect through normal authentication. No production connection was touched.
+
+## Review follow-up — remaining generated artifacts
+
+- Confirmed retired Go plugin loader is commented out; untrack temp_Multiple.so/temp_Sum.so, Python bytecode and generated browser logs/screenshots. Ignore future regeneration and exclude shared objects/bytecode from Docker context.
+- Retain earlier tracked .superpowers review patches as historical review evidence, not executable build output. No unrelated source/fixture cleanup.
+- Tracked-artifact inventory and diff whitespace checks PASS; source-only full race suite PASS. Git history and local generated files remain intact. No license added, production data operation or deployment.

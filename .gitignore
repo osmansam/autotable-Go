@@ -17,3 +17,6 @@ loadtest/results/*.prof
 .playwright-cli/
 output/playwright/
 .superpowers/
+/temp_*.so
+__pycache__/
+*.py[cod]
