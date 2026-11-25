@@ -77,3 +77,11 @@ No production deployment, data operation, license addition, or history rewrite i
 - Prometheus example reads a mounted secret file; production environment generation forwards optional diagnostics credential. No real credential is committed.
 - Remaining: zero known Go advisories; Docker/CI/artifact cleanup and final checks pending.
 - Deployment risk: existing unauthenticated scrapers stop working until their independent token/file mount is configured. Diagnostics must travel only on trusted networks/TLS. Customer API authentication is unchanged.
+
+## Stage 10 — non-root, pinned Docker image
+
+- Pin official builder Go 1.26.11/Alpine 3.24 and runtime Alpine 3.24.1 by verified immutable Docker Hub manifest digests. Run as UID/GID 10001 with owned upload/log directories, root-owned binary/config JSON. Exclude local build/development outputs and secrets from context.
+- Linux amd64 CGO-disabled cross-build PASS. Official registry manifest requests verified both digests. Deployment regression suite previously PASS (27 tests).
+- Local Docker runtime/build validation is pending: installed engine reports stopped. It was not started because its start command resumes unrelated machines. CI image validation is added in the next stage.
+- Remaining: zero known Go dependency findings; OS package vulnerabilities are not covered by govulncheck or digest pinning and require an image scan before release. No claim of a clean OS scan.
+- Compatibility/deployment risk: staging/production bind mounts must permit UID/GID 10001 writes; image ownership cannot override host volume permissions. Operator action and staging smoke test required. No host volume ownership/data was changed.
