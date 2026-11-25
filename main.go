@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -71,13 +73,15 @@ func main() {
 		},
 	})
 
+	app.Use(middlewares.SecurityHeaders())
 	app.Use(middlewares.RequestID())
+	app.Use(middlewares.PanicRecovery())
 	app.Use(observability.TracingMiddleware())
 	app.Use(middlewares.PrometheusMetrics())
 	app.Use(middlewares.RequestLogger())
 	closeOzmishowLimiter := ozmishowratelimit.Mount(app)
 	defer closeOzmishowLimiter()
-	app.Get("/metrics", middlewares.PrometheusHandler())
+	configureMetrics(app)
 	configurePprof(app, portNumber)
 
 	// Create a new directory if not exists to store images
@@ -117,40 +121,36 @@ func main() {
 		log.Fatalf("Durable workflow indexes could not be initialized: %v", err)
 	}
 	cancelIndexes()
+	var workerFailed atomic.Bool
+	stopAfterWorkerPanic := func() {
+		workerFailed.Store(true)
+		cancelApp()
+		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+			log.Print("Shutdown after worker panic failed")
+		}
+		// Also terminate if the worker failed before the HTTP listener started.
+		os.Exit(1)
+	}
 	hostname, _ := os.Hostname()
-	go services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
-	go services.StartManagementCollaborationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
-	go services.StartInvitationDeliveryWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	go panicguard.Essential("StartLocalizationWorker", func() {
+		services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
+	go panicguard.Essential("StartManagementCollaborationWorker", func() {
+		services.StartManagementCollaborationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
+	go panicguard.Essential("StartInvitationDeliveryWorker", func() {
+		services.StartInvitationDeliveryWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
 
 	//websocket wiring
-	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {
-		if !websocket.IsWebSocketUpgrade(c) {
-			return fiber.ErrUpgradeRequired
-		}
-		if !middlewares.IsTrustedOrigin(c.Get(fiber.HeaderOrigin), appConfig.CorsWhitelist) {
-			return c.SendStatus(fiber.StatusForbidden)
-		}
-		requestedTenant := c.Params("tenantSlug")
-		requestedProject := c.Params("projectSlug")
-		token := c.Cookies(utils.ProjectAuthCookieName(requestedTenant, requestedProject, "access"))
-		_, _, _, _, tenantSlug, projectSlug, err := utils.ParseToken(token)
-		if err != nil || tenantSlug == "" || projectSlug == "" {
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-		if requestedTenant != "" && (requestedTenant != tenantSlug || requestedProject != projectSlug) {
-			return c.SendStatus(fiber.StatusForbidden)
-		}
-		c.Locals("tenantSlug", tenantSlug)
-		c.Locals("projectSlug", projectSlug)
-		return c.Next()
-	})
+	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", projectWebsocketAuthentication(appConfig))
 	// WS endpoint
 	app.Get("/api/v1/:tenantSlug/:projectSlug/ws", websocket.New(ws.HandleWS))
-	go ws.RunBroadcaster(appCtx)
-	go ws.RunRedisSubscriber(appCtx)
-	go services.StartDynamicOutboxProcessor(appCtx)
-	go services.StartDynamicCronScheduler(appCtx)
-	go services.EnsureDynamicNotificationIndexes(appCtx)
+	go panicguard.Essential("RunBroadcaster", func() { ws.RunBroadcaster(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("RunRedisSubscriber", func() { ws.RunRedisSubscriber(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("StartDynamicOutboxProcessor", func() { services.StartDynamicOutboxProcessor(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("StartDynamicCronScheduler", func() { services.StartDynamicCronScheduler(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("EnsureDynamicNotificationIndexes", func() { services.EnsureDynamicNotificationIndexes(appCtx) }, stopAfterWorkerPanic)
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -160,6 +160,7 @@ func main() {
 		})
 	})
 	app.Get("/ready", readinessHandler(
+		func(context.Context) error { return appCtx.Err() },
 		func(ctx context.Context) error { return configs.DB.Ping(ctx, nil) },
 		func(ctx context.Context) error { return configs.RedisClient.Ping(ctx).Err() },
 	))
@@ -200,14 +201,14 @@ func main() {
 	}()
 
 	log.Println("Server is running on port: ", portNumber)
-	log.Println("Prometheus metrics available at http://localhost" + portNumber + "/metrics")
+	log.Println("Metrics require a dedicated OBSERVABILITY_TOKEN; disabled when unset")
 	traceEndpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 	if traceEndpoint == "" {
 		traceEndpoint = "localhost:4317"
 	}
 	log.Println("OpenTelemetry traces exported to " + traceEndpoint)
-	if err := app.Listen(portNumber); err != nil {
-		log.Printf("Server stopped: %v", err)
+	if status := serverExitCode(func() error { return app.Listen(portNumber) }, &workerFailed); status != 0 {
+		os.Exit(status)
 	}
 }
 
@@ -228,7 +229,11 @@ func readinessHandler(checks ...func(context.Context) error) fiber.Handler {
 }
 
 func validateStartupSecurityConfiguration() error {
-	return configs.ValidateJWTSecrets()
+	if err := configs.ValidateJWTSecrets(); err != nil {
+		return err
+	}
+	_, err := configs.DiagnosticsToken()
+	return err
 }
 
 func corsFromConfig(cfg *configs.Config) fiber.Handler {
@@ -257,14 +262,39 @@ func corsFromConfig(cfg *configs.Config) fiber.Handler {
 }
 
 func configurePprof(app *fiber.App, portNumber string) {
-	if isProduction() {
-		log.Println("pprof disabled in production")
+	if isProduction() || !strings.EqualFold(os.Getenv("ENABLE_PPROF"), "true") {
+		log.Println("pprof disabled")
 		return
 	}
-	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
+	token, err := configs.DiagnosticsToken()
+	if err != nil || token == "" {
+		log.Print("pprof disabled: dedicated diagnostics credential required")
+		return
+	}
+	log.Print("Authenticated development pprof enabled")
+	app.Use("/debug/pprof", middlewares.DiagnosticsAuth())
 	app.Use(pprof.New())
 }
 
 func isProduction() bool {
 	return strings.EqualFold(os.Getenv("NODE_ENV"), "production")
+}
+
+func configureMetrics(app *fiber.App) {
+	app.Get("/metrics", middlewares.DiagnosticsAuth(), middlewares.PrometheusHandler())
+}
+
+// serverExitCode runs on main's goroutine: Fiber may return from Listen before
+// a worker's concurrent Shutdown finishes, so main owns the failure exit too.
+func serverExitCode(listen func() error, workerFailed *atomic.Bool) int {
+	if workerFailed.Load() {
+		return 1
+	}
+	if err := listen(); err != nil {
+		log.Printf("Server stopped: %v", err)
+	}
+	if workerFailed.Load() {
+		return 1
+	}
+	return 0
 }

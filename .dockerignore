@@ -9,3 +9,20 @@ loadtest
 coverage*
 *.test
 tests/__pycache__
+
+# Local build/development output must never enter the image context.
+autotable
+autotableGo
+server
+.superpowers
+.playwright-cli
+output
+**/.DS_Store
+observability/secrets
+temp_*.so
+**/__pycache__
+
+.tools
+build
+
+temp_*.go

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"log/slog"
 	"strings"
 	"time"
@@ -172,12 +173,14 @@ func dispatchDynamicOutboxEventWithLease(ctx context.Context, repository dynamic
 		}
 		runCtx, cancel := context.WithTimeout(ctx, cronRootExecutionTimeout)
 		defer cancel()
-		return dispatch(runCtx, event), ctx.Err() == nil
+		return panicguard.Run("cron-workflow", func() error { return dispatch(runCtx, event) }), ctx.Err() == nil
 	}
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	result := make(chan error, 1)
-	go func() { result <- dispatch(dispatchCtx, event) }()
+	go func() {
+		result <- panicguard.Run("outbox-dispatch", func() error { return dispatch(dispatchCtx, event) })
+	}()
 	for {
 		select {
 		case <-ctx.Done():

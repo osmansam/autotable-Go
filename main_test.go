@@ -93,32 +93,35 @@ func TestIsProduction(t *testing.T) {
 
 func TestValidateStartupSecurityConfiguration(t *testing.T) {
 	t.Setenv("JWT_SECRET", "")
-	t.Setenv("TENANT_JWT_SECRET", "tenant-secret")
+	t.Setenv("TENANT_JWT_SECRET", "c5ae13f4d06897b22c8e106fa471d3506e9c08ab32745f16b09d8e6a1257f3c0")
+	t.Setenv("CONTAINER_JWT_SECRET", "")
 	if err := validateStartupSecurityConfiguration(); err == nil {
 		t.Fatal("validateStartupSecurityConfiguration() without JWT_SECRET error = nil")
 	}
 
-	t.Setenv("JWT_SECRET", "project-secret")
+	t.Setenv("JWT_SECRET", "b2615c0e92f7483ad6810c9e7f024568a5e330c19bf607d40e8a672d195b3fc4")
 	if err := validateStartupSecurityConfiguration(); err != nil {
 		t.Fatalf("validateStartupSecurityConfiguration() error = %v", err)
 	}
 }
 
 func TestConfigurePprof(t *testing.T) {
-	t.Setenv("NODE_ENV", "production")
-	app := fiber.New()
-	configurePprof(app, ":3000")
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
-	if err != nil || resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("production pprof status = %v, error = %v", resp, err)
-	}
-
-	t.Setenv("NODE_ENV", "development")
-	app = fiber.New()
-	configurePprof(app, ":3000")
-	resp, err = app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
-	if err != nil || resp.StatusCode == http.StatusNotFound {
-		t.Fatalf("development pprof status = %v, error = %v", resp, err)
+	for _, env := range []string{"production", "development"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("NODE_ENV", env)
+			t.Setenv("ENABLE_PPROF", "")
+			t.Setenv("OBSERVABILITY_TOKEN", "")
+			app := fiber.New()
+			configurePprof(app, ":3000")
+			resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 404 {
+				t.Fatalf("pprof must be disabled by default, got %d", resp.StatusCode)
+			}
+		})
 	}
 }
 

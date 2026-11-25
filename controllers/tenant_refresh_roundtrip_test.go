@@ -47,7 +47,7 @@ func TestTenantRefreshRestoresOnlyTenantSession(t *testing.T) {
 	rotations := 0
 	rotateManagementAuthSession = func(_ context.Context, family, presented, next string, expires time.Time) error {
 		rotations++
-		if family != initial.FamilyID || presented != initial.Id || next == "" || next == presented || !expires.After(time.Now()) {
+		if family != initial.FamilyID || presented != initial.ID || next == "" || next == presented || !expires.After(time.Now()) {
 			t.Error("invalid tenant rotation")
 		}
 		return nil

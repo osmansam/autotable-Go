@@ -2,7 +2,7 @@ name: Deploy to Digital Ocean
 
 on:
   push:
-    branches: ["main"] # Deploy when pushing to main branch
+    branches: ["main"] # Verify pushes; production deploy is manual-only
   workflow_dispatch: # Allow manual deployment
 
 permissions:
@@ -16,6 +16,8 @@ jobs:
   verify:
     uses: ./.github/workflows/ci.yml
   deploy:
+    # Pushes verify only; production releases require an explicit manual dispatch.
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
 
@@ -47,6 +49,7 @@ jobs:
           DEPLOY_BACKEND_BASE_URL: ${{ secrets.BACKEND_BASE_URL }}
           DEPLOY_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           DEPLOY_TENANT_JWT_SECRET: ${{ secrets.TENANT_JWT_SECRET }}
+          DEPLOY_OBSERVABILITY_TOKEN: ${{ secrets.OBSERVABILITY_TOKEN }}
           DEPLOY_EXTERNAL_API_CREDENTIAL_KEY: ${{ secrets.EXTERNAL_API_CREDENTIAL_KEY }}
           DEPLOY_COLLABORATION_MEMBERS_ENABLED: ${{ secrets.COLLABORATION_MEMBERS_ENABLED }}
           DEPLOY_COLLABORATION_INVITATIONS_ENABLED: ${{ secrets.COLLABORATION_INVITATIONS_ENABLED }}
@@ -117,6 +120,7 @@ jobs:
           import sys
 
           keys = (
+              "OBSERVABILITY_TOKEN",
               "COLLABORATION_MEMBERS_ENABLED", "COLLABORATION_INVITATIONS_ENABLED", "COLLABORATION_RECOVERY_ENABLED",
               "INVITATION_SMTP_HOST", "INVITATION_SMTP_PORT", "INVITATION_SMTP_TLS_MODE", "INVITATION_SMTP_FROM",
               "INVITATION_SMTP_USERNAME", "INVITATION_SMTP_PASSWORD", "INVITATION_PANEL_URL",
@@ -151,6 +155,7 @@ jobs:
             --exclude='.env' \
             --exclude='.env.next' \
             --exclude='.deploy' \
+            --exclude='observability/secrets/' \
             --exclude='loadtest' \
             --exclude='temp' \
             --exclude='logs' \

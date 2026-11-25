@@ -113,6 +113,7 @@ func TestWorkflowRequestDeadlinePreservesParentCancellation(t *testing.T) {
 	if !got.Equal(want) {
 		t.Fatalf("workflow extended parent deadline: %s, want %s", got, want)
 	}
+	//lint:ignore SA1012 Verify the explicitly supported nil-parent fallback.
 	ctx, cleanup = workflowRequestContext(nil)
 	defer cleanup()
 	if _, ok := ctx.Deadline(); !ok {

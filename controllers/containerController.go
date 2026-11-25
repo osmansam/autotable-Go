@@ -584,11 +584,16 @@ func DeleteContainer(c *fiber.Ctx) error {
 		return utils.SendErrorResponse(c, nil, "Missing tenant or project context.")
 	}
 
-	// Get project-specific container collection
-	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
-
 	deleteIdStr := c.Params("id")
 	deleteId, err := primitive.ObjectIDFromHex(deleteIdStr)
+
+	if err != nil {
+		log.Printf("Invalid ID format: %v", err)
+		return utils.SendErrorResponse(c, err, "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.")
+	}
+
+	// Validate the identifier before initializing or querying the database.
+	containerCollection := utils.GetContainerCollectionForProject(tenantID, projectID)
 
 	log.Println("Fetching container from the database")
 	var container models.ContainerModel
@@ -604,11 +609,6 @@ func DeleteContainer(c *fiber.Ctx) error {
 		}
 		log.Printf("Failed to retrieve container: %v", err)
 		return utils.SendErrorResponse(c, err, "Failed to retrieve the container from the database. Please try again later.")
-	}
-
-	if err != nil {
-		log.Printf("Invalid ID format: %v", err)
-		return utils.SendErrorResponse(c, err, "Invalid ID format provided. Please ensure the ID is a valid MongoDB ObjectID.")
 	}
 
 	log.Println("Attempting to delete container from the database")

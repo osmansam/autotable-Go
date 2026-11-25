@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -137,7 +137,7 @@ func parseProjectTokenClaims(tokenStr, expectedType string) (*ProjectTokenClaims
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return secret, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithAudience(ProjectTokenAudience))
 
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func parseProjectTokenClaims(tokenStr, expectedType string) (*ProjectTokenClaims
 
 	claimString := func(name string, required bool) (string, error) {
 		value, ok := claims[name].(string)
-		if !ok && required {
+		if required && (!ok || value == "") {
 			return "", fmt.Errorf("%s claim is missing from token", name)
 		}
 		return value, nil
@@ -204,23 +204,9 @@ func parseProjectTokenClaims(tokenStr, expectedType string) (*ProjectTokenClaims
 }
 
 func ParseTokenDisplayName(tokenStr string) string {
-	secret, secretErr := projectJWTSecret()
-	if secretErr != nil {
+	claims, err := parseProjectTokenClaims(tokenStr, TokenTypeAccess)
+	if err != nil {
 		return ""
 	}
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return secret, nil
-	})
-	if err != nil || !token.Valid {
-		return ""
-	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return ""
-	}
-	displayName, _ := claims["display_name"].(string)
-	return displayName
+	return claims.DisplayName
 }

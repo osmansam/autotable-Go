@@ -13,7 +13,6 @@ import (
 
 func TestOutboxClaimOwnershipLifecycle(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	event := models.DynamicOutboxEvent{ID: primitive.NewObjectID(), Attempts: 2, MaxAttempts: 3}
 	mt.Run("renewal matches current attempt and processing status", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
@@ -128,7 +127,6 @@ func assertOutboxAuditClaimFilter(mt *mtest.T, filter bson.Raw, event models.Dyn
 
 func TestOutboxIdempotentInsertScopesAndPropagatesFailures(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	event := models.DynamicOutboxEvent{ID: primitive.NewObjectID(), TenantID: "tenant", ProjectID: "project", SchemaName: "orders", Payload: models.DynamicOutboxPayload{IdempotencyKey: "tenant:project:orders:notify:step:key"}}
 	mt.Run("deduplicates through insert-only upsert", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
@@ -166,7 +164,6 @@ func TestOutboxIdempotentInsertScopesAndPropagatesFailures(t *testing.T) {
 
 func TestOutboxClaimUsesDueLeaseAndAttemptBudget(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("claim query and lease", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
 		now := time.Date(2026, 10, 18, 10, 20, 30, 0, time.UTC)

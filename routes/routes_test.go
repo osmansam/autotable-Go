@@ -4,9 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gofiber/fiber/v2"
 	"github.com/osmansam/autotableGo/models"
 )
@@ -180,29 +178,4 @@ func TestProjectTemplateRouteRegisteredBeforeProjectIDRoute(t *testing.T) {
 	if templateIndex > projectIDIndex {
 		t.Fatalf("templates route index = %d, want before project id route index = %d", templateIndex, projectIDIndex)
 	}
-}
-
-func testProjectJWT(t *testing.T, role string) string {
-	t.Helper()
-	t.Setenv("JWT_SECRET", "test-secret")
-	claims := jwt.MapClaims{
-		"authorized":   true,
-		"user_id":      "user-id",
-		"role":         role,
-		"tenant_id":    "tenant-id",
-		"project_id":   "project-id",
-		"tenant_slug":  "tenant",
-		"project_slug": "project",
-		"token_type":   "access",
-		"scope":        "project",
-		"aud":          "autoapi-project",
-		"jti":          "test-jti",
-		"family_id":    "test-family",
-		"exp":          time.Now().Add(time.Hour).Unix(),
-	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
-	if err != nil {
-		t.Fatalf("SignedString() error = %v", err)
-	}
-	return token
 }

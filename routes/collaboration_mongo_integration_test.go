@@ -142,7 +142,7 @@ func TestCollaborationMongoHTTPJourneys(t *testing.T) {
 			t.Fatal(err)
 		}
 		claims, _ := utils.ParseTenantRefreshToken(tokens.RefreshToken)
-		err = services.NewAuthSessionService(sessionRepo).Start(f.Ctx, services.AuthSessionStart{Identity: "management", FamilyID: claims.FamilyID, RefreshTokenID: claims.Id, Scope: claims.Scope, UserID: claims.UserID, TenantID: claims.TenantID, ExpiresAt: time.Unix(tokens.RTExpires, 0)})
+		err = services.NewAuthSessionService(sessionRepo).Start(f.Ctx, services.AuthSessionStart{Identity: "management", FamilyID: claims.FamilyID, RefreshTokenID: claims.ID, Scope: claims.Scope, UserID: claims.UserID, TenantID: claims.TenantID, ExpiresAt: time.Unix(tokens.RTExpires, 0)})
 		if err != nil {
 			t.Fatal(err)
 		}

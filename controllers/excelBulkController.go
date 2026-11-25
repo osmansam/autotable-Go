@@ -288,7 +288,7 @@ func detectRelationships(analyses []FileAnalysis) []RelationshipDetection {
 		for i, field := range sourceAnalysis.Fields {
 			// Check if field name matches foreign key pattern
 			matches := foreignKeyPattern.FindStringSubmatch(field.Name)
-			if matches != nil && len(matches) > 1 {
+			if len(matches) > 1 {
 				// Extract the potential target schema name
 				potentialTarget := matches[1]
 				potentialTargetCamel := sanitizeFieldName(potentialTarget)

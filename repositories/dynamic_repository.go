@@ -463,7 +463,7 @@ func (r *DynamicRepository) WithTransaction(ctx context.Context, fn func(mongo.S
 		committed = err == nil
 		return err
 	}
-	client := configs.DB
+	var client *mongo.Client
 	if r.database != nil {
 		client = r.database.Client()
 	} else {

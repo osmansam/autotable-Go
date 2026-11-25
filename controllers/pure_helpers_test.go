@@ -401,7 +401,6 @@ func TestApplyContainerPreservedFieldsKeepsDynamicApis(t *testing.T) {
 
 func TestObjectReferenceValidationAndInvalidationHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("allows self reference while updating a container", func(mt *mtest.T) {
 		container := models.ContainerModel{

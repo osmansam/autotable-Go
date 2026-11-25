@@ -3,3 +3,26 @@
 .deploy/
 .gocache/
 logs/
+observability/secrets/
+
+# Generated binaries, profiles and local tooling output
+/autotable
+/autotableGo
+/server
+*.test
+coverage.out
+coverage*.html
+loadtest/results/*.prof
+.DS_Store
+.playwright-cli/
+output/playwright/
+.superpowers/
+/temp_*.so
+__pycache__/
+*.py[cod]
+
+# Reproducible local quality tools and reports
+.tools/
+build/
+
+/temp_*.go

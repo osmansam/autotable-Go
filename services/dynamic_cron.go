@@ -15,7 +15,6 @@ import (
 )
 
 const dynamicCronReloadEvery = time.Minute
-const dynamicCronRunTimeout = 5 * time.Minute
 
 type dynamicCronScheduler struct {
 	repository  dynamicCronRepository

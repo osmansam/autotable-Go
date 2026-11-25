@@ -1,0 +1,13 @@
+{
+  "total": 54.0,
+  "files": {
+    "utils/jwt.go": 90.0,
+    "utils/tenantJwt.go": 90.0,
+    "configs/jwt_secrets.go": 95.0,
+    "configs/diagnostics.go": 100.0,
+    "middlewares/diagnostics.go": 100.0,
+    "middlewares/recovery.go": 100.0,
+    "internal/panicguard/guard.go": 100.0,
+    "ws/auth_context.go": 100.0
+  }
+}

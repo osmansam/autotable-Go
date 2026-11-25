@@ -17,7 +17,6 @@ import (
 
 func TestMongoBackedUtilityHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("audit insert and event upsert reuse indexes", func(mt *mtest.T) {
 		restore := useMockCollections(mt.Coll)
@@ -112,6 +111,7 @@ func TestMongoBackedUtilityHelpers(t *testing.T) {
 				bson.D{{Key: "name", Value: "first"}, {Key: "order", Value: int32(1)}},
 			}},
 		}))
+		//lint:ignore SA1012 Verify the legacy nil-context fallback without a real database.
 		got, err := GetContainerModelWithContext(nil, "tenant", "project", "orders")
 		if err != nil || len(got.Fields) != 2 || got.Fields[0].Name != "first" {
 			t.Fatalf("GetContainerModelWithContext() = %#v, %v", got, err)
@@ -122,6 +122,7 @@ func TestMongoBackedUtilityHelpers(t *testing.T) {
 		restore := useMockCollections(mt.Coll)
 		defer restore()
 		mt.AddMockResponses(mtest.CreateCursorResponse(0, namespace(mt.Coll), mtest.FirstBatch, bson.D{{Key: "schemaName", Value: "orders"}}))
+		//lint:ignore SA1012 Verify the legacy nil-context fallback without a real database.
 		got, err := GetAllContainerModelsWithContext(nil)
 		if err != nil || len(got) != 1 || got[0].SchemaName != "orders" {
 			t.Fatalf("GetAllContainerModelsWithContext() = %#v, %v", got, err)

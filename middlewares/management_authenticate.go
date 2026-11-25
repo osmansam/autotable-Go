@@ -92,7 +92,7 @@ func authenticateManagementPrincipal(c *fiber.Ctx) error {
 	principal := ManagementPrincipal{
 		UserID: claims.UserID, Email: claims.Email, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
 		Scope: claims.Scope, RoleScope: claims.RoleScope, TokenRoles: append([]string(nil), claims.Roles...),
-		TokenID: claims.Id, FamilyID: claims.FamilyID,
+		TokenID: claims.ID, FamilyID: claims.FamilyID,
 	}
 	ctx, cancel := context.WithTimeout(c.UserContext(), 3*time.Second)
 	err = ValidateManagementSession(ctx, principal)

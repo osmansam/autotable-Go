@@ -11,7 +11,6 @@ import (
 
 func TestQueryAndDecodeCollection(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("decodes and counts paginated query", func(mt *mtest.T) {
 		mt.AddMockResponses(
@@ -40,7 +39,6 @@ func TestQueryAndDecodeCollection(t *testing.T) {
 
 func TestExecuteDynamicPipeline(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("executes aggregation", func(mt *mtest.T) {
 		mt.AddMockResponses(mtest.CreateCursorResponse(0, mt.Coll.Database().Name()+"."+mt.Coll.Name(), mtest.FirstBatch, bson.D{{Key: "state", Value: "open"}}))

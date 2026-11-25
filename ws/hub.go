@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"log/slog"
 	"os"
 	"strings"
@@ -41,10 +42,11 @@ type redisEventEnvelope struct {
 
 // ClientInfo stores metadata about each WebSocket client
 type ClientInfo struct {
-	Conn      *websocket.Conn
-	TenantID  string
-	ProjectID string
-	Send      chan []byte
+	Conn         *websocket.Conn
+	TenantID     string
+	ProjectID    string
+	Send         chan []byte
+	teardownDone chan struct{}
 }
 
 var (
@@ -129,13 +131,26 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 	clientsMu.Lock()
 	if current, ok := clients[conn]; !ok || current != info {
 		clientsMu.Unlock()
+		if info.teardownDone != nil {
+			<-info.teardownDone
+		}
 		return
 	}
 
 	delete(clients, conn)
 	remaining := len(clients)
 	close(info.Send)
+	// Capture the transport while the registry still owns the pooled wrapper.
+	transport := conn.Conn.NetConn()
 	clientsMu.Unlock()
+	if info.teardownDone != nil {
+		defer close(info.teardownDone)
+	}
+	// fasthttp's hijackConn.Close can be a no-op. Expire I/O deadlines on the
+	// underlying net.Conn to unblock both read and write without reader races.
+	_ = transport.SetReadDeadline(time.Now())
+	_ = transport.SetWriteDeadline(time.Now())
+	_ = transport.Close()
 
 	observability.SetWebsocketClientsConnected(remaining)
 	attrs := append(observability.TenantProjectAttrs(info.TenantID, info.ProjectID),
@@ -143,7 +158,6 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 		slog.String("reason", reason),
 		slog.Int("connected_clients", remaining))
 	observability.InfoCtx(context.Background(), "websocket client disconnected", attrs...)
-	_ = conn.Close()
 }
 
 // RunRedisSubscriber relays websocket events published by other app instances to local clients.
@@ -391,99 +405,25 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	return tenantID, projectID, nil
 }
 
-func validateTenantAndProjectIDs(tenantID, projectID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	tenantObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(tenantID))
-	if err != nil {
-		return fmt.Errorf("invalid tenantId")
-	}
-	projectObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(projectID))
-	if err != nil {
-		return fmt.Errorf("invalid projectId")
-	}
-
-	projectColl := configs.GetCollection("projects")
-	if err := projectColl.FindOne(ctx, bson.M{"_id": projectObjID, "tenantId": tenantObjID}).Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam string) []slog.Attr {
-	attrs := make([]slog.Attr, 0, 4)
-	attrs = appendTrimmedWSAttr(attrs, "tenant_slug", tenantSlug)
-	attrs = appendTrimmedWSAttr(attrs, "project_slug", projectSlug)
-	attrs = appendTrimmedWSAttr(attrs, "tenant_id_param", tenantIDParam)
-	attrs = appendTrimmedWSAttr(attrs, "project_id_param", projectIDParam)
-	return attrs
-}
-
-func appendTrimmedWSAttr(attrs []slog.Attr, key, value string) []slog.Attr {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return attrs
-	}
-	return append(attrs, slog.String(key, strings.Clone(value)))
-}
-
 // HandleWS adds clients and keeps them alive.
-// Expects tenantSlug and projectSlug as query parameters: /ws?tenantSlug=xxx&projectSlug=yyy
-// Also accepts tenantId and projectId for backward compatibility
+// Uses server-authenticated tenant/project context; optional legacy mirrors must agree.
 func HandleWS(c *websocket.Conn) {
-	tenantSlug := c.Query("tenantSlug")
-	projectSlug := c.Query("projectSlug")
-	tenantIDParam := c.Query("tenantId")
-	projectIDParam := c.Query("projectId")
+	if err := panicguard.Run("websocket-read", func() error { handleWS(c); return nil }); err != nil {
+		_ = c.Close()
+	}
+}
 
-	if tenantSlug == "" {
-		tenantSlug = c.Headers("X-Tenant-Slug")
-	}
-	if projectSlug == "" {
-		projectSlug = c.Headers("X-Project-Slug")
-	}
-	if tenantIDParam == "" {
-		tenantIDParam = c.Headers("X-Tenant-Id")
-	}
-	if projectIDParam == "" {
-		projectIDParam = c.Headers("X-Project-Id")
-	}
-
-	var tenantID, projectID string
-	var err error
-	if tenantSlug != "" && projectSlug != "" {
-		tenantID, projectID, err = resolveTenantAndProjectIDs(tenantSlug, projectSlug)
-	} else if tenantIDParam != "" && projectIDParam != "" {
-		tenantID = strings.TrimSpace(tenantIDParam)
-		projectID = strings.TrimSpace(projectIDParam)
-		if looksLikeObjectID(tenantID) && looksLikeObjectID(projectID) {
-			err = validateTenantAndProjectIDs(tenantID, projectID)
-		} else {
-			tenantID, projectID, err = resolveTenantAndProjectIDs(tenantID, projectID)
-		}
-	} else {
-		attrs := []slog.Attr{
-			slog.String(observability.FieldOperation, "websocket_connect"),
-			slog.String(observability.FieldStatus, "missing_context"),
-		}
-		attrs = append(attrs, websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam)...)
-		observability.WarnCtx(context.Background(), "websocket connection rejected", attrs...)
-		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"tenantSlug and projectSlug required (or tenantId/projectId)"}`))
-		c.Close()
+func handleWS(c *websocket.Conn) {
+	auth, err := authenticatedContext(c)
+	if err != nil {
+		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"error":"Invalid tenant or project"}`))
+		_ = c.Close()
 		return
 	}
-
-	if err != nil {
-		attrs := []slog.Attr{
-			slog.String(observability.FieldOperation, "websocket_connect"),
-			slog.String(observability.FieldStatus, "invalid_context"),
-			slog.String(observability.FieldError, err.Error()),
-		}
-		attrs = append(attrs, websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam)...)
-		observability.WarnCtx(context.Background(), "websocket connection rejected", attrs...)
-		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"Invalid tenant or project"}`))
-		c.Close()
+	tenantID, projectID, err := resolveTenantAndProjectIDs(auth.TenantSlug, auth.ProjectSlug)
+	if err != nil || tenantID != auth.TenantID || projectID != auth.ProjectID {
+		_ = c.WriteMessage(websocket.TextMessage, []byte(`{"error":"Invalid tenant or project"}`))
+		_ = c.Close()
 		return
 	}
 
@@ -494,10 +434,11 @@ func HandleWS(c *websocket.Conn) {
 
 	// Register client with tenant/project context
 	clientInfo := &ClientInfo{
-		Conn:      c,
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Send:      make(chan []byte, clientSendSize),
+		Conn:         c,
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		Send:         make(chan []byte, clientSendSize),
+		teardownDone: make(chan struct{}),
 	}
 
 	clientsMu.Lock()
@@ -510,11 +451,19 @@ func HandleWS(c *websocket.Conn) {
 		slog.String(observability.FieldOperation, "websocket_client_count"),
 		slog.Int("connected_clients", totalClients))
 
+	writerDone := make(chan struct{})
 	defer func() {
 		unregisterClient(c, clientInfo, "read closed")
+		// The websocket adapter pools c after this handler returns. Wait for the
+		// writer to stop before that pooled connection can be reused.
+		<-writerDone
 	}()
 
-	go writePump(clientInfo)
+	go func() {
+		defer close(writerDone)
+		defer unregisterClient(c, clientInfo, "writer stopped")
+		_ = panicguard.Run("websocket-write", func() error { writePump(clientInfo); return nil })
+	}()
 
 	// Keep connection alive and handle any incoming messages
 	for {
@@ -522,11 +471,6 @@ func HandleWS(c *websocket.Conn) {
 			return
 		}
 	}
-}
-
-func looksLikeObjectID(value string) bool {
-	_, err := primitive.ObjectIDFromHex(strings.TrimSpace(value))
-	return err == nil
 }
 
 // EmitInvalidate pushes an invalidate event to clients in the same tenant/project.

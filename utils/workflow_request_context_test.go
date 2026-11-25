@@ -16,7 +16,6 @@ import (
 
 func TestWorkflowRequestContextReadsFreshScopeAndMetadataTogether(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("one scoped aggregate", func(mt *mtest.T) {
 		setupMiniRedis(mt.T)
 		restore := useMockCollections(mt.Coll)
@@ -73,7 +72,6 @@ func TestWorkflowRequestContextReadsFreshScopeAndMetadataTogether(t *testing.T) 
 
 func TestWorkflowRequestContextPreservesAuthenticationAndFailures(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	for _, tc := range []struct {
 		name, authField               string
 		missingProject, missingSchema bool
@@ -128,7 +126,6 @@ func TestWorkflowRequestContextPreservesAuthenticationAndFailures(t *testing.T) 
 
 func TestWorkflowRequestContextDoesNotCachePermissionsAcrossRequests(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("next request sees changed workflow permissions", func(mt *mtest.T) {
 		setupMiniRedis(mt.T)
 		restore := useMockCollections(mt.Coll)
@@ -164,7 +161,6 @@ func TestWorkflowRequestContextDoesNotCachePermissionsAcrossRequests(t *testing.
 
 func TestWorkflowRequestContextColdAndLegacyFallback(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	for _, legacy := range []bool{false, true} {
 		name := "cold slug mapping"
 		if legacy {
