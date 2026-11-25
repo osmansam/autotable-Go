@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"log"
 	"os"
 	"os/signal"
@@ -72,6 +73,7 @@ func main() {
 	})
 
 	app.Use(middlewares.RequestID())
+	app.Use(middlewares.PanicRecovery())
 	app.Use(observability.TracingMiddleware())
 	app.Use(middlewares.PrometheusMetrics())
 	app.Use(middlewares.RequestLogger())
@@ -117,10 +119,24 @@ func main() {
 		log.Fatalf("Durable workflow indexes could not be initialized: %v", err)
 	}
 	cancelIndexes()
+	stopAfterWorkerPanic := func() {
+		cancelApp()
+		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+			log.Print("Shutdown after worker panic failed")
+		}
+		// Also terminate if the worker failed before the HTTP listener started.
+		os.Exit(1)
+	}
 	hostname, _ := os.Hostname()
-	go services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
-	go services.StartManagementCollaborationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
-	go services.StartInvitationDeliveryWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	go panicguard.Essential("StartLocalizationWorker", func() {
+		services.StartLocalizationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
+	go panicguard.Essential("StartManagementCollaborationWorker", func() {
+		services.StartManagementCollaborationWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
+	go panicguard.Essential("StartInvitationDeliveryWorker", func() {
+		services.StartInvitationDeliveryWorker(appCtx, fmt.Sprintf("%s-%d", hostname, os.Getpid()), time.Second)
+	}, stopAfterWorkerPanic)
 
 	//websocket wiring
 	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {
@@ -146,11 +162,11 @@ func main() {
 	})
 	// WS endpoint
 	app.Get("/api/v1/:tenantSlug/:projectSlug/ws", websocket.New(ws.HandleWS))
-	go ws.RunBroadcaster(appCtx)
-	go ws.RunRedisSubscriber(appCtx)
-	go services.StartDynamicOutboxProcessor(appCtx)
-	go services.StartDynamicCronScheduler(appCtx)
-	go services.EnsureDynamicNotificationIndexes(appCtx)
+	go panicguard.Essential("RunBroadcaster", func() { ws.RunBroadcaster(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("RunRedisSubscriber", func() { ws.RunRedisSubscriber(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("StartDynamicOutboxProcessor", func() { services.StartDynamicOutboxProcessor(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("StartDynamicCronScheduler", func() { services.StartDynamicCronScheduler(appCtx) }, stopAfterWorkerPanic)
+	go panicguard.Essential("EnsureDynamicNotificationIndexes", func() { services.EnsureDynamicNotificationIndexes(appCtx) }, stopAfterWorkerPanic)
 
 	// Health check endpoint
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -160,6 +176,7 @@ func main() {
 		})
 	})
 	app.Get("/ready", readinessHandler(
+		func(context.Context) error { return appCtx.Err() },
 		func(ctx context.Context) error { return configs.DB.Ping(ctx, nil) },
 		func(ctx context.Context) error { return configs.RedisClient.Ping(ctx).Err() },
 	))

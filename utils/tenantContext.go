@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"errors"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"strings"
 	"time"
 
@@ -142,16 +143,19 @@ func resolveProjectFromSlugs(c *fiber.Ctx, tenantSlug, projectSlug string) (tena
 	cacheValue := tenantID + "|" + projectID
 	redisClient := configs.RedisClient
 	go func() {
-		if !configs.RedisCircuitAllow() {
-			return
-		}
-		// Cache in background to not block the request
-		if err := redisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err(); err != nil {
-			configs.RedisCircuitRecordResult(err)
-			// Log error but don't fail the request
-			return
-		}
-		configs.RedisCircuitRecordSuccess()
+		_ = panicguard.Run("slug-cache-fill", func() error {
+			if !configs.RedisCircuitAllow() {
+				return nil
+			}
+			// Cache in background to not block the request
+			if err := redisClient.Set(context.Background(), cacheKey, cacheValue, 3600*time.Second).Err(); err != nil {
+				configs.RedisCircuitRecordResult(err)
+				// Log error but don't fail the request
+				return nil
+			}
+			configs.RedisCircuitRecordSuccess()
+			return nil
+		})
 	}()
 
 	return tenantID, projectID, nil

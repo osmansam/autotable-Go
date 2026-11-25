@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"log/slog"
 	"os"
 	"strings"
@@ -432,6 +433,12 @@ func appendTrimmedWSAttr(attrs []slog.Attr, key, value string) []slog.Attr {
 // Expects tenantSlug and projectSlug as query parameters: /ws?tenantSlug=xxx&projectSlug=yyy
 // Also accepts tenantId and projectId for backward compatibility
 func HandleWS(c *websocket.Conn) {
+	if err := panicguard.Run("websocket-read", func() error { handleWS(c); return nil }); err != nil {
+		_ = c.Close()
+	}
+}
+
+func handleWS(c *websocket.Conn) {
 	tenantSlug := c.Query("tenantSlug")
 	projectSlug := c.Query("projectSlug")
 	tenantIDParam := c.Query("tenantId")
@@ -510,11 +517,19 @@ func HandleWS(c *websocket.Conn) {
 		slog.String(observability.FieldOperation, "websocket_client_count"),
 		slog.Int("connected_clients", totalClients))
 
+	writerDone := make(chan struct{})
 	defer func() {
 		unregisterClient(c, clientInfo, "read closed")
+		// The websocket adapter pools c after this handler returns. Wait for the
+		// writer to stop before that pooled connection can be reused.
+		<-writerDone
 	}()
 
-	go writePump(clientInfo)
+	go func() {
+		defer close(writerDone)
+		defer unregisterClient(c, clientInfo, "writer stopped")
+		_ = panicguard.Run("websocket-write", func() error { writePump(clientInfo); return nil })
+	}()
 
 	// Keep connection alive and handle any incoming messages
 	for {

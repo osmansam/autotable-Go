@@ -42,3 +42,12 @@ No production deployment, data operation, license addition, or history rewrite i
 - Complete suite after adaptations PASS. Official module vulnerability scan: **zero findings**, down from 27 after telemetry group (38 after HTTP group, 126 at baseline).
 - Compatibility: Mongo v1 is deprecated in favor of v2; v2 migration intentionally excluded. Spreadsheet tests pass; real customer workbook staging checks remain advisable.
 - Deployment risk: Mongo and spreadsheet libraries changed across minor releases; isolated transaction/session integration tests are still required before release. Local Docker engine is stopped; investigate existing task-owned native Mongo runner before declaring this unavailable.
+
+## Stage 6 — HTTP and background panic recovery
+
+- HTTP recovery sanitizes 500 responses and clears partial bodies. Test without middleware crashes as expected; restored middleware passes and serves subsequent requests.
+- Child localization and outbox goroutines recover inside the goroutine and complete result channels with an error; cron dispatch gets the same task boundary. Outbox panic is retried and never acknowledged as success. Localization leaves the durable lease for expiry/recovery instead of falsely completing.
+- Essential worker panic cancels application context, stops HTTP with a deadline and exits nonzero for supervisor restart, including a failure before the listener starts. Optional cache fill and websocket read/write have local boundaries; writer cleanup completes before pooled connection reuse.
+- Initial child-panic regression crashed before implementation; all recovery regressions and complete suite PASS after implementation. Panic logs retain stacks but omit panic values to avoid leaking credentials/customer payloads.
+- Remaining: module scan remains zero known advisories; secret strength, headers and diagnostics controls still pending. Recovery cannot contain fatal runtime faults/OOM and does not undo already committed external side effects.
+- Deployment risk: an essential worker panic now restarts the service rather than leaving it silently degraded; durable claims retry under existing semantics and external idempotency requirements.

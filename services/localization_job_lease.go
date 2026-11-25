@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/panicguard"
 	"github.com/osmansam/autotableGo/models"
 	"github.com/osmansam/autotableGo/repositories"
 	"time"
@@ -21,7 +22,7 @@ func runLocalizationJobWithLease(ctx context.Context, repository localizationCla
 	jobCtx, cancel := context.WithCancel(repositories.WithLocalizationJobClaim(ctx, *job))
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- process(jobCtx, job) }()
+	go func() { done <- panicguard.Run("localization-job", func() error { return process(jobCtx, job) }) }()
 	for {
 		select {
 		case err := <-done:
