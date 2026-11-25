@@ -77,3 +77,52 @@ func TestAuthenticatedWebsocketRejectsCrossProjectMirrors(t *testing.T) {
 		t.Fatalf("legitimate subscription failed: %s %v", body, err)
 	}
 }
+
+func TestWebsocketEvictionUnblocksReaderBeforePoolReuse(t *testing.T) {
+	redisServer := miniredis.RunT(t)
+	previous := configs.RedisClient
+	configs.RedisClient = redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	defer func() { configs.RedisClient.Close(); configs.RedisClient = previous }()
+	redisServer.Set("slug_mapping:acme:orders", "tenant-a|project-a")
+	handled := make(chan struct{})
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals(AuthenticatedContextKey, AuthenticatedContext{TenantID: "tenant-a", ProjectID: "project-a", TenantSlug: "acme", ProjectSlug: "orders"})
+		return c.Next()
+	})
+	app.Get("/ws", serverws.New(func(c *serverws.Conn) { defer close(handled); HandleWS(c) }))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- app.Listener(listener) }()
+	defer func() { app.ShutdownWithTimeout(time.Second); listener.Close(); <-done }()
+	conn, _, err := clientws.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws?tenantSlug=acme&projectSlug=orders", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var serverConn *serverws.Conn
+	var info *ClientInfo
+	deadline := time.Now().Add(time.Second)
+	for info == nil {
+		clientsMu.RLock()
+		for c, item := range clients {
+			if item.ProjectID == "project-a" {
+				serverConn, info = c, item
+			}
+		}
+		clientsMu.RUnlock()
+		if time.Now().After(deadline) {
+			t.Fatal("not registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	unregisterClient(serverConn, info, "eviction-test")
+	select {
+	case <-handled:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("eviction left reader blocked; adapter cannot return pooled connection")
+	}
+}

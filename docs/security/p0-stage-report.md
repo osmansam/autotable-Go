@@ -120,3 +120,10 @@ No production deployment, data operation, license addition, or history rewrite i
 - Carry verified JWT IDs/slugs into a typed server-only websocket local. Resolve only authenticated slugs, require resolved IDs to match, and reject all conflicting legacy mirrors; matching query/header forms still work.
 - Cross-project query/ID/mixed-context rejection, legitimate event delivery, route-scope and refresh-token rejection tests PASS. Complete suite PASS. No known Go dependency findings.
 - Compatibility: clients supplying contradictory context are intentionally rejected; ordinary matching legacy fields and project cookie contracts remain supported. No production data access or migration.
+
+## Review fix — WebSocket transport teardown
+
+- Reproduced server eviction leaving the reader blocked because fasthttp's hijacked-connection Close may be a no-op.
+- Capture underlying transport while registry owns the wrapper, expire net.Conn read/write deadlines, and signal teardown completion. Concurrent unregister callers wait for completion; the handler also waits for its writer before adapter pool reuse. No wrapper access occurs after teardown releases it.
+- Real connection eviction regression PASS; authenticated subscription and eviction tests PASS for 10 race-enabled repetitions; complete suite PASS. No change to valid websocket messages or routes.
+- Deployment risk: evicted/failed clients are disconnected promptly as intended and may reconnect through normal authentication. No production connection was touched.

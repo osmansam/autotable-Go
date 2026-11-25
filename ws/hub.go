@@ -42,10 +42,11 @@ type redisEventEnvelope struct {
 
 // ClientInfo stores metadata about each WebSocket client
 type ClientInfo struct {
-	Conn      *websocket.Conn
-	TenantID  string
-	ProjectID string
-	Send      chan []byte
+	Conn         *websocket.Conn
+	TenantID     string
+	ProjectID    string
+	Send         chan []byte
+	teardownDone chan struct{}
 }
 
 var (
@@ -130,13 +131,26 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 	clientsMu.Lock()
 	if current, ok := clients[conn]; !ok || current != info {
 		clientsMu.Unlock()
+		if info.teardownDone != nil {
+			<-info.teardownDone
+		}
 		return
 	}
 
 	delete(clients, conn)
 	remaining := len(clients)
 	close(info.Send)
+	// Capture the transport while the registry still owns the pooled wrapper.
+	transport := conn.Conn.NetConn()
 	clientsMu.Unlock()
+	if info.teardownDone != nil {
+		defer close(info.teardownDone)
+	}
+	// fasthttp's hijackConn.Close can be a no-op. Expire I/O deadlines on the
+	// underlying net.Conn to unblock both read and write without reader races.
+	_ = transport.SetReadDeadline(time.Now())
+	_ = transport.SetWriteDeadline(time.Now())
+	_ = transport.Close()
 
 	observability.SetWebsocketClientsConnected(remaining)
 	attrs := append(observability.TenantProjectAttrs(info.TenantID, info.ProjectID),
@@ -144,7 +158,6 @@ func unregisterClient(conn *websocket.Conn, info *ClientInfo, reason string) {
 		slog.String("reason", reason),
 		slog.Int("connected_clients", remaining))
 	observability.InfoCtx(context.Background(), "websocket client disconnected", attrs...)
-	_ = conn.Close()
 }
 
 // RunRedisSubscriber relays websocket events published by other app instances to local clients.
@@ -458,10 +471,11 @@ func handleWS(c *websocket.Conn) {
 
 	// Register client with tenant/project context
 	clientInfo := &ClientInfo{
-		Conn:      c,
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Send:      make(chan []byte, clientSendSize),
+		Conn:         c,
+		TenantID:     tenantID,
+		ProjectID:    projectID,
+		Send:         make(chan []byte, clientSendSize),
+		teardownDone: make(chan struct{}),
 	}
 
 	clientsMu.Lock()
