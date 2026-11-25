@@ -76,7 +76,7 @@ func startTenantAuthSession(ctx context.Context, tokens *utils.TenantTokenDetail
 		return err
 	}
 	return services.NewAuthSessionService(repositories.NewAuthSessionRepository()).Start(ctx, services.AuthSessionStart{
-		FamilyID: claims.FamilyID, RefreshTokenID: claims.Id, Scope: claims.Scope,
+		FamilyID: claims.FamilyID, RefreshTokenID: claims.ID, Scope: claims.Scope,
 		Identity: "management",
 		UserID:   claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID,
 		ExpiresAt: time.Unix(tokens.RTExpires, 0),
@@ -119,7 +119,7 @@ func rotateTenantCookieSession(c *fiber.Ctx, ctx context.Context) (*utils.Tenant
 	if err != nil {
 		return nil, nil, err
 	}
-	err = rotateManagementAuthSession(ctx, claims.FamilyID, claims.Id, next.Id, time.Unix(tokens.RTExpires, 0))
+	err = rotateManagementAuthSession(ctx, claims.FamilyID, claims.ID, next.ID, time.Unix(tokens.RTExpires, 0))
 	return claims, tokens, err
 }
 
@@ -162,7 +162,7 @@ func rotateManagementProjectCookieSession(c *fiber.Ctx, ctx context.Context) (*u
 	if err != nil {
 		return nil, nil, err
 	}
-	err = rotateManagementAuthSession(ctx, claims.FamilyID, claims.Id, next.Id, time.Unix(tokens.RTExpires, 0))
+	err = rotateManagementAuthSession(ctx, claims.FamilyID, claims.ID, next.ID, time.Unix(tokens.RTExpires, 0))
 	return claims, tokens, err
 }
 

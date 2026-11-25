@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -37,7 +37,7 @@ func TestTenantTokensRejectNonHS256Algorithm(t *testing.T) {
 	claims := TenantTokenClaims{
 		UserID: "user", Email: "user@example.com", TenantID: "tenant", Roles: []string{models.TenantRoleOwner},
 		RoleScope: string(models.RoleScopeTenant), TokenType: TokenTypeAccess, Scope: TokenScopeTenant, FamilyID: "family",
-		StandardClaims: jwt.StandardClaims{Audience: TenantTokenAudience, ExpiresAt: time.Now().Add(time.Hour).Unix(), Id: "jti"},
+		RegisteredClaims: jwt.RegisteredClaims{Audience: jwt.ClaimStrings{TenantTokenAudience}, ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)), ID: "jti"},
 	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS384, claims).SignedString([]byte("tenant-test-secret"))
 	if err != nil {
@@ -137,7 +137,7 @@ func TestGenerateAndParseTenantTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTenantRefreshToken() error = %v", err)
 	}
-	if refreshClaims.TokenType != TokenTypeRefresh || refreshClaims.Scope != TokenScopeProject || refreshClaims.Audience != TenantTokenAudience {
+	if refreshClaims.TokenType != TokenTypeRefresh || refreshClaims.Scope != TokenScopeProject || (len(refreshClaims.Audience) != 1 || refreshClaims.Audience[0] != TenantTokenAudience) {
 		t.Fatalf("tenant refresh claims = %#v", refreshClaims)
 	}
 	if _, err := ParseTenantRefreshToken(tokens.AccessToken); err == nil {

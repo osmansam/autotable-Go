@@ -1,12 +1,13 @@
 package utils
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/osmansam/autotableGo/models"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -23,7 +24,7 @@ type TenantTokenClaims struct {
 	TokenType string   `json:"token_type"`
 	Scope     string   `json:"scope"`
 	FamilyID  string   `json:"family_id"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
 
 const TenantTokenAudience = "autoapi-tenant"
@@ -76,11 +77,11 @@ func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, ro
 		TokenType: TokenTypeAccess,
 		Scope:     scope,
 		FamilyID:  familyID,
-		StandardClaims: jwt.StandardClaims{
-			Audience:  TenantTokenAudience,
-			ExpiresAt: td.ATExpires,
-			Id:        uuid.NewString(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{TenantTokenAudience},
+			ExpiresAt: jwt.NewNumericDate(time.Unix(td.ATExpires, 0)),
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 
@@ -102,11 +103,11 @@ func GenerateTenantTokensForFamily(userID, email, tenantID, projectID string, ro
 		TokenType: TokenTypeRefresh,
 		Scope:     scope,
 		FamilyID:  familyID,
-		StandardClaims: jwt.StandardClaims{
-			Audience:  TenantTokenAudience,
-			ExpiresAt: td.RTExpires,
-			Id:        uuid.NewString(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{TenantTokenAudience},
+			ExpiresAt: jwt.NewNumericDate(time.Unix(td.RTExpires, 0)),
+			ID:        uuid.NewString(),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 
@@ -141,7 +142,7 @@ func parseTenantToken(tokenString, expectedType string) (*TenantTokenClaims, err
 			return nil, errors.New("unexpected signing method")
 		}
 		return secret, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithAudience(TenantTokenAudience))
 
 	if err != nil {
 		return nil, err
@@ -157,10 +158,10 @@ func parseTenantToken(tokenString, expectedType string) (*TenantTokenClaims, err
 	if claims.Scope != TokenScopeTenant && claims.Scope != TokenScopeProject {
 		return nil, errors.New("invalid token scope")
 	}
-	if claims.Audience != TenantTokenAudience {
+	if len(claims.Audience) != 1 || claims.Audience[0] != TenantTokenAudience {
 		return nil, errors.New("invalid token audience")
 	}
-	if claims.Id == "" || claims.FamilyID == "" {
+	if claims.ID == "" || claims.FamilyID == "" {
 		return nil, errors.New("token identifiers are missing")
 	}
 
@@ -181,4 +182,17 @@ func ValidateProjectMembership(userID, tenantID, projectID primitive.ObjectID) (
 	// Returns the user's roles in the project
 	// Implementation will be in the controller
 	return nil, errors.New("not implemented - use in controller")
+}
+
+// MarshalJSON preserves the original string aud claim for existing consumers.
+func (c TenantTokenClaims) MarshalJSON() ([]byte, error) {
+	type wireClaims TenantTokenClaims
+	audience := ""
+	if len(c.Audience) == 1 {
+		audience = c.Audience[0]
+	}
+	return json.Marshal(struct {
+		wireClaims
+		Audience string `json:"aud,omitempty"`
+	}{wireClaims: wireClaims(c), Audience: audience})
 }

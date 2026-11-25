@@ -88,7 +88,7 @@ func currentInvitationAccount(c *fiber.Ctx, db *mongo.Database) (*models.User, e
 		}
 		principal := models.ManagementPrincipal{UserID: parsed.UserID, TenantID: parsed.TenantID, Scope: parsed.Scope, FamilyID: parsed.FamilyID}
 		if refresh {
-			err = repo.ValidateManagementRefreshIdentity(c.UserContext(), principal, parsed.Id, time.Now())
+			err = repo.ValidateManagementRefreshIdentity(c.UserContext(), principal, parsed.ID, time.Now())
 		} else {
 			err = repo.ValidateManagementFamily(c.UserContext(), principal, time.Now())
 		}
@@ -287,7 +287,7 @@ func startManagementSessionInDatabase(ctx context.Context, db *mongo.Database, t
 	if err != nil {
 		return err
 	}
-	return services.NewAuthSessionService(repositories.NewAuthSessionRepositoryWithCollection(db.Collection("auth_sessions"))).Start(ctx, services.AuthSessionStart{Identity: "management", FamilyID: claims.FamilyID, RefreshTokenID: claims.Id, Scope: claims.Scope, UserID: claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID, ExpiresAt: time.Unix(tokens.RTExpires, 0)})
+	return services.NewAuthSessionService(repositories.NewAuthSessionRepositoryWithCollection(db.Collection("auth_sessions"))).Start(ctx, services.AuthSessionStart{Identity: "management", FamilyID: claims.FamilyID, RefreshTokenID: claims.ID, Scope: claims.Scope, UserID: claims.UserID, TenantID: claims.TenantID, ProjectID: claims.ProjectID, ExpiresAt: time.Unix(tokens.RTExpires, 0)})
 }
 func invitationSessionTokens(ctx context.Context, db *mongo.Database, result models.AcceptedProjectInvitation) (*utils.TenantTokenDetails, *utils.TenantTokenDetails, error) {
 	tenant, err := utils.GenerateTenantTokens(result.User.ID.Hex(), result.User.Email, result.Tenant.ID.Hex(), "", result.TenantRoles, string(models.RoleScopeTenant))
