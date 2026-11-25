@@ -63,18 +63,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build pinned production image
-        run: docker build --platform linux/amd64 -t autotable:security-ci .
-      - name: Verify non-root runtime permissions without starting the service
-        run: |
-          docker run --rm --entrypoint /bin/sh autotable:security-ci -ec '
-            test "$(id -u)" = "10001"
-            test "$(id -g)" = "10001"
-            test -w /app/temp
-            test -w /app/logs
-            test -x /app/server
-            test ! -w /app/server
-            test -r /app/configs/production.json
-            test ! -w /app/configs/production.json
-            touch /app/temp/ci-probe /app/logs/ci-probe
-          '
+      - name: Build, verify non-root runtime and scan OS vulnerabilities
+        run: make image-scan
+      - name: Preserve OS vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-vulnerability-report
+          path: build/os-vulnerabilities.json
+          if-no-files-found: warn

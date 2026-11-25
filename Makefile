@@ -60,3 +60,13 @@ $(GOVULNCHECK):
 
 clean:
 	rm -rf -- build
+
+.PHONY: image-check image-scan staging-mounts
+image-check:
+	bash scripts/check-container.sh image
+
+image-scan: image-check
+	bash scripts/check-container.sh scan
+
+staging-mounts:
+	bash scripts/check-container.sh mounts
