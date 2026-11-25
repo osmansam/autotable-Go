@@ -23,7 +23,11 @@ with open(os.environ['DOCKER_TEST_LOG'],'a') as out: out.write(json.dumps(args)+
 if args[0]=='info': sys.exit(int(os.environ.get('DOCKER_TEST_UNAVAILABLE','0')))
 if args[0]=='build': sys.exit(int(os.environ.get('DOCKER_TEST_BUILD_FAILURE','0')))
 if args[0]=='save': Path(args[args.index('--output')+1]).write_bytes(b'fixture archive')
-if args[0]=='run': sys.exit(int(os.environ.get('DOCKER_TEST_RUN_FAILURE','0')))
+if args[0]=='run':
+ if any('aquasec/trivy:' in arg for arg in args) and os.environ.get('DOCKER_TEST_OS_REPORT'):
+  destination=next(arg.rsplit(':/reports',1)[0] for arg in args if arg.endswith(':/reports'))
+  Path(destination,'os-vulnerabilities.json').write_text(os.environ['DOCKER_TEST_OS_REPORT'])
+ sys.exit(int(os.environ.get('DOCKER_TEST_RUN_FAILURE','0')))
 ''')
         tool.chmod(0o755)
         self.log = self.root / "docker.log"
@@ -66,6 +70,16 @@ if args[0]=='run': sys.exit(int(os.environ.get('DOCKER_TEST_RUN_FAILURE','0')))
         self.assertNotIn("--ignore-unfixed", call)
         self.assertNotIn("docker.sock", " ".join(call))
         self.assertFalse(any(self.root.glob("reports/image-archive.*")))
+
+    def test_os_report_requires_real_package_inventory_and_no_high_findings(self):
+        report = {"Metadata": {"OS": {"Family": "alpine", "Name": "3.24.1"}}, "Results": [{"Class": "os-pkgs", "Vulnerabilities": []}]}
+        result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT=json.dumps(report))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report["Results"][0]["Vulnerabilities"] = [{"Severity": "HIGH"}]
+        result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT=json.dumps(report))
+        self.assertNotEqual(result.returncode, 0)
+        result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT="{}")
+        self.assertNotEqual(result.returncode, 0)
 
     def test_success_without_fresh_os_report_fails_closed(self):
         result, _ = self.run_gate("scan")

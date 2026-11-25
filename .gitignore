@@ -24,3 +24,5 @@ __pycache__/
 # Reproducible local quality tools and reports
 .tools/
 build/
+
+/temp_*.go

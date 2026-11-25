@@ -8,7 +8,7 @@ GOVULNCHECK := $(CURDIR)/.tools/bin/govulncheck-$(GOVULNCHECK_VERSION)
 .PHONY: help check lint coverage test test-tooling integration build run secrets vuln tidy-check clean
 
 help:
-	@printf '%s\n' 'check: lint, coverage/race tests, tooling regressions, vulnerability scans' 'integration: all tests against a fresh task-owned Mongo replica set' 'build/run: build the Linux binary or run the local API' 'secrets: print new JWT keys locally; never applies them' 'clean: remove generated build reports and binaries'
+	@printf '%s\n' 'check: lint, coverage/race tests, tooling regressions, vulnerability scans' 'integration: all tests against a fresh task-owned Mongo replica set' 'build/run: build the Linux binary or run the local API' 'secrets: print new JWT keys locally; never applies them' 'image-scan: build/probe image and scan OS HIGH/CRITICAL findings' 'config-check/staging-mounts/ingress-check: read-only explicit staging gates' 'release-check: all automated gates; never deploys or rotates keys' 'clean: remove generated build reports and binaries'
 
 check: lint coverage test-tooling vuln
 
@@ -70,3 +70,14 @@ image-scan: image-check
 
 staging-mounts:
 	bash scripts/check-container.sh mounts
+
+.PHONY: config-check
+config-check:
+	$(GO) run ./cmd/autotable-secrets --check
+
+.PHONY: ingress-check release-check
+ingress-check:
+	$(PYTHON) scripts/check-ingress.py --api-url "$${STAGING_API_URL:?set STAGING_API_URL to an HTTPS staging origin}" --frontend-url "$${STAGING_FRONTEND_URL:?set STAGING_FRONTEND_URL to its HTTPS frontend}"
+
+# Verification only. No target deploys, rotates credentials or changes mount ownership.
+release-check: check integration config-check image-scan staging-mounts ingress-check

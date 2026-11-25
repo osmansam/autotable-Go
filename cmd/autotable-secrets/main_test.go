@@ -37,3 +37,39 @@ func TestGeneratedSecretsAreStrongDistinctAndNotReused(t *testing.T) {
 		t.Fatal("invalid generated credentials")
 	}
 }
+
+func TestCheckModeValidatesWithoutGeneratingOrPrintingKeys(t *testing.T) {
+	const project = "b2615c0e92f7483ad6810c9e7f024568a5e330c19bf607d40e8a672d195b3fc4"
+	const tenant = "c5ae13f4d06897b22c8e106fa471d3506e9c08ab32745f16b09d8e6a1257f3c0"
+	t.Setenv("JWT_SECRET", project)
+	t.Setenv("TENANT_JWT_SECRET", tenant)
+	t.Setenv("CONTAINER_JWT_SECRET", "")
+	t.Setenv("OBSERVABILITY_TOKEN", "")
+	t.Setenv("EXTERNAL_API_CREDENTIAL_KEY", "")
+	t.Setenv("NODE_ENV", "development")
+	var out bytes.Buffer
+	if err := runSecretCommand([]string{"--check"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), project) || strings.Contains(out.String(), tenant) || strings.Contains(out.String(), "JWT_SECRET=") {
+		t.Fatal("check mode exposed or generated credentials")
+	}
+	t.Setenv("JWT_SECRET", "weak")
+	out.Reset()
+	if err := runSecretCommand([]string{"--check"}, &out); err == nil || out.Len() != 0 {
+		t.Fatal("weak configuration passed or printed credentials")
+	}
+	t.Setenv("JWT_SECRET", project)
+	t.Setenv("OBSERVABILITY_TOKEN", project)
+	if err := runSecretCommand([]string{"--check"}, &out); err == nil {
+		t.Fatal("reused diagnostics credential passed")
+	}
+	t.Setenv("OBSERVABILITY_TOKEN", "")
+	t.Setenv("EXTERNAL_API_CREDENTIAL_KEY", "not-base64")
+	if err := runSecretCommand([]string{"--check"}, &out); err == nil {
+		t.Fatal("invalid encryption key passed")
+	}
+	if err := runSecretCommand([]string{"--unknown"}, &out); err == nil {
+		t.Fatal("unknown option passed")
+	}
+}

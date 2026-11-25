@@ -96,3 +96,26 @@ CI verifies quality, isolated Mongo journeys and the production image. The produ
 JWT rotation invalidates that domain's access/refresh tokens. Coordinate replica configuration, customer reauthentication and rollback keys explicitly. This repository's checks do not rotate secrets, modify production sessions or certify customer acceptance.
 
 HSTS belongs at trusted TLS ingress; document-specific CSP belongs at the frontend/ingress. The API does not impose a global CSP/frame/resource policy that would break Swagger/CDN scripts or customer embeds. Verify the actual HTTPS deployment and browser flows before release. See [P0 rollout requirements](docs/security/p0-rollout.md), [stage evidence](docs/security/p0-stage-report.md), and [quality follow-up evidence](docs/security/quality-followup.md). No release should treat unexecuted operator checks as passing.
+
+## Executable release gates
+
+```sh
+make config-check   # read-only JWT/diagnostics/optional encryption-key validation; no key generation
+make image-scan     # requires Docker: build, non-root probe, then OS HIGH/CRITICAL scan
+
+STAGING_TEMP_DIR=/absolute/staging/uploads \
+STAGING_LOG_DIR=/absolute/staging/logs make staging-mounts
+
+STAGING_API_URL=https://api.staging.example.test \
+STAGING_FRONTEND_URL=https://panel.staging.example.test make ingress-check
+```
+
+The default checked image tag is `autotable:security-check`; set `AUTOTABLE_CHECK_IMAGE` explicitly to check another local image. Build/probe it before checking mounts. `image-scan` uses digest-pinned Trivy v0.76.2 and an exported image archive without exposing the Docker socket or application credentials to the scanner. It fails on scanner errors, EOL distributions, HIGH/CRITICAL findings (including unfixed ones), and missing/invalid OS reports. The JSON report is `build/os-vulnerabilities.json`. A passing severity gate is not a claim that LOW/MEDIUM vulnerabilities do not exist. See the [official Trivy image CLI](https://trivy.dev/docs/latest/references/configuration/cli/trivy_image/) for scan semantics.
+
+Mount checks require existing explicit absolute directories and inspect access as image UID/GID 10001. They do not create/chown directories, start the API or write customer files; real staging upload/log acceptance remains necessary. If Docker is stopped, image/scan/mount gates fail with a clear prerequisite error. They do not start unrelated machines or return a skipped success.
+
+Ingress checks make read-only requests to the supplied HTTPS staging API `/health`, `/ready` and frontend document. System TLS certificate verification is enabled; redirects cannot leave the supplied HTTPS origin. Both origins must supply `nosniff` and HSTS with at least 180 days max-age. The frontend must send enforced CSP (report-only is insufficient) with a non-wildcard `default-src`, `object-src 'none'` and `base-uri 'self'` or `'none'`. These are minimum checks, not a complete CSP/XSS audit; configure source lists/nonces and customer frame embedding at the frontend/ingress. The API's Swagger document does not receive a global CSP from these tools. No application HSTS/CSP behavior is changed.
+
+`make release-check` combines quality checks, disposable Mongo integration tests, key-format validation and the image/mount/ingress gates. Supply the explicit staging variables above and the intended private environment configuration. It is a verification target: it never deploys or rotates keys. Do not run staging checks using production mount paths or secretly substitute production endpoints.
+
+Before a manual release, operators must still verify customer login/refresh and domain isolation, WebSocket reconnect/events, uploads/logs on actual mounts, and any enabled OAuth/cloud/translation/invitation integrations. Plan any signing-key rotation and resulting reauthentication across every replica. These actions require real staging/customer context; automated minimum checks do not certify them.

@@ -24,3 +24,5 @@ temp_*.so
 
 .tools
 build
+
+temp_*.go
