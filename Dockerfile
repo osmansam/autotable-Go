@@ -21,10 +21,12 @@ RUN --mount=type=cache,id=autotable-go-mod,target=/go/pkg/mod,sharing=locked \
     go build -ldflags="-w -s" -o server .
 
 # ---------- runtime stage ----------
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates tzdata
+# Apply stable-branch security fixes published after the pinned image snapshot.
+# Installing certificates alone does not upgrade vulnerable packages in the base.
+RUN apk --no-cache upgrade && \
+    apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
