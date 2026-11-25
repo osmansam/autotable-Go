@@ -158,8 +158,8 @@ func TestManagementProjectCookiesUseExactProjectPathAndClearSamePath(t *testing.
 			foundSet = true
 		}
 	}
-	for _, header := range clearResp.Header.Values("Set-Cookie") {
-		if strings.Contains(header, ManagementProjectAuthCookieName("davinci", "goblin", "access")+"=") && strings.Contains(header, "path="+path) && strings.Contains(header, "expires=Thu, 01 Jan 1970") {
+	for _, cookie := range clearResp.Cookies() {
+		if cookie.Name == ManagementProjectAuthCookieName("davinci", "goblin", "access") && cookie.Value == "" && cookie.Path == path && (cookie.MaxAge < 0 || (!cookie.Expires.IsZero() && cookie.Expires.Before(now))) {
 			foundClear = true
 		}
 	}

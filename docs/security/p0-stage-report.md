@@ -19,3 +19,11 @@ No production deployment, data operation, license addition, or history rewrite i
 - Compatibility: tenant `aud` remains a JSON string, claim names/expiry periods/cookies unchanged; v5 registered claims are internal. Missing expiry or session identifiers are intentionally rejected; normal issued tokens already have both.
 - Remaining: non-JWT dependency advisories and application hardening pending. Existing v3 audience advisory no longer present as a dependency.
 - Deployment risk: clients with malformed/custom tokens must reauthenticate; ordinary previously issued HS256 tokens retain wire compatibility if secrets are retained. Strong-key enforcement/rotation is a later stage.
+
+## Stage 3 — HTTP and compression dependency group
+
+- Fiber v2.52.16, fasthttp v1.80.0, brotli v1.3.0, compress v1.20.5. Required transitive x/crypto v0.59.0, x/net v0.62.0, x/text v0.44.0, x/sys v0.50.0, x/sync v0.25.0 are Go 1.26 compatible, verified by full build/tests.
+- Complete tests before group PASS. First post-upgrade run found one assertion tied to obsolete cookie-header text. fasthttp emits `Max-Age=0` to delete cookies; test now checks parsed deletion semantics and matching path. No application-cookie logic changed. Complete suite then PASS.
+- Module scan: 38 unique remaining advisories (telemetry/gRPC, Excelize/image, Mongo driver, gorilla/schema). Scan level differs from baseline reachability; no exploitability claim.
+- Compatibility: retain Fiber v2 despite deprecation notice; no v3 architectural migration. Cookie deletion remains standards compliant; external consumers must parse cookie attributes rather than match old header text.
+- Deployment risk: Go 1.26 required; exercise ingress/proxy/cookie flows in staging before release. No deployment performed.
