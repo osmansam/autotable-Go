@@ -85,3 +85,11 @@ Independent review requested changes on the earlier follow-up revision for five 
 Final real `make image-scan` attempt exits nonzero with Docker engine unavailable. No local image build/runtime/OS scan result is claimed, and no engine or unrelated VM was started. CI now enforces the executable image/OS checks; no workflow was remotely dispatched by this task. Real staging mounts, TLS/CSP responses, credential provisioning/rotation and customer acceptance remain explicit operator release conditions.
 
 The original checkout/cherry-pick state is untouched. Follow-up commits stay on security/p0-hardening in the isolated worktree. No changes were pushed, merged or deployed; no production data/credentials were changed, no license was added and Git history remains intact. Architecture/monolith splitting remains out of scope.
+
+## CI follow-up — actionable OS scan failures (2026-11-25)
+
+The branch was subsequently pushed. [CI run 45648525018](https://github.com/osmansam/autotable-Go/actions/runs/45648525018) built the real image and passed its isolated non-root permission probe, then correctly rejected five HIGH package findings in Alpine 3.24.1. Its uploaded JSON identifies OpenSSL CVE-2026-14456 (libcrypto3/libssl3), musl CVE-2026-107891 (musl/musl-utils), and zlib CVE-2026-85091. This confirms the build/probe only; the OS gate did not pass.
+
+Previously, shell fail-fast stopped before reporting findings to the console. The scanner status is now captured so the report can print each HIGH/CRITICAL advisory, package, installed version and fixed version before rejecting it. Missing/invalid reports, EOL distributions and scanner errors still fail closed, including scanner errors with otherwise clean reports. No severities, ignore policy or release requirements were relaxed.
+
+Both new diagnostic regressions failed before the fix and pass after it; all 12 container gate regressions, shell syntax and diff checks pass. The full existing Go race suite passes before the separate runtime dependency update. These diagnostic changes do not resolve the five OS findings; remediation is a separate commit. Go compatibility, application behavior and deployment requirements are unchanged. Local Docker remains stopped; no application or production data was accessed.
