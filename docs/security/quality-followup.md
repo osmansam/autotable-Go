@@ -70,3 +70,18 @@ Ten release-gate regressions and shell validation PASS. Parallel release verific
 Review reproduced malformed HSTS fields (unbalanced quotes/repeated malformed max-age) and wildcard CSP hosts being accepted. Replaced substring matching with parsing of the entire first STS field: balanced quoted values, valid directive syntax, single case-insensitive directives, numeric max-age and valueless includeSubDomains. Behavior follows RFC 6797 section 6.1 (https://www.rfc-editor.org/rfc/rfc6797.html#section-6.1). Unknown syntactically valid extensions remain allowed; no includeSubDomains/preload policy is imposed.
 
 Default CSP sources now reject wildcard hosts and unrestricted scheme-only values while preserving explicit approved HTTPS hosts and frontend-specific policies. Seven ingress regression tests cover malformed/duplicate STS, first-field handling, quote/extension parsing, CSP host/scheme wildcards, report-only policy and redirect/TLS constraints. They failed before correction and PASS after. Full `make check` PASS, including 52 Python regressions, unchanged security coverage floors, 110 exact legacy lint findings and zero known Go findings. These are offline policy checks; actual staging ingress and browser acceptance remain unexecuted until supplied.
+
+## Final verification and remaining release conditions
+
+Final committed implementation passes:
+
+- `make check`: full Go race/coverage suite, vet/tidy, exact Staticcheck accounting, 52 Python regressions, and govulncheck source/module scans with no known Go findings.
+- Weighted statement coverage 54.31% (54% overall regression floor); JWT parsers 90.91%/91.23%, key validation 96.97%, and diagnostics/recovery/panic guard/WebSocket context 100%. Overall coverage remains modest; the 79 legacy capitalization and 31 deprecation findings remain explicit debt.
+- `make integration`: every integration-tagged package against a fresh task-owned loopback Mongo replica set, race-enabled; no production URI or data used.
+- `make build`, `go mod verify`, `go mod tidy -diff`, actionlint, shell syntax, source/diff and documentation checks.
+
+Independent review requested changes on the earlier follow-up revision for five important issues: credential-bearing initialization, shell predicate failures, empty OS inventory, malformed HSTS and CSP wildcard defaults. Each was reproduced and corrected with regressions. Parallel release ordering and output-tag documentation were also corrected. The review's old verdict is not represented as a second independent approval of the fixes.
+
+Final real `make image-scan` attempt exits nonzero with Docker engine unavailable. No local image build/runtime/OS scan result is claimed, and no engine or unrelated VM was started. CI now enforces the executable image/OS checks; no workflow was remotely dispatched by this task. Real staging mounts, TLS/CSP responses, credential provisioning/rotation and customer acceptance remain explicit operator release conditions.
+
+The original checkout/cherry-pick state is untouched. Follow-up commits stay on security/p0-hardening in the isolated worktree. No changes were pushed, merged or deployed; no production data/credentials were changed, no license was added and Git history remains intact. Architecture/monolith splitting remains out of scope.
