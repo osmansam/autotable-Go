@@ -20,3 +20,7 @@ output/playwright/
 /temp_*.so
 __pycache__/
 *.py[cod]
+
+# Reproducible local quality tools and reports
+.tools/
+build/

@@ -21,3 +21,6 @@ output
 observability/secrets
 temp_*.so
 **/__pycache__
+
+.tools
+build
