@@ -113,3 +113,10 @@ No production deployment, data operation, license addition, or history rewrite i
 - Review identified that Fiber Listen can return before concurrent Shutdown completes, allowing main to exit successfully before the worker's nonzero exit.
 - Publish an atomic failure flag before shutdown; main checks it before and after listening and owns the nonzero exit as well. Keep the worker fallback for startup-before-listen failures.
 - Reproduced successful-exit race with a controlled shutdown regression, then PASS after correction; complete suite PASS. Normal shutdown remains successful. No new vulnerability findings or deployment configuration changes.
+
+## Review fix — authenticated WebSocket subscription scope
+
+- Critical pre-existing issue reproduced: a cookie authenticating one route/project could select a different subscription through query/header context. Independent local Redis/WebSocket regression demonstrated registration in the wrong tenant/project before the fix.
+- Carry verified JWT IDs/slugs into a typed server-only websocket local. Resolve only authenticated slugs, require resolved IDs to match, and reject all conflicting legacy mirrors; matching query/header forms still work.
+- Cross-project query/ID/mixed-context rejection, legitimate event delivery, route-scope and refresh-token rejection tests PASS. Complete suite PASS. No known Go dependency findings.
+- Compatibility: clients supplying contradictory context are intentionally rejected; ordinary matching legacy fields and project cookie contracts remain supported. No production data access or migration.

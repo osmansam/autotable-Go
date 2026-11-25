@@ -143,27 +143,7 @@ func main() {
 	}, stopAfterWorkerPanic)
 
 	//websocket wiring
-	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", func(c *fiber.Ctx) error {
-		if !websocket.IsWebSocketUpgrade(c) {
-			return fiber.ErrUpgradeRequired
-		}
-		if !middlewares.IsTrustedOrigin(c.Get(fiber.HeaderOrigin), appConfig.CorsWhitelist) {
-			return c.SendStatus(fiber.StatusForbidden)
-		}
-		requestedTenant := c.Params("tenantSlug")
-		requestedProject := c.Params("projectSlug")
-		token := c.Cookies(utils.ProjectAuthCookieName(requestedTenant, requestedProject, "access"))
-		_, _, _, _, tenantSlug, projectSlug, err := utils.ParseToken(token)
-		if err != nil || tenantSlug == "" || projectSlug == "" {
-			return c.SendStatus(fiber.StatusUnauthorized)
-		}
-		if requestedTenant != "" && (requestedTenant != tenantSlug || requestedProject != projectSlug) {
-			return c.SendStatus(fiber.StatusForbidden)
-		}
-		c.Locals("tenantSlug", tenantSlug)
-		c.Locals("projectSlug", projectSlug)
-		return c.Next()
-	})
+	app.Use("/api/v1/:tenantSlug/:projectSlug/ws", projectWebsocketAuthentication(appConfig))
 	// WS endpoint
 	app.Get("/api/v1/:tenantSlug/:projectSlug/ws", websocket.New(ws.HandleWS))
 	go panicguard.Essential("RunBroadcaster", func() { ws.RunBroadcaster(appCtx) }, stopAfterWorkerPanic)
