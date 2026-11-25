@@ -72,6 +72,7 @@ func main() {
 		},
 	})
 
+	app.Use(middlewares.SecurityHeaders())
 	app.Use(middlewares.RequestID())
 	app.Use(middlewares.PanicRecovery())
 	app.Use(observability.TracingMiddleware())

@@ -51,3 +51,11 @@ No production deployment, data operation, license addition, or history rewrite i
 - Initial child-panic regression crashed before implementation; all recovery regressions and complete suite PASS after implementation. Panic logs retain stacks but omit panic values to avoid leaking credentials/customer payloads.
 - Remaining: module scan remains zero known advisories; secret strength, headers and diagnostics controls still pending. Recovery cannot contain fatal runtime faults/OOM and does not undo already committed external side effects.
 - Deployment risk: an essential worker panic now restarts the service rather than leaving it silently degraded; durable claims retry under existing semantics and external idempotency requirements.
+
+## Stage 7 — integration-compatible security headers
+
+- Add nosniff, strict-origin-when-cross-origin referrer policy, permissions policy and disable obsolete browser XSS filtering globally, including error responses.
+- Complete suite PASS; actual local WebSocket 101 handshake/message, credentialed CORS, preflight with authorization/idempotency/client headers and real Swagger HTML all PASS.
+- Compatibility: no global CSP, frame denial or cross-origin resource isolation that could break Swagger CDN/inline scripts or customer embeds. HSTS belongs at trusted TLS ingress (app also serves HTTP); broad HSTS/includeSubDomains is not imposed by the API.
+- Remaining: zero known Go dependency findings; strong-key and diagnostics changes pending. Document-specific CSP/frame policy remains a frontend/ingress decision.
+- Deployment risk: browser integration checks are automated at protocol level, not a full staging browser/customer acceptance run. No API response schema changes.
