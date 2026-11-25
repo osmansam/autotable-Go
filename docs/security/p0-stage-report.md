@@ -94,3 +94,10 @@ No production deployment, data operation, license addition, or history rewrite i
 - Local `go vet ./...`, `go test -race ./... -count=1`, deployment regression tests (27 tests), shell syntax and full govulncheck source scan PASS. Source scan reports zero known vulnerabilities.
 - Compatibility: CI requires module/DB network access and Docker on runner. An old Go dispatcher on the developer PATH caused scanner parsing errors; using the actual Go 1.26.11 bin on PATH resolves it. GitHub setup-go installs that exact toolchain directly.
 - Remaining: OS image scan, local container execution, staging bind mounts and customer acceptance checks are release gates; no known Go dependency vulnerabilities remain.
+
+## Stage 12 — tracked build artifact cleanup
+
+- Untrack generated autotable/autotableGo binaries, CPU/heap/goroutine profiles and .DS_Store metadata. Add ignore rules for regenerated binaries/profiles and local tooling output. Keep source, fixtures and recorded baseline JSON.
+- `git ls-files` confirms no tracked binaries/profiles/desktop metadata remain. Complete source suite PASS; `git diff --check` PASS.
+- Compatibility: source builds remain the deployment path; binary files remain locally via `git rm --cached` and previous history is intact. No history rewrite or license addition.
+- Remaining/release risks unchanged: zero known Go advisories; container runtime/OS scan, bind-mount permissions, signing-key rotation and monitoring configuration require staging/operator verification.
