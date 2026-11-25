@@ -93,12 +93,13 @@ func TestIsProduction(t *testing.T) {
 
 func TestValidateStartupSecurityConfiguration(t *testing.T) {
 	t.Setenv("JWT_SECRET", "")
-	t.Setenv("TENANT_JWT_SECRET", "tenant-secret")
+	t.Setenv("TENANT_JWT_SECRET", "c5ae13f4d06897b22c8e106fa471d3506e9c08ab32745f16b09d8e6a1257f3c0")
+	t.Setenv("CONTAINER_JWT_SECRET", "")
 	if err := validateStartupSecurityConfiguration(); err == nil {
 		t.Fatal("validateStartupSecurityConfiguration() without JWT_SECRET error = nil")
 	}
 
-	t.Setenv("JWT_SECRET", "project-secret")
+	t.Setenv("JWT_SECRET", "b2615c0e92f7483ad6810c9e7f024568a5e330c19bf607d40e8a672d195b3fc4")
 	if err := validateStartupSecurityConfiguration(); err != nil {
 		t.Fatalf("validateStartupSecurityConfiguration() error = %v", err)
 	}

@@ -59,3 +59,12 @@ No production deployment, data operation, license addition, or history rewrite i
 - Compatibility: no global CSP, frame denial or cross-origin resource isolation that could break Swagger CDN/inline scripts or customer embeds. HSTS belongs at trusted TLS ingress (app also serves HTTP); broad HSTS/includeSubDomains is not imposed by the API.
 - Remaining: zero known Go dependency findings; strong-key and diagnostics changes pending. Document-specific CSP/frame policy remains a frontend/ingress decision.
 - Deployment risk: browser integration checks are automated at protocol level, not a full staging browser/customer acceptance run. No API response schema changes.
+
+## Stage 8 — cryptographic generation and signing-key policy
+
+- Add `go run ./cmd/autotable-secrets`: generates independent 256-bit keys via crypto/rand, prints assignments, never applies/rotates them.
+- Startup rejects missing, undersized, unencoded, whitespace-padded, repetitive and reused signing material; compares decoded bytes to detect reuse across encodings. Optional legacy CONTAINER_JWT_SECRET is validated when present. Literal HMAC key interpretation is preserved.
+- Weak/equal-key regressions failed before implementation; full suite and generator uniqueness/format tests PASS after implementation. No real keys were inspected, generated into repository files, or changed.
+- Limitation: externally supplied string randomness cannot be proven by validation. URL-base64 can encode text-like strings; operators must use the cryptographic generator/secret manager. Tests do not claim a mathematical randomness/provenance proof.
+- Remaining: zero known Go advisories; diagnostics access and container/CI work pending.
+- Deployment risk: weak existing secrets intentionally prevent startup. Key rotation invalidates access/refresh tokens and requires coordinated replicas/customer reauthentication; see `p0-rollout.md`. No production rotation performed.

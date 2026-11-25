@@ -133,16 +133,17 @@ func TestConfigFileForEnv(t *testing.T) {
 }
 
 func TestValidateJWTSecrets(t *testing.T) {
+	t.Setenv("CONTAINER_JWT_SECRET", "")
 	tests := []struct {
 		name          string
 		projectSecret string
 		tenantSecret  string
 		wantErr       bool
 	}{
-		{name: "both present", projectSecret: "project-secret", tenantSecret: "tenant-secret"},
-		{name: "project missing", tenantSecret: "tenant-secret", wantErr: true},
-		{name: "tenant missing", projectSecret: "project-secret", wantErr: true},
-		{name: "whitespace rejected", projectSecret: " ", tenantSecret: "tenant-secret", wantErr: true},
+		{name: "both present", projectSecret: strongProjectTestKey, tenantSecret: strongTenantTestKey},
+		{name: "project missing", tenantSecret: strongTenantTestKey, wantErr: true},
+		{name: "tenant missing", projectSecret: strongProjectTestKey, wantErr: true},
+		{name: "whitespace rejected", projectSecret: " ", tenantSecret: strongTenantTestKey, wantErr: true},
 	}
 
 	for _, tt := range tests {
