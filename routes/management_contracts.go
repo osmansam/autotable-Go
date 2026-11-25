@@ -166,43 +166,6 @@ func validateManagementContracts(contracts []ManagementRouteContract) error {
 	return nil
 }
 
-func isManagementRoute(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/tenant/auth") ||
-		strings.HasPrefix(path, "/api/v1/tenant/projects") ||
-		strings.HasPrefix(path, "/api/v1/tenant/branding") ||
-		strings.Contains(path, "/tenant-auth/") || strings.Contains(path, "/container") ||
-		strings.Contains(path, "/dynamic/testPipeline") || strings.Contains(path, "/admin/visual-components") || strings.Contains(path, "/admin/page") || strings.Contains(path, "/admin/auth/") || strings.Contains(path, "/roles") ||
-		strings.Contains(path, "/excel/") || strings.Contains(path, "/integrations/") ||
-		strings.Contains(path, "/admin/audit-logs")
-}
-
-func validateManagementRouteInventory(registered []fiber.Route, contracts []ManagementRouteContract) error {
-	if err := validateManagementContracts(contracts); err != nil {
-		return err
-	}
-	contractSet := make(map[string]struct{}, len(contracts))
-	for _, c := range contracts {
-		contractSet[strings.ToUpper(c.Method)+" "+c.Path] = struct{}{}
-	}
-	registeredSet := make(map[string]struct{})
-	for _, route := range registered {
-		if route.Method == fiber.MethodHead || !isManagementRoute(route.Path) {
-			continue
-		}
-		key := route.Method + " " + route.Path
-		registeredSet[key] = struct{}{}
-		if _, ok := contractSet[key]; !ok {
-			return fmt.Errorf("registered management route missing contract: %s", key)
-		}
-	}
-	for key := range contractSet {
-		if _, ok := registeredSet[key]; !ok {
-			return fmt.Errorf("management route contract has no registered route: %s", key)
-		}
-	}
-	return nil
-}
-
 type liveManagementAuthorizer struct{}
 
 func (liveManagementAuthorizer) Authorize(ctx context.Context, subject services.ManagementAuthorizationSubject, target services.ManagementAuthorizationTarget, permission services.ManagementPermission) error {

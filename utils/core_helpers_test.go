@@ -205,7 +205,7 @@ func TestCacheKeyHelpers(t *testing.T) {
 	if got := BuildVersionedCacheKey("t", "p", "orders", 3, "list", "hash"); got != "tenant:t:project:p:schema:orders:v3:route:list:query:hash" {
 		t.Fatalf("BuildVersionedCacheKey() = %q", got)
 	}
-	if HashCacheQuery("same") != HashCacheQuery("same") || HashCacheQuery("same") == HashCacheQuery("different") {
+	if HashCacheQuery("same") != "0967115f2813a3541eaef77de9d9d5773f1c0c04314b0bbfe4ff3b3b1c55b5d5" || HashCacheQuery("same") == HashCacheQuery("different") {
 		t.Fatal("HashCacheQuery() must be deterministic and distinguish inputs")
 	}
 	if got := BuildCacheFillLockKey("key"); got != "lock:cache-fill:"+HashCacheQuery("key") {

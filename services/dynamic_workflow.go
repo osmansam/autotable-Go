@@ -778,15 +778,6 @@ func workflowUnsetPath(document map[string]interface{}, path string) error {
 	return nil
 }
 
-func workflowSliceContains(items []interface{}, wanted interface{}) bool {
-	for _, item := range items {
-		if workflowValuesEqual(item, wanted) {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *DynamicService) workflowUnsetRecord(ctx context.Context, step models.DynamicWorkflowStep, payload workflowExecutionPayload) (interface{}, error) {
 	unset, err := workflowUnsetValues(step.Config)
 	if err != nil {

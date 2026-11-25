@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/alicebob/miniredis/v2"
-	"github.com/go-redis/redis/v8"
-	"github.com/osmansam/autotableGo/configs"
 	"github.com/osmansam/autotableGo/repositories"
 	"reflect"
 	"strings"
@@ -412,15 +409,6 @@ func TestAsyncCronCanceledPollDoesNotAdvanceOrEnqueue(t *testing.T) {
 	if len(queue.cursors) != 0 || len(queue.events) != 0 {
 		t.Fatal("canceled scheduler touched durable state")
 	}
-}
-
-func asyncAuditRedis(t *testing.T) {
-	t.Helper()
-	server := miniredis.RunT(t)
-	original := configs.RedisClient
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	configs.RedisClient = client
-	t.Cleanup(func() { configs.RedisClient = original; _ = client.Close() })
 }
 
 func TestAsyncOutboxRoundTripPreservesQueryAndAuditIdentity(t *testing.T) {

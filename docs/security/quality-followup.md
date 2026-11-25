@@ -16,3 +16,9 @@ Package-local statement coverage: 53.0%. Cross-package coverage (`-coverpkg=./..
 ## Stage 2 — lint-discovered malformed delete validation
 
 Staticcheck exposed a discarded ObjectID parse error in container deletion: a malformed ID could reach database initialization, with the parse error overwritten. The existing intended invalid-ID response was unreachable. Reproduced in an isolated subprocess with an explicit unreachable loopback URI; fixed by returning the existing 400/message before initializing/querying Mongo. Valid delete behavior is unchanged. Regression and complete race suite PASS. No real database was accessed; no dependency versions changed.
+
+## Stage 3 — actionable lint findings
+
+Removed unreachable private helpers/constant and unused test helpers; removed a redundant nil check and a transaction-client assignment always overwritten before use. Replaced a self-comparison test with a fixed independently derived SHA-256 fixture. Retained three intentional nil-context compatibility tests with narrowly documented Staticcheck annotations. No API messages or routes changed; the monoliths were not split or restructured.
+
+Full race suite PASS. Staticcheck now reports only 79 ST1005 legacy capitalization findings and 31 SA1019 deprecated API usages. They will be exact-count/source baselined; no unused-code, discarded-error or other new findings are permitted. Deprecations and legacy style remain explicit technical debt, not a claim of a pristine lint result.
