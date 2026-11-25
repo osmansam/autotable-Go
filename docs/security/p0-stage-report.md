@@ -27,3 +27,10 @@ No production deployment, data operation, license addition, or history rewrite i
 - Module scan: 38 unique remaining advisories (telemetry/gRPC, Excelize/image, Mongo driver, gorilla/schema). Scan level differs from baseline reachability; no exploitability claim.
 - Compatibility: retain Fiber v2 despite deprecation notice; no v3 architectural migration. Cookie deletion remains standards compliant; external consumers must parse cookie attributes rather than match old header text.
 - Deployment risk: Go 1.26 required; exercise ingress/proxy/cookie flows in staging before release. No deployment performed.
+
+## Stage 4 — telemetry, gRPC and form decoder dependencies
+
+- OTel family v1.47.0, gRPC v1.85.0, x/net v0.63.0, gorilla/schema v1.4.1; selected transitive protobuf v1.36.12 and OAuth v0.36.0. Published targets and Go requirements checked before upgrade; retain existing APIs.
+- Complete existing suite before and after group PASS. No application code changes required.
+- Remaining advisories are limited to Mongo driver, Excelize and x/image; count recorded by the module rescan (see verification log). Application controls remain pending.
+- Deployment risk: verify telemetry collection/exporter interoperability and form input in staging. Toolchain remains Go 1.26.11; API contracts unchanged.
