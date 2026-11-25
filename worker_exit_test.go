@@ -7,13 +7,19 @@ import (
 
 func TestWorkerPanicCannotExitSuccessfullyBeforeShutdownCompletes(t *testing.T) {
 	var failed atomic.Bool
+	listenerStarted := make(chan struct{})
 	shutdownStarted := make(chan struct{})
 	finishShutdown := make(chan struct{})
 	done := make(chan struct{})
-	go func() { defer close(done); failed.Store(true); close(shutdownStarted); <-finishShutdown }()
-	<-shutdownStarted
+	go func() {
+		defer close(done)
+		<-listenerStarted
+		failed.Store(true)
+		close(shutdownStarted)
+		<-finishShutdown
+	}()
 	// The HTTP listener returns while the worker still waits for graceful shutdown.
-	status := serverExitCode(func() error { return nil }, &failed)
+	status := serverExitCode(func() error { close(listenerStarted); <-shutdownStarted; return nil }, &failed)
 	close(finishShutdown)
 	<-done
 	if status != 1 {

@@ -133,3 +133,16 @@ No production deployment, data operation, license addition, or history rewrite i
 - Confirmed retired Go plugin loader is commented out; untrack temp_Multiple.so/temp_Sum.so, Python bytecode and generated browser logs/screenshots. Ignore future regeneration and exclude shared objects/bytecode from Docker context.
 - Retain earlier tracked .superpowers review patches as historical review evidence, not executable build output. No unrelated source/fixture cleanup.
 - Tracked-artifact inventory and diff whitespace checks PASS; source-only full race suite PASS. Git history and local generated files remain intact. No license added, production data operation or deployment.
+
+## Review follow-up — complete integration coverage and final verification
+
+This final status supersedes earlier pending test statements.
+
+- Broaden CI and the task-owned native Mongo runner to every integration-tagged package, with both workflow and collaboration test URIs. The runner verifies the fresh replica set's PID/dbpath before initialization and never uses production data. Includes the JWT-affected collaboration HTTP developer/editor/viewer journeys.
+- Full task-owned `bash scripts/test-workflow-mongo-integration.sh -race` PASS across all integration packages, with no skips. Full `go test -race ./... -count=1` PASS; focused real WebSocket scope/eviction regressions PASS for ten race-enabled repetitions, including conflicting headers and missing authenticated context.
+- `go vet ./...`, Linux amd64 CGO-disabled build, `go mod verify`, actionlint v1.7.12 for both workflows, shell syntax and deployment suite (28 tests) PASS.
+- Official govulncheck v1.10.0 source and module scans both report **No vulnerabilities found** on Go 1.26.11. Baseline was 126 unique advisory findings; reachability/platform limitations are documented in the inventory.
+- Independent review initially identified a critical pre-existing websocket subscription scope bug plus worker exit, websocket teardown and diagnostics credential lifecycle issues. All were reproduced and fixed with regressions in separate follow-up commits; the reviewer's original hold verdict applied to the earlier revision. No second independent review was represented as having occurred. Required cleanup and integration-coverage follow-ups were also handled.
+- Branch/worktree retained for review; original `feat-boolean-switch` checkout and unfinished cherry-pick state untouched. Nothing pushed, merged or deployed. No open-source license added; no Git history rewritten.
+
+Remaining release gates: build/run the pinned Docker image in CI or a running local engine, scan its OS packages, validate UID/GID 10001 permissions with actual staging mounts, provision independent JWT/diagnostics secrets and Prometheus token file, coordinate any signing-key rotation/customer reauthentication, and perform customer staging acceptance. External key provenance cannot be proved from a supplied string; the provided generator is cryptographic. These are documented limitations and operator actions, not a claim that production is ready.

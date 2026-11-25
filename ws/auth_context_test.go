@@ -24,6 +24,9 @@ func TestAuthenticatedWebsocketRejectsCrossProjectMirrors(t *testing.T) {
 	redisServer.Set("slug_mapping:victim:private", "tenant-b|project-b")
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	app.Use(func(c *fiber.Ctx) error {
+		if c.Query("missingAuth") == "true" {
+			return c.Next()
+		}
 		c.Locals(AuthenticatedContextKey, AuthenticatedContext{TenantID: "tenant-a", ProjectID: "project-a", TenantSlug: "acme", ProjectSlug: "orders"})
 		return c.Next()
 	})
@@ -35,8 +38,12 @@ func TestAuthenticatedWebsocketRejectsCrossProjectMirrors(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- app.Listener(listener) }()
 	defer func() { app.ShutdownWithTimeout(time.Second); listener.Close(); <-done }()
-	for _, query := range []string{"?tenantSlug=victim&projectSlug=private", "?tenantId=tenant-b&projectId=project-b", "?tenantSlug=acme&projectSlug=orders&projectId=project-b"} {
-		conn, _, err := clientws.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws"+query, http.Header{})
+	for _, query := range []string{"?tenantSlug=victim&projectSlug=private", "?tenantId=tenant-b&projectId=project-b", "?tenantSlug=acme&projectSlug=orders&projectId=project-b", "?headerConflict=true", "?missingAuth=true"} {
+		headers := http.Header{}
+		if query == "?headerConflict=true" {
+			headers.Set("X-Tenant-Slug", "victim")
+		}
+		conn, _, err := clientws.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws"+query, headers)
 		if err != nil {
 			t.Fatal(err)
 		}

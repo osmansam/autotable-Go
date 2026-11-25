@@ -10,16 +10,16 @@
 
 ## Stages
 
-- [ ] Baseline and advisory inventory: official Go vulnerability DB, module proxy go.mod requirements, maintainer advisories; record exact targets and reachable vs module-only findings.
-- [ ] Toolchain and transport dependencies: choose supported Go toolchain required by patched modules; verify tests before/after each group.
-- [ ] JWT v5: migrate imports/registered claims, preserve string audience output and claim names, require expiry, enforce HS256, purpose/audience/scope boundaries; test authentication and cross-token rejection.
-- [ ] Recovery: sanitize HTTP panic errors; recover task errors inside child goroutines so lease/result channels complete; supervise essential workers by canceling service and shutting down on panic rather than silently losing workers; protect websocket callbacks and writer cleanup.
-- [ ] Headers: nosniff, referrer policy, safe permissions policy; preserve Swagger scripts, cross-origin APIs and websocket upgrades. Avoid global restrictive CSP/frame/resource policies that break customer embeds.
-- [ ] Secrets: startup validation of distinct strong JWT secrets; crypto/rand generation utility and documented rotation. Cannot prove randomness of externally supplied strings; enforce encoded key size and reject weak material honestly.
-- [ ] Diagnostics: default-deny metrics; opt-in non-production pprof behind dedicated bearer token; no forwarded-header/IP trust shortcut. Update Prometheus example and deployment notes.
-- [ ] Container and CI: digest-pinned builder/runtime, non-root UID with writable uploads/logs, govulncheck pinned in CI; verify manifests/build where available.
-- [ ] Artifact cleanup: untrack generated binaries and profiles, ignore future outputs, no history rewriting.
-- [ ] Final review, verification and release-risk report.
+- [x] Baseline and advisory inventory: official Go vulnerability DB, module proxy go.mod requirements, maintainer advisories; record exact targets and reachable vs module-only findings.
+- [x] Toolchain and transport dependencies: choose supported Go toolchain required by patched modules; verify tests before/after each group.
+- [x] JWT v5: migrate imports/registered claims, preserve string audience output and claim names, require expiry, enforce HS256, purpose/audience/scope boundaries; test authentication and cross-token rejection.
+- [x] Recovery: sanitize HTTP panic errors; recover task errors inside child goroutines so lease/result channels complete; supervise essential workers by canceling service and shutting down on panic rather than silently losing workers; protect websocket callbacks and writer cleanup.
+- [x] Headers: nosniff, referrer policy, safe permissions policy; preserve Swagger scripts, cross-origin APIs and websocket upgrades. Avoid global restrictive CSP/frame/resource policies that break customer embeds.
+- [x] Secrets: startup validation of distinct strong JWT secrets; crypto/rand generation utility and documented rotation. Cannot prove randomness of externally supplied strings; enforce encoded key size and reject weak material honestly.
+- [x] Diagnostics: default-deny metrics; opt-in non-production pprof behind dedicated bearer token; no forwarded-header/IP trust shortcut. Update Prometheus example and deployment notes.
+- [x] Container and CI: digest-pinned builder/runtime, non-root UID with writable uploads/logs, govulncheck pinned in CI; verify manifests/build where available.
+- [x] Artifact cleanup: untrack generated binaries and profiles, ignore future outputs, no history rewriting.
+- [x] Final review, verification and release-risk report.
 
 ## Review focus
 
@@ -32,3 +32,7 @@
 ## Baseline
 
 `go1.24.10`; `go test ./... -count=1` passes in original and isolated worktree with local networking enabled. Sandbox-only runs fail because test listeners cannot bind; no application defect inferred. Govulncheck latest v1.10.0 requires Go 1.26; evaluating compatible scanner v1.1.4 for old toolchain inventory.
+
+## Completion evidence
+
+Implemented as staged commits on `security/p0-hardening`. Complete stage reports, independent review findings/fixes and remaining release gates are in `docs/security/p0-stage-report.md`; operational changes are in `docs/security/p0-rollout.md`. All code hardening and cleanup tasks are implemented. Local Docker execution/OS-image scanning remain explicit release verification gates, not claims of passing tests. No deployment, push, production-data operation, license addition or history rewrite performed.

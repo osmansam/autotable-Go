@@ -52,10 +52,11 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Transaction, lease and session integration tests
+      - name: Mongo authorization, workflow and session integration tests
         env:
           AUTOTABLE_WORKFLOW_MONGO_URI: mongodb://127.0.0.1:27017/?replicaSet=ci
-        run: go test -race -tags=integration ./services -run '^TestWorkflowMongo' -count=1 -v
+          AUTOTABLE_COLLABORATION_MONGO_URI: mongodb://127.0.0.1:27017/?replicaSet=ci
+        run: go test -race -tags=integration ./... -count=1 -v
       - name: Stop isolated MongoDB
         if: always()
         run: docker rm -f autotable-ci-mongo
