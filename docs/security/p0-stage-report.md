@@ -101,3 +101,9 @@ No production deployment, data operation, license addition, or history rewrite i
 - `git ls-files` confirms no tracked binaries/profiles/desktop metadata remain. Complete source suite PASS; `git diff --check` PASS.
 - Compatibility: source builds remain the deployment path; binary files remain locally via `git rm --cached` and previous history is intact. No history rewrite or license addition.
 - Remaining/release risks unchanged: zero known Go advisories; container runtime/OS scan, bind-mount permissions, signing-key rotation and monitoring configuration require staging/operator verification.
+
+## Review fix — diagnostics credential lifecycle
+
+- Independent review found deployment rsync could delete the operator's mounted Prometheus credential, and diagnostics key separation omitted the still-accepted previous service key.
+- Reproduced both with failing tests. Exclude observability/secrets from release rsync and reject previous service credential reuse. Real local rsync regression now preserves the credential while deleting stale source.
+- Complete Go suite PASS; deployment suite PASS (28 tests). No known new Go vulnerabilities; operator configuration/TLS requirements unchanged. No real secret files or remote deployment touched.

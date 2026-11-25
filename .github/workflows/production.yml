@@ -2,7 +2,7 @@ name: Deploy to Digital Ocean
 
 on:
   push:
-    branches: ["main"] # Deploy when pushing to main branch
+    branches: ["main"] # Verify pushes; production deploy is manual-only
   workflow_dispatch: # Allow manual deployment
 
 permissions:
@@ -155,6 +155,7 @@ jobs:
             --exclude='.env' \
             --exclude='.env.next' \
             --exclude='.deploy' \
+            --exclude='observability/secrets/' \
             --exclude='loadtest' \
             --exclude='temp' \
             --exclude='logs' \

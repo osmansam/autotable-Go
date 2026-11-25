@@ -15,3 +15,11 @@ func TestDiagnosticsTokenRejectsReusedAndWeakCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnosticsTokenRejectsPreviousServiceCredential(t *testing.T) {
+	t.Setenv("OBSERVABILITY_TOKEN", strongTenantTestKey)
+	t.Setenv("OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET", strongTenantTestKey)
+	if _, err := DiagnosticsToken(); err == nil {
+		t.Fatal("previous service credential reused for diagnostics")
+	}
+}

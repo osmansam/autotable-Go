@@ -17,7 +17,7 @@ func DiagnosticsToken() (string, error) {
 	if err != nil {
 		return "", errors.New("OBSERVABILITY_TOKEN must be a cryptographically generated hex/base64 key of at least 32 bytes")
 	}
-	for _, name := range []string{"JWT_SECRET", "TENANT_JWT_SECRET", "CONTAINER_JWT_SECRET", "EXTERNAL_API_CREDENTIAL_KEY", "OZMISHOW_RATE_LIMIT_SERVICE_SECRET"} {
+	for _, name := range []string{"JWT_SECRET", "TENANT_JWT_SECRET", "CONTAINER_JWT_SECRET", "EXTERNAL_API_CREDENTIAL_KEY", "OZMISHOW_RATE_LIMIT_SERVICE_SECRET", "OZMISHOW_RATE_LIMIT_PREVIOUS_SECRET"} {
 		other := os.Getenv(name)
 		decoded, _ := ValidateJWTSecret(other)
 		if token == other || bytes.Equal(key, decoded) {

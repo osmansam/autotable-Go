@@ -337,5 +337,25 @@ elif '/container/create-multiple' in url: print('401',end='')
         self.assertNotIn("SYNTHETIC_PRIVATE_LOG", result.stdout + result.stderr)
 
 
+
+class RuntimeSecretPreservationTests(unittest.TestCase):
+    def test_rsync_preserves_operator_diagnostics_credentials(self):
+        import shlex
+        workflow = (ROOT / ".github/workflows/production.yml").read_text()
+        command = workflow.split("rsync -avz --delete", 1)[1].split("./ $SSH_USER@", 1)[0]
+        exclusions = [arg for arg in shlex.split(command.replace("\\\n", "")) if arg.startswith("--exclude=")]
+        with tempfile.TemporaryDirectory() as root:
+            source, target = Path(root) / "source", Path(root) / "target"
+            source.mkdir(); target.mkdir()
+            credential = target / "observability/secrets/autotable-observability-token"
+            credential.parent.mkdir(parents=True)
+            credential.write_text("synthetic-private-token")
+            (target / "stale-source.go").write_text("old")
+            result = subprocess.run(["rsync", "-a", "--delete", *exclusions, str(source) + "/", str(target) + "/"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(credential.exists(), "deployment deleted the operator's diagnostics credential")
+            self.assertEqual(credential.read_text(), "synthetic-private-token")
+            self.assertFalse((target / "stale-source.go").exists())
+
 if __name__ == "__main__":
     unittest.main()
