@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -120,7 +121,9 @@ func main() {
 		log.Fatalf("Durable workflow indexes could not be initialized: %v", err)
 	}
 	cancelIndexes()
+	var workerFailed atomic.Bool
 	stopAfterWorkerPanic := func() {
+		workerFailed.Store(true)
 		cancelApp()
 		if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
 			log.Print("Shutdown after worker panic failed")
@@ -224,8 +227,8 @@ func main() {
 		traceEndpoint = "localhost:4317"
 	}
 	log.Println("OpenTelemetry traces exported to " + traceEndpoint)
-	if err := app.Listen(portNumber); err != nil {
-		log.Printf("Server stopped: %v", err)
+	if status := serverExitCode(func() error { return app.Listen(portNumber) }, &workerFailed); status != 0 {
+		os.Exit(status)
 	}
 }
 
@@ -299,4 +302,19 @@ func isProduction() bool {
 
 func configureMetrics(app *fiber.App) {
 	app.Get("/metrics", middlewares.DiagnosticsAuth(), middlewares.PrometheusHandler())
+}
+
+// serverExitCode runs on main's goroutine: Fiber may return from Listen before
+// a worker's concurrent Shutdown finishes, so main owns the failure exit too.
+func serverExitCode(listen func() error, workerFailed *atomic.Bool) int {
+	if workerFailed.Load() {
+		return 1
+	}
+	if err := listen(); err != nil {
+		log.Printf("Server stopped: %v", err)
+	}
+	if workerFailed.Load() {
+		return 1
+	}
+	return 0
 }

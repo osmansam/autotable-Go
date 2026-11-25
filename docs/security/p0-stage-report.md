@@ -107,3 +107,9 @@ No production deployment, data operation, license addition, or history rewrite i
 - Independent review found deployment rsync could delete the operator's mounted Prometheus credential, and diagnostics key separation omitted the still-accepted previous service key.
 - Reproduced both with failing tests. Exclude observability/secrets from release rsync and reject previous service credential reuse. Real local rsync regression now preserves the credential while deleting stale source.
 - Complete Go suite PASS; deployment suite PASS (28 tests). No known new Go vulnerabilities; operator configuration/TLS requirements unchanged. No real secret files or remote deployment touched.
+
+## Review fix — essential worker exit ownership
+
+- Review identified that Fiber Listen can return before concurrent Shutdown completes, allowing main to exit successfully before the worker's nonzero exit.
+- Publish an atomic failure flag before shutdown; main checks it before and after listening and owns the nonzero exit as well. Keep the worker fallback for startup-before-listen failures.
+- Reproduced successful-exit race with a controlled shutdown regression, then PASS after correction; complete suite PASS. Normal shutdown remains successful. No new vulnerability findings or deployment configuration changes.
