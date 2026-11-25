@@ -25,6 +25,29 @@ class IngressPolicyGateTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):gate.validate_headers(headers(**{"Strict-Transport-Security":value}),frontend=False)
 
+    def test_malformed_and_duplicate_hsts_directives_are_not_browser_policies(self):
+        invalid=[
+            'max-age="31536000', 'max-age=31536000"',
+            'max-age=31536000; max-age=invalid', 'max-age=31536000; MAX-AGE=0',
+            'max-age=31536000; includeSubDomains=true',
+            'max-age=31536000; bad extension',
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):gate.validate_headers(headers(**{"Strict-Transport-Security":value}))
+        for value in ('max-age="31536000"; includeSubDomains; preload', 'MAX-AGE=31536000; extension="a;b"'):
+            gate.validate_headers(headers(**{"Strict-Transport-Security":value}))
+        response=headers(**{"Strict-Transport-Security":"max-age=0"})
+        response["Strict-Transport-Security"]="max-age=31536000"
+        with self.assertRaises(ValueError):gate.validate_headers(response)
+
+    def test_host_wildcards_and_unrestricted_schemes_do_not_pass(self):
+        for source in ('https://*','https://*.example.test','https:','data:'):
+            policy="default-src "+source+"; object-src 'none'; base-uri 'self'"
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):gate.validate_headers(headers(**{"Content-Security-Policy":policy}),frontend=True)
+        gate.validate_headers(headers(**{"Content-Security-Policy":"default-src 'self' https://cdn.example.test; object-src 'none'; base-uri 'self'"}),frontend=True)
+
     def test_frontend_requires_enforced_csp_and_minimum_directives(self):
         gate.validate_headers(headers(),frontend=True)
         for value in (None,"default-src *; object-src 'none'; base-uri 'self'", "default-src 'self'", "default-src 'self'; object-src *; base-uri *", "default-src *; default-src 'self'; object-src 'none'; base-uri 'self'"):
