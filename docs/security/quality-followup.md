@@ -30,3 +30,9 @@ Full race suite PASS. Staticcheck now reports only 79 ST1005 legacy capitalizati
 Measured weighted statement coverage is 54.28%, with a 54% total floor and no source exclusions. Critical file floors are JWT parsers 90%, key validation 95%, and diagnostics/recovery/panic guard/WebSocket context 100%. This is a regression floor, not an assertion that overall coverage is high. The checker merges duplicate cross-package coverage blocks and fails closed on empty/malformed/missing critical records; percentages are weighted from raw statements rather than rounded display values.
 
 `make check` PASS, including 35 Python tests (seven gate regressions plus 28 deployment tests), full race suite, zero new Staticcheck findings, clean tidy and zero known Go vulnerabilities. Workflow validation and diff checks PASS. Makefile contains local build/run/integration/quality targets; onboarding and executable image/staging gates follow separately. Tool/report outputs are ignored and excluded from Docker context.
+
+## Stage 5 — onboarding/configuration documentation
+
+Added root README and secret-free, trackable .env.example. Documented Go/native Mongo/Redis prerequisites, local replica-set isolation, config precedence and JSON-owned Redis/CORS settings, startup/index writes, required and optional feature credentials, diagnostics, cleartext OTLP limits, all Make targets, measured coverage/lint debt and manual release boundaries. No automatic local or production service was started.
+
+Actual godotenv parsing of the example PASS; required credential fields are empty; README local links, Make help/target resolution and whitespace checks PASS. Existing quality gate commands are the same commands documented, already verified in Stage 4. Keys remain operator-provisioned; Docker, staging mount, ingress and customer acceptance checks are not represented as completed.
