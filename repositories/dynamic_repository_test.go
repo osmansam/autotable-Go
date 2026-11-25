@@ -17,7 +17,6 @@ import (
 
 func TestDynamicRepositoryCRUD(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("insert", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
@@ -229,7 +228,6 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 
 func TestDeleteByFilterPreservesRecordAccessSelector(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("delete with access selector", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
@@ -264,7 +262,6 @@ func TestDeleteByFilterPreservesRecordAccessSelector(t *testing.T) {
 
 func TestDynamicRepositoryOutbox(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("insert event", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)
@@ -458,7 +455,6 @@ func TestDynamicRepositoryDelegates(t *testing.T) {
 
 func TestDynamicRepositoryGetAuthContainerFindsProjectAuthSchema(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("auth container", func(mt *mtest.T) {
 		repository := mockRepository(mt.Coll)

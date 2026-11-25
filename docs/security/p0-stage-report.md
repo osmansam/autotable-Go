@@ -34,3 +34,11 @@ No production deployment, data operation, license addition, or history rewrite i
 - Complete existing suite before and after group PASS. No application code changes required.
 - Remaining advisories are limited to Mongo driver, Excelize and x/image; count recorded by the module rescan (see verification log). Application controls remain pending.
 - Deployment risk: verify telemetry collection/exporter interoperability and form input in staging. Toolchain remains Go 1.26.11; API contracts unchanged.
+
+## Stage 5 — Mongo, spreadsheet and image dependencies
+
+- Mongo v1.17.10 (retain v1 API), Excelize v2.11.1, x/image v0.48.0; published Go requirements verified first.
+- Complete suite before group PASS. Initial post-upgrade compile failed because Mongo's test helper removed `mt.Close`; confirmed upstream now registers cleanup with `testing.T.Cleanup`, and removed only obsolete test cleanup calls. Production Mongo behavior unchanged.
+- Complete suite after adaptations PASS. Official module vulnerability scan: **zero findings**, down from 27 after telemetry group (38 after HTTP group, 126 at baseline).
+- Compatibility: Mongo v1 is deprecated in favor of v2; v2 migration intentionally excluded. Spreadsheet tests pass; real customer workbook staging checks remain advisable.
+- Deployment risk: Mongo and spreadsheet libraries changed across minor releases; isolated transaction/session integration tests are still required before release. Local Docker engine is stopped; investigate existing task-owned native Mongo runner before declaring this unavailable.

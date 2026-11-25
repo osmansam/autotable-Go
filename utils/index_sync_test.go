@@ -10,7 +10,6 @@ import (
 
 func TestSyncContainerIndexesPreservesConstraintsOnCreationFailure(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("duplicate data prevents new index without dropping existing indexes", func(mt *mtest.T) {
 		restore := useMockCollections(mt.Coll)
 		defer restore()
@@ -33,7 +32,6 @@ func TestSyncContainerIndexesPreservesConstraintsOnCreationFailure(t *testing.T)
 
 func TestSyncContainerIndexesRemovesOnlyRetiredDefinitions(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("remove old unique after ensuring new indexes", func(mt *mtest.T) {
 		restore := useMockCollections(mt.Coll)
 		defer restore()
@@ -64,7 +62,6 @@ func TestSyncContainerIndexesRemovesOnlyRetiredDefinitions(t *testing.T) {
 
 func TestSyncContainerIndexesRollsBackPartialAdditions(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("failed addition followed by original definition retry", func(mt *mtest.T) {
 		restore := useMockCollections(mt.Coll)
 		defer restore()

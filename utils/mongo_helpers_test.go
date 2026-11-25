@@ -17,7 +17,6 @@ import (
 
 func TestMongoBackedUtilityHelpers(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 
 	mt.Run("audit insert and event upsert reuse indexes", func(mt *mtest.T) {
 		restore := useMockCollections(mt.Coll)

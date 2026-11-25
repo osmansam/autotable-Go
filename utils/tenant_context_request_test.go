@@ -201,7 +201,6 @@ func TestProjectContextDoesNotTrustUnverifiedLocals(t *testing.T) {
 
 func TestProjectContextReusesColdSlugLookup(t *testing.T) {
 	mt := mtest.New(t, mtest.NewOptions().ClientType(mtest.Mock))
-	defer mt.Close()
 	mt.Run("one database lookup across both entry points", func(mt *mtest.T) {
 		setupMiniRedis(mt.T)
 		previous := globalCollectionProvider
