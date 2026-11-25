@@ -4,7 +4,7 @@ package main
 import (
 	"fmt"
 	"github.com/osmansam/autotableGo/configs"
-	"github.com/osmansam/autotableGo/utils"
+	"github.com/osmansam/autotableGo/internal/keymaterial"
 	"io"
 	"os"
 )
@@ -47,7 +47,7 @@ func runSecretCommand(args []string, out io.Writer) error {
 		return err
 	}
 	if key := os.Getenv("EXTERNAL_API_CREDENTIAL_KEY"); key != "" {
-		if err := utils.ValidateExternalAPIEncryptionKey(key); err != nil {
+		if err := keymaterial.ValidateExternalAPIEncryptionKey(key); err != nil {
 			return err
 		}
 	}

@@ -5,15 +5,13 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
+	"github.com/osmansam/autotableGo/internal/keymaterial"
 	"io"
 	"strings"
 )
 
-const externalSecretKeyBytes = 32
-
-var ErrInvalidExternalAPIEncryptionKey = errors.New("EXTERNAL_API_CREDENTIAL_KEY must be base64-encoded 32 bytes")
+var ErrInvalidExternalAPIEncryptionKey = keymaterial.ErrInvalidExternalAPIEncryptionKey
 
 func ValidateExternalAPIEncryptionKey(encodedKey string) error {
 	_, err := decodeExternalAPIEncryptionKey(encodedKey)
@@ -71,9 +69,5 @@ func DecryptExternalSecret(ciphertext, encodedKey string) (string, error) {
 }
 
 func decodeExternalAPIEncryptionKey(encodedKey string) ([]byte, error) {
-	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedKey))
-	if err != nil || len(key) != externalSecretKeyBytes {
-		return nil, ErrInvalidExternalAPIEncryptionKey
-	}
-	return key, nil
+	return keymaterial.DecodeExternalAPIEncryptionKey(encodedKey)
 }

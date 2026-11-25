@@ -57,8 +57,8 @@ func init() {
 	var err error
 	cld, err = cloudinary.NewFromURL(cloudinaryURL)
 	if err != nil {
-		// Handle the error or panic, depending on your preference
-		panic(err)
+		// Provider URL errors can include the complete credential-bearing URL.
+		panic("invalid Cloudinary configuration")
 	}
 }
 

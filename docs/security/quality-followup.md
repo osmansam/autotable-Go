@@ -52,3 +52,9 @@ Added `make config-check` / `autotable-secrets --check` to validate JWT, diagnos
 Added explicit-variable `make ingress-check` and a verification-only `make release-check`; documented real mount, key-rotation and acceptance prerequisites. Before the final expanded regressions, `make check` PASS (54.30% weighted coverage, unchanged critical floors, no new lint findings, 45 Python tests, zero Go advisory findings). Broader image report fixtures and redirect tests also PASS. Full isolated integration runner PASS across all tagged packages after source cleanup/fix.
 
 No real staging configuration, URLs or credentials were supplied, so actual key/mount/ingress/customer acceptance gates were not executed. Docker remains stopped; the recorded real image attempt failed as a prerequisite error. These operator/runtime checks remain release blockers until run against the intended staging environment. Go 1.26.11 compatibility, manual-only deployment and customer API contracts are preserved.
+
+## Review fix — side-effect-free key checks and credential-safe initialization
+
+Independent review found the new CLI's import of utils could initialize Cloudinary before validation/generation and expose credential-bearing URL parse errors. Reproduced both CLI exposure and the pre-existing application initializer exposure with subprocess tests using synthetic markers (no real credentials). Moved shared external-key decoding/validation to a small initializer-free internal package while preserving the utils public validator/error identity and encryption semantics. CLI no longer imports utils; Cloudinary startup failure now uses a generic credential-free panic.
+
+Both regressions and full `make check` PASS, including coverage floors, exact lint baseline, race/tooling tests and zero known Go findings. No database/cloud calls, credential rotation or environment mutation occurred. Review findings on shell predicates and ingress parsing are addressed separately.
