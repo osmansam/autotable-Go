@@ -12,3 +12,7 @@ Continues P0 branch from 7c54e11. No monolith refactoring, application dependenc
 ## Measured baseline
 
 Package-local statement coverage: 53.0%. Cross-package coverage (`-coverpkg=./...`): 54.3%, correctly counting security middleware exercised by root request tests. Staticcheck v0.8.2 (Go >=1.26) is pinned from official module metadata. Existing legacy error text must not change merely for style, and Mongo/telemetry API migrations are outside this follow-up's architectural scope; exact counted findings will be documented rather than disabling whole lint categories.
+
+## Stage 2 — lint-discovered malformed delete validation
+
+Staticcheck exposed a discarded ObjectID parse error in container deletion: a malformed ID could reach database initialization, with the parse error overwritten. The existing intended invalid-ID response was unreachable. Reproduced in an isolated subprocess with an explicit unreachable loopback URI; fixed by returning the existing 400/message before initializing/querying Mongo. Valid delete behavior is unchanged. Regression and complete race suite PASS. No real database was accessed; no dependency versions changed.
