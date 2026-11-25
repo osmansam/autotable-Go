@@ -405,43 +405,6 @@ func resolveTenantAndProjectIDs(tenantSlug, projectSlug string) (tenantID, proje
 	return tenantID, projectID, nil
 }
 
-func validateTenantAndProjectIDs(tenantID, projectID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	tenantObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(tenantID))
-	if err != nil {
-		return fmt.Errorf("invalid tenantId")
-	}
-	projectObjID, err := primitive.ObjectIDFromHex(strings.TrimSpace(projectID))
-	if err != nil {
-		return fmt.Errorf("invalid projectId")
-	}
-
-	projectColl := configs.GetCollection("projects")
-	if err := projectColl.FindOne(ctx, bson.M{"_id": projectObjID, "tenantId": tenantObjID}).Err(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func websocketContextAttrs(tenantSlug, projectSlug, tenantIDParam, projectIDParam string) []slog.Attr {
-	attrs := make([]slog.Attr, 0, 4)
-	attrs = appendTrimmedWSAttr(attrs, "tenant_slug", tenantSlug)
-	attrs = appendTrimmedWSAttr(attrs, "project_slug", projectSlug)
-	attrs = appendTrimmedWSAttr(attrs, "tenant_id_param", tenantIDParam)
-	attrs = appendTrimmedWSAttr(attrs, "project_id_param", projectIDParam)
-	return attrs
-}
-
-func appendTrimmedWSAttr(attrs []slog.Attr, key, value string) []slog.Attr {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return attrs
-	}
-	return append(attrs, slog.String(key, strings.Clone(value)))
-}
-
 // HandleWS adds clients and keeps them alive.
 // Uses server-authenticated tenant/project context; optional legacy mirrors must agree.
 func HandleWS(c *websocket.Conn) {
@@ -508,11 +471,6 @@ func handleWS(c *websocket.Conn) {
 			return
 		}
 	}
-}
-
-func looksLikeObjectID(value string) bool {
-	_, err := primitive.ObjectIDFromHex(strings.TrimSpace(value))
-	return err == nil
 }
 
 // EmitInvalidate pushes an invalidate event to clients in the same tenant/project.
