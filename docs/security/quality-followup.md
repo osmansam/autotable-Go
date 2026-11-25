@@ -85,3 +85,19 @@ Independent review requested changes on the earlier follow-up revision for five 
 Final real `make image-scan` attempt exits nonzero with Docker engine unavailable. No local image build/runtime/OS scan result is claimed, and no engine or unrelated VM was started. CI now enforces the executable image/OS checks; no workflow was remotely dispatched by this task. Real staging mounts, TLS/CSP responses, credential provisioning/rotation and customer acceptance remain explicit operator release conditions.
 
 The original checkout/cherry-pick state is untouched. Follow-up commits stay on security/p0-hardening in the isolated worktree. No changes were pushed, merged or deployed; no production data/credentials were changed, no license was added and Git history remains intact. Architecture/monolith splitting remains out of scope.
+
+## CI follow-up — actionable OS scan failures (2026-11-25)
+
+The branch was subsequently pushed. [CI run 45648525018](https://github.com/osmansam/autotable-Go/actions/runs/45648525018) built the real image and passed its isolated non-root permission probe, then correctly rejected five HIGH package findings in Alpine 3.24.1. Its uploaded JSON identifies OpenSSL CVE-2026-14456 (libcrypto3/libssl3), musl CVE-2026-107891 (musl/musl-utils), and zlib CVE-2026-85091. This confirms the build/probe only; the OS gate did not pass.
+
+Previously, shell fail-fast stopped before reporting findings to the console. The scanner status is now captured so the report can print each HIGH/CRITICAL advisory, package, installed version and fixed version before rejecting it. Missing/invalid reports, EOL distributions and scanner errors still fail closed, including scanner errors with otherwise clean reports. No severities, ignore policy or release requirements were relaxed.
+
+Both new diagnostic regressions failed before the fix and pass after it; all 12 container gate regressions, shell syntax and diff checks pass. The full existing Go race suite passes before the separate runtime dependency update. These diagnostic changes do not resolve the five OS findings; remediation is a separate commit. Go compatibility, application behavior and deployment requirements are unchanged. Local Docker remains stopped; no application or production data was accessed.
+
+## CI follow-up — runtime remediation and verification status
+
+Separate commits `4347888` (diagnostics) and `5692b45` (runtime remediation) were pushed to `origin/security/p0-hardening`. The runtime now pins the verified official Alpine 3.24.4 digest and applies stable-branch package upgrades; advisory/fixed-version evidence and Go compatibility are recorded in `p0-advisories.md`. No application code, Go dependencies, API contracts or deployment configuration changed in this follow-up.
+
+Full existing Go race tests pass before and after the runtime dependency group. Final `make check` passes: vet/tidy, exact Staticcheck accounting, race/coverage (54.31%), all 54 Python tooling regressions and both govulncheck scans with no known Go vulnerabilities. Shell syntax and diff checks pass.
+
+Real updated-image verification is pending: the local Docker engine is stopped. Dispatching verification-only `ci.yml` on the hardening branch failed with GitHub HTTP 500; a single retry returned an incomplete JSON response, and no new run appeared. The production workflow was not dispatched. The five findings in the old image have verified patched targets, but zero remaining OS findings cannot be claimed until the updated image builds and its unchanged HIGH/CRITICAL/EOL gate passes. Staging volume access, ingress policy, signing-key rotation and customer acceptance remain operator release conditions. Nothing was merged or deployed, no production data was modified, and no license was added.

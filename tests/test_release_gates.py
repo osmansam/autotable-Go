@@ -81,6 +81,22 @@ if args[0]=='run':
         result, _ = self.run_gate("scan", DOCKER_TEST_OS_REPORT="{}")
         self.assertNotEqual(result.returncode, 0)
 
+    def test_scanner_findings_are_printed_even_when_trivy_exits_one(self):
+        report = {"Metadata": {"OS": {"Family": "alpine", "Name": "3.24.1"}}, "Results": [{"Class": "os-pkgs", "Type": "alpine", "Packages": [{"Name": "musl", "Version": "1.2.6-r2"}], "Vulnerabilities": [{"VulnerabilityID": "CVE-2026-107891", "PkgName": "musl", "InstalledVersion": "1.2.6-r2", "FixedVersion": "1.2.6-r3", "Severity": "HIGH"}]}]}
+        result, _ = self.run_gate("scan", DOCKER_TEST_RUN_FAILURE="1", DOCKER_TEST_OS_REPORT=json.dumps(report))
+        self.assertNotEqual(result.returncode, 0)
+        for detail in ("CVE-2026-107891", "musl", "1.2.6-r2", "1.2.6-r3", "HIGH"):
+            self.assertIn(detail, result.stderr)
+        self.assertNotIn("gate passed", result.stdout)
+        self.assertFalse(any(self.root.glob("reports/image-archive.*")))
+
+    def test_scanner_error_with_clean_report_still_fails(self):
+        report = {"Metadata": {"OS": {"Family": "alpine", "Name": "3.24.4"}}, "Results": [{"Class": "os-pkgs", "Type": "alpine", "Packages": [{"Name": "musl", "Version": "1.2.6-r3"}], "Vulnerabilities": []}]}
+        result, _ = self.run_gate("scan", DOCKER_TEST_RUN_FAILURE="2", DOCKER_TEST_OS_REPORT=json.dumps(report))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scanner exited with status 2", result.stderr)
+        self.assertNotIn("gate passed", result.stdout)
+
     def test_empty_or_unversioned_os_inventory_fails(self):
         for packages in ([], [{"Name": "musl"}], [{"Version": "1.2.5"}]):
             report={"Metadata":{"OS":{"Family":"alpine","Name":"3.24.1"}},"Results":[{"Class":"os-pkgs","Type":"alpine","Packages":packages}]}

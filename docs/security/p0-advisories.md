@@ -136,3 +136,19 @@ Baseline: commit `9d29722`, Go 1.24.10. Official Go vulnerability database queri
 Targets: Fiber v2.52.16 (Go 1.20), fasthttp v1.80.0 (Go 1.26), x/crypto v0.59.0, x/net v0.63.0, x/image v0.48.0 (Go 1.26), gRPC v1.85.0 (Go 1.26), Mongo driver v1.17.10 (Go 1.18; retain v1 API), OTel v1.47.0 (Go 1.26), Excelize v2.11.1 (Go 1.26), brotli v1.3.0 (Go 1.22), compress v1.20.5 (Go 1.25), JWT v5.3.1 (Go 1.21). JWT maintainer migration and releases: https://github.com/golang-jwt/jwt/releases and https://github.com/golang-jwt/jwt/blob/v5.3.1/MIGRATION_GUIDE.md .
 
 Remaining findings are rescanned after implementation; see stage report. No claim that every baseline finding is exploitable or that upgrading alone resolves application security.
+
+## Runtime OS findings verified on 2026-11-25
+
+CI run [45648525018](https://github.com/osmansam/autotable-Go/actions/runs/45648525018) rejected these five HIGH package findings. Fixed versions were independently checked against [Alpine's v3.24 security database](https://secdb.alpinelinux.org/v3.24/main.json).
+
+| Advisory | Runtime packages | Installed | Alpine fixed version |
+| --- | --- | --- | --- |
+| [CVE-2026-14456](https://security.alpinelinux.org/vuln/CVE-2026-14456) | libcrypto3, libssl3 | 3.5.7-r0 | 3.5.8-r0 |
+| [CVE-2026-107891](https://security.alpinelinux.org/vuln/CVE-2026-107891) | musl, musl-utils | 1.2.6-r2 | 1.2.6-r3 |
+| [CVE-2026-85091](https://security.alpinelinux.org/vuln/CVE-2026-85091) | zlib | 1.3.2-r0 | 1.3.2-r1 |
+
+The [official image metadata](https://github.com/docker-library/official-images/blob/master/library/alpine) identifies Alpine 3.24.4 as the current 3.24 stable image. Docker Hub's versioned manifest resolves to `sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf`; this is the new runtime pin. Its amd64 package inventory was inspected directly: OpenSSL 3.5.9-r0, musl/musl-utils 1.2.6-r3, zlib 1.3.2-r1. Alpine 3.24.2 was rejected as insufficient because its musl and zlib remain below the fixes.
+
+The build also upgrades installed packages from the existing v3.24 stable repositories before adding certificates/timezone data. The official [amd64 package index](https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/APKINDEX.tar.gz) currently supplies OpenSSL 3.5.9-r1, musl/musl-utils 1.2.6-r3 and zlib 1.4-r0, incorporating additional fixes beyond the older snapshot. Repository patches remain dynamic, as certificate/timezone installation already was; the base image remains pinned and the complete resulting OS inventory must pass the unchanged scanner gate. Rebuild the package-install layer when refreshing security updates; a cached layer alone does not fetch later fixes.
+
+Compatibility: runtime remains on Alpine 3.24, with no Go module/toolchain changes. The application remains a CGO-disabled Linux/amd64 binary built with Go 1.26.11, with UID/GID 10001 and the existing certificates, timezone data, paths and entrypoint. Full Go race tests pass before and after this runtime dependency group. A real CI build, non-root probe and OS rescan are required before claiming the image is clear; local Docker is stopped. No deployment is performed.

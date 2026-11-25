@@ -53,6 +53,7 @@ case "$check_mode" in
     rm -f -- "$report_directory/os-vulnerabilities.json"
     # Export an archive rather than granting the scanner the Docker daemon socket.
     # No ignore file, ignore-unfixed option, env secrets or application process.
+    scanner_status=0
     docker run --rm --user "$(id -u):$(id -g)" \
       -v "$archive_directory/image.tar:/scan/image.tar:ro" \
       -v "$report_directory/trivy-cache:/cache" \
@@ -60,7 +61,11 @@ case "$check_mode" in
       "$trivy_image" image --input /scan/image.tar --cache-dir /cache \
       --scanners vuln --pkg-types os --severity HIGH,CRITICAL \
       --exit-code 1 --exit-on-eol 1 --ignorefile /dev/null --disable-telemetry \
-      --format json --output /reports/os-vulnerabilities.json
+      --format json --output /reports/os-vulnerabilities.json || scanner_status=$?
+    if [[ ! -s "$report_directory/os-vulnerabilities.json" ]]; then
+      echo "OS scanner exited with status $scanner_status without a report; gate has NOT passed" >&2
+      exit 1
+    fi
     python3 - "$report_directory/os-vulnerabilities.json" <<'PYREPORT'
 import json,sys
 with open(sys.argv[1]) as source:
@@ -81,9 +86,17 @@ for row in results:
         sys.exit('OS package inventory lacks valid names/versions; gate has NOT passed')
     if any(v.get('Severity') not in ('UNKNOWN','LOW','MEDIUM','HIGH','CRITICAL') for v in row.get('Vulnerabilities') or []):
         sys.exit('OS finding has missing/invalid severity; gate has NOT passed')
-if any(v.get('Severity') in ('HIGH','CRITICAL') for row in results for v in row.get('Vulnerabilities') or []):
+findings=[v for row in results for v in row.get('Vulnerabilities') or [] if v.get('Severity') in ('HIGH','CRITICAL')]
+for finding in findings:
+    print('{Severity} {VulnerabilityID}: {PkgName} installed={InstalledVersion} fixed={FixedVersion}'.format(
+        **{key:finding.get(key) or 'unknown' for key in ('Severity','VulnerabilityID','PkgName','InstalledVersion','FixedVersion')}),file=sys.stderr)
+if findings:
     sys.exit('OS scan report contains HIGH/CRITICAL findings; gate has NOT passed')
 PYREPORT
+    if [[ "$scanner_status" -ne 0 ]]; then
+      echo "OS scanner exited with status $scanner_status; gate has NOT passed" >&2
+      exit "$scanner_status"
+    fi
     echo 'OS HIGH/CRITICAL vulnerability gate passed; JSON report saved under build/ or AUTOTABLE_CHECK_REPORT_DIR.'
     ;;
   mounts)
