@@ -3,3 +3,4 @@
 .deploy/
 .gocache/
 logs/
+observability/secrets/

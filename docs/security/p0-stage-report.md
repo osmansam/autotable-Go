@@ -68,3 +68,12 @@ No production deployment, data operation, license addition, or history rewrite i
 - Limitation: externally supplied string randomness cannot be proven by validation. URL-base64 can encode text-like strings; operators must use the cryptographic generator/secret manager. Tests do not claim a mathematical randomness/provenance proof.
 - Remaining: zero known Go advisories; diagnostics access and container/CI work pending.
 - Deployment risk: weak existing secrets intentionally prevent startup. Key rotation invalidates access/refresh tokens and requires coordinated replicas/customer reauthentication; see `p0-rollout.md`. No production rotation performed.
+
+## Stage 9 — restricted diagnostics
+
+- Metrics default-deny when OBSERVABILITY_TOKEN is unset; configured metrics require a dedicated strong bearer credential. Invalid/reused diagnostics credentials fail startup; handler also fails closed.
+- Development pprof is opt-in via ENABLE_PPROF=true plus diagnostics authorization; production pprof remains unmounted even with a valid token.
+- Default-development profiling regression failed before changes. Complete suite PASS after changes; tests cover metrics case/slash variants, pprof subpaths, missing/wrong/correct credentials and forged forwarded loopback headers.
+- Prometheus example reads a mounted secret file; production environment generation forwards optional diagnostics credential. No real credential is committed.
+- Remaining: zero known Go advisories; Docker/CI/artifact cleanup and final checks pending.
+- Deployment risk: existing unauthenticated scrapers stop working until their independent token/file mount is configured. Diagnostics must travel only on trusted networks/TLS. Customer API authentication is unchanged.

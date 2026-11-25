@@ -80,7 +80,7 @@ func main() {
 	app.Use(middlewares.RequestLogger())
 	closeOzmishowLimiter := ozmishowratelimit.Mount(app)
 	defer closeOzmishowLimiter()
-	app.Get("/metrics", middlewares.PrometheusHandler())
+	configureMetrics(app)
 	configurePprof(app, portNumber)
 
 	// Create a new directory if not exists to store images
@@ -218,7 +218,7 @@ func main() {
 	}()
 
 	log.Println("Server is running on port: ", portNumber)
-	log.Println("Prometheus metrics available at http://localhost" + portNumber + "/metrics")
+	log.Println("Metrics require a dedicated OBSERVABILITY_TOKEN; disabled when unset")
 	traceEndpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 	if traceEndpoint == "" {
 		traceEndpoint = "localhost:4317"
@@ -246,7 +246,11 @@ func readinessHandler(checks ...func(context.Context) error) fiber.Handler {
 }
 
 func validateStartupSecurityConfiguration() error {
-	return configs.ValidateJWTSecrets()
+	if err := configs.ValidateJWTSecrets(); err != nil {
+		return err
+	}
+	_, err := configs.DiagnosticsToken()
+	return err
 }
 
 func corsFromConfig(cfg *configs.Config) fiber.Handler {
@@ -275,14 +279,24 @@ func corsFromConfig(cfg *configs.Config) fiber.Handler {
 }
 
 func configurePprof(app *fiber.App, portNumber string) {
-	if isProduction() {
-		log.Println("pprof disabled in production")
+	if isProduction() || !strings.EqualFold(os.Getenv("ENABLE_PPROF"), "true") {
+		log.Println("pprof disabled")
 		return
 	}
-	log.Println("pprof available at http://localhost" + portNumber + "/debug/pprof/")
+	token, err := configs.DiagnosticsToken()
+	if err != nil || token == "" {
+		log.Print("pprof disabled: dedicated diagnostics credential required")
+		return
+	}
+	log.Print("Authenticated development pprof enabled")
+	app.Use("/debug/pprof", middlewares.DiagnosticsAuth())
 	app.Use(pprof.New())
 }
 
 func isProduction() bool {
 	return strings.EqualFold(os.Getenv("NODE_ENV"), "production")
+}
+
+func configureMetrics(app *fiber.App) {
+	app.Get("/metrics", middlewares.DiagnosticsAuth(), middlewares.PrometheusHandler())
 }

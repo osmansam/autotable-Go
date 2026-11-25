@@ -106,20 +106,22 @@ func TestValidateStartupSecurityConfiguration(t *testing.T) {
 }
 
 func TestConfigurePprof(t *testing.T) {
-	t.Setenv("NODE_ENV", "production")
-	app := fiber.New()
-	configurePprof(app, ":3000")
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
-	if err != nil || resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("production pprof status = %v, error = %v", resp, err)
-	}
-
-	t.Setenv("NODE_ENV", "development")
-	app = fiber.New()
-	configurePprof(app, ":3000")
-	resp, err = app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
-	if err != nil || resp.StatusCode == http.StatusNotFound {
-		t.Fatalf("development pprof status = %v, error = %v", resp, err)
+	for _, env := range []string{"production", "development"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("NODE_ENV", env)
+			t.Setenv("ENABLE_PPROF", "")
+			t.Setenv("OBSERVABILITY_TOKEN", "")
+			app := fiber.New()
+			configurePprof(app, ":3000")
+			resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 404 {
+				t.Fatalf("pprof must be disabled by default, got %d", resp.StatusCode)
+			}
+		})
 	}
 }
 

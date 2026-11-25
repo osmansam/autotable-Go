@@ -19,3 +19,11 @@ Regression coverage includes real Swagger HTML, trusted-origin credentialed CORS
 ## Recovery
 
 HTTP panic responses are generic 500s; panic values are omitted from logs. Durable outbox task panics become retryable errors, not successful acknowledgements. Localization panic leaves its claim for existing expiry/recovery. Essential worker panic cancels work, shuts down HTTP with a deadline and exits nonzero for the process supervisor to restart. Optional cache fills and websocket clients recover locally. Fatal runtime errors/OOM are not recoverable. External side effects still require their existing idempotency protections.
+
+## Metrics and profiling
+
+Metrics are disabled (404) until OBSERVABILITY_TOKEN contains an independent cryptographically generated key meeting the same format/strength floor. When enabled, `/metrics` requires `Authorization: Bearer <token>`; missing/wrong credentials return 401. Do not reuse JWT, encryption or service credentials. Requests/forwarded loopback headers, cookies and query strings do not bypass authorization. Keep the diagnostics credential on trusted networks/TLS only; unauthenticated public health/readiness routes remain available.
+
+Create a separate diagnostics key in your secret manager (for example with `openssl rand -hex 32`), configure OBSERVABILITY_TOKEN on the app, and mount a readable `observability/secrets/autotable-observability-token` containing only that literal token for the example Prometheus stack. This directory is ignored by Git. Prometheus now reads `/etc/prometheus/secrets/autotable-observability-token` for bearer authentication. No real credential file is supplied. Missing token/mount configuration will intentionally stop scrapes until configured. Production workflow forwards the optional OBSERVABILITY_TOKEN repository secret without printing it.
+
+Pprof additionally requires `ENABLE_PPROF=true` and a non-production NODE_ENV. It is disabled by default in development and always disabled in production. Do not run long profiling sessions over public ingress. Auth covers every pprof subpath.
